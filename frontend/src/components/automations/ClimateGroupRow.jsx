@@ -1,70 +1,65 @@
 import React from 'react'
 import { motion } from 'framer-motion'
+import { Thermometer, Play, Eye, Trash2 } from 'lucide-react'
 import { Toggle } from '../ui/Toggle'
 import { useT } from '../../lib/i18n'
+import { T_ENTER } from '../../lib/motion'
+import { cardIconBtn } from '../../lib/automations/styles'
 
 // ── ClimateGroupRow ───────────────────────────────────────────────────────────
 // One Smart Climate room as a feature row on the Automatic tab, sourced from the
 // thermostat engine config (services/smart_climate_engine). Shows the room's live
-// temperature and whether Ziggy is cooling/heating it right now, with Sync (▶),
-// View, Edit, Delete + an enable/disable toggle. The user sees "one thing".
+// temperature and whether Ziggy is cooling/heating it right now, with Sync,
+// View, Delete + an enable/disable toggle. The user sees "one thing".
 function ClimateGroupRow({ status, onToggle, onSync, onView, onEdit, onDelete }) {
   const t = useT()
   const enabled = !!status?.enabled
   const cur = status?.current || {}
   const temp = cur.temp
   const roomName = status?.roomName || t('automations.smartClimate.installedBadge')
-  const tint = enabled ? 'var(--gold)' : 'var(--ink-faint)'
+  const title = t('automations.smartClimate.cardTitle', { room: roomName })
 
   // What Ziggy believes it's doing right now.
   const activeChip = cur.cooling_state === 'on'
-    ? { label: t('automations.smartClimate.coolingNow'), color: 'var(--ok)' }
+    ? { label: t('automations.smartClimate.coolingNow'), color: 'var(--ok-text)' }
     : cur.heating_state === 'on'
-      ? { label: t('automations.smartClimate.heatingNow'), color: 'var(--warn)' }
+      ? { label: t('automations.smartClimate.heatingNow'), color: 'var(--warn-text)' }
       : null
 
+  const secondary = !enabled
+    ? t('automations.smartClimate.paused')
+    : temp != null ? t('automations.smartClimate.nowTemp', { temp }) : t('automations.smartClimate.noReadingShort')
+
   return (
-    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
-      <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <button onClick={onView} title={t('automations.smartClimate.view')}
-          style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${tint} 14%, var(--surface-2))`, fontSize: 18, border: 'none', cursor: 'pointer' }}>
-          🌡️
+    <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={T_ENTER}>
+      <div style={{ padding: 16, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+        <button onClick={onView} title={t('automations.smartClimate.view')} aria-label={t('automations.smartClimate.view')}
+          style={{ ...cardIconBtn(enabled ? 'var(--ink-2)' : 'var(--ink-faint)'), background: 'var(--surface-2)' }}>
+          <Thermometer size={22} strokeWidth={1.75} />
         </button>
         <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={onView}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', margin: 0 }} dir="auto">
-            {t('automations.smartClimate.cardTitle', { room: roomName })}
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
-            {enabled ? (
-              temp != null ? (
-                <span style={{ fontSize: 11, color: 'var(--ink-mute)', fontFamily: '"IBM Plex Mono", monospace' }}>
-                  {t('automations.smartClimate.nowTemp', { temp })}
-                </span>
-              ) : (
-                <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('automations.smartClimate.noReadingShort')}</span>
-              )
-            ) : (
-              <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('automations.smartClimate.paused')}</span>
-            )}
-            {enabled && activeChip && (
-              <span style={{ fontSize: 9.5, padding: '1px 7px', borderRadius: 999, fontWeight: 600, background: `color-mix(in srgb, ${activeChip.color} 14%, transparent)`, color: activeChip.color }}>
-                {activeChip.label}
-              </span>
-            )}
-          </div>
+          <p className="z-headline" style={{ margin: 0 }} dir="auto">{title}</p>
+          <p className="z-subhead z-mono" style={{ margin: '2px 0 0' }} dir="auto">{secondary}</p>
+          {enabled && activeChip && (
+            <div style={{ marginTop: 4 }}>
+              <span className="z-chip" style={{ color: activeChip.color }}>{activeChip.label}</span>
+            </div>
+          )}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
-          <Toggle checked={enabled} onCheckedChange={() => onToggle(!enabled)} />
-          <div style={{ display: 'flex', gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0, margin: '-4px -8px -8px 0' }}>
+          <div style={{ padding: '8px 8px 0' }}>
+            <Toggle checked={enabled} onCheckedChange={() => onToggle(!enabled)} aria-label={title} />
+          </div>
+          <div style={{ display: 'flex', gap: 0 }}>
             <button onClick={onSync} title={t('automations.smartClimate.syncNow')} aria-label={t('automations.smartClimate.syncNow')} disabled={!enabled}
-              style={{ background: 'none', border: 'none', cursor: enabled ? 'pointer' : 'default', color: enabled ? 'var(--ok)' : 'var(--ink-faint)', opacity: enabled ? 1 : 0.4, padding: 4 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              style={{ ...cardIconBtn(enabled ? 'var(--ink-mute)' : 'var(--ink-faint)'), cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.5 }}>
+              <Play size={18} strokeWidth={1.75} fill="currentColor" />
             </button>
-            <button onClick={onView} title={t('common.view')} aria-label={t('common.view')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-mute)', padding: 4 }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/></svg>
+            <button onClick={onView} title={t('common.view')} aria-label={t('common.view')} style={cardIconBtn()}>
+              <Eye size={18} strokeWidth={1.75} />
             </button>
-            <button onClick={onDelete} title={t('common.delete')} aria-label={t('common.delete')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+            <button onClick={onDelete} title={t('common.delete')} aria-label={t('common.delete')} style={cardIconBtn('var(--err-text)')}>
+              <Trash2 size={18} strokeWidth={1.75} />
             </button>
           </div>
         </div>

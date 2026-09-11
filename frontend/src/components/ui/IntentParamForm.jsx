@@ -4,6 +4,21 @@ import { useDeviceStore } from '../../stores/deviceStore'
 import { INTENT_PARAM_SCHEMA } from '../../lib/intentParamSchema'
 import { useT } from '../../lib/i18n'
 
+// Selectable chip. Active = surface-2 fill + ink text + hairline; never the
+// brand accent (the form's primary action owns that). 44px tall so it is a
+// real touch target even though it reads as a chip.
+function chipStyle(active) {
+  return {
+    minHeight: 44, padding: '0 16px', borderRadius: 999,
+    fontSize: 15, fontWeight: active ? 600 : 500, fontFamily: 'inherit',
+    background: active ? 'var(--surface-2)' : 'var(--surface)',
+    color: active ? 'var(--ink)' : 'var(--ink-mute)',
+    border: `0.5px solid ${active ? 'var(--line-2)' : 'var(--line)'}`,
+    cursor: 'pointer',
+    transition: 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard)',
+  }
+}
+
 // ── JSON textarea fallback (for intents not yet in the schema) ────────────────
 function JsonFallback({ value, onChange, onError }) {
   const t = useT()
@@ -34,9 +49,9 @@ function JsonFallback({ value, onChange, onError }) {
 
   return (
     <div>
-      <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>
+      <p style={{ fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
         {t('intentForm.params')}{' '}
-        <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}>{t('intentForm.paramsHint')}</span>
+        <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}>{t('intentForm.paramsHint')}</span>
       </p>
       <textarea
         value={raw}
@@ -44,14 +59,16 @@ function JsonFallback({ value, onChange, onError }) {
         rows={2}
         spellCheck={false}
         placeholder='{"room": "office"}'
+        className="z-code"
         style={{
-          width: '100%', padding: '8px 12px', borderRadius: 10,
-          background: 'var(--surface)', border: `0.5px solid ${err ? 'var(--accent)' : 'var(--line)'}`,
-          color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', fontSize: 12,
+          width: '100%', padding: '12px 16px', borderRadius: 'var(--r-ctl)', minHeight: 44,
+          background: 'var(--surface)', border: `0.5px solid ${err ? 'var(--err)' : 'var(--line)'}`,
+          color: 'var(--ink)', fontSize: 15, lineHeight: '20px',
           outline: 'none', resize: 'none', boxSizing: 'border-box',
+          transition: 'border-color var(--dur-press) var(--ease-standard)',
         }}
       />
-      {err && <p style={{ fontSize: 11, color: 'var(--accent)', marginTop: 4 }}>{err}</p>}
+      {err && <p style={{ fontSize: 13, lineHeight: '18px', color: 'var(--err-text)', marginTop: 4 }}>{err}</p>}
     </div>
   )
 }
@@ -62,10 +79,10 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
   const { key, label, type, options, required, placeholder, min, max, step, unit, source, domainFilter, dependsOn } = param
 
   const Label = () => (
-    <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>
+    <p style={{ fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
       {label}
       {!required && (
-        <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}> ({t('intentForm.optional')})</span>
+        <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}> ({t('intentForm.optional')})</span>
       )}
     </p>
   )
@@ -87,14 +104,8 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
                 key={String(opt.value)}
                 type="button"
                 onClick={() => onChange(opt.value)}
-                style={{
-                  flex: 1, height: 36, borderRadius: 10,
-                  fontSize: 13, fontWeight: 500,
-                  background: active ? 'var(--accent)' : 'var(--bg-2)',
-                  color: active ? '#fff' : 'var(--ink-2)',
-                  border: active ? '0.5px solid var(--accent)' : '0.5px solid var(--line)',
-                  cursor: 'pointer', transition: 'background 0.12s, color 0.12s',
-                }}
+                aria-pressed={active}
+                style={{ ...chipStyle(active), flex: 1 }}
               >
                 {opt.label}
               </button>
@@ -119,13 +130,8 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
                   key={String(opt.value)}
                   type="button"
                   onClick={() => onChange(opt.value)}
-                  style={{
-                    padding: '8px 16px', borderRadius: 10, fontSize: 12, fontWeight: 500,
-                    background: active ? 'var(--accent)' : 'var(--bg-2)',
-                    color: active ? '#fff' : 'var(--ink-2)',
-                    border: active ? '0.5px solid var(--accent)' : '0.5px solid var(--line)',
-                    cursor: 'pointer', transition: 'background 0.12s, color 0.12s',
-                  }}
+                  aria-pressed={active}
+                  style={chipStyle(active)}
                 >
                   {opt.label}
                 </button>
@@ -142,7 +148,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
           value={value ?? ''}
           onChange={(e) => onChange(e.target.value)}
           className="z-input"
-          style={{ height: 40, padding: '0 12px', width: '100%' }}
+          style={{ height: 44, padding: '0 16px', width: '100%' }}
         >
           {!required && <option value="">—</option>}
           {required && !value && (
@@ -172,9 +178,9 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
       if (!parentRoom) {
         // Parent not selected yet — show disabled placeholder
         return (
-          <div style={{ opacity: 0.45 }}>
+          <div>
             <Label />
-            <select disabled className="z-input" style={{ height: 40, padding: '0 12px', width: '100%' }}>
+            <select disabled className="z-input" style={{ height: 44, padding: '0 16px', width: '100%' }}>
               <option>{t('intentForm.selectRoomFirst')}</option>
             </select>
           </div>
@@ -200,7 +206,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
           value={value ?? ''}
           onChange={(e) => onChange(e.target.value || undefined)}
           className="z-input"
-          style={{ height: 40, padding: '0 12px', width: '100%' }}
+          style={{ height: 44, padding: '0 16px', width: '100%' }}
         >
           {!required && <option value="">{placeholder || '—'}</option>}
           {required && !value && (
@@ -232,16 +238,16 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
             onChange={(e) => onChange(Number(e.target.value))}
             style={{ flex: 1, cursor: 'pointer' }}
           />
-          <div style={{
-            minWidth: 58, height: 36, borderRadius: 10, flexShrink: 0,
+          <div className="z-mono" style={{
+            minWidth: 64, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0, padding: '0 12px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'var(--bg-2)', border: '0.5px solid var(--line)',
-            fontSize: 13, fontWeight: 500, color: 'var(--ink)',
-            fontVariantNumeric: 'tabular-nums', }}>
+            background: 'var(--surface-2)', border: '0.5px solid var(--line)',
+            fontSize: 17, fontWeight: 500, color: 'var(--ink)',
+          }}>
             {numVal}{unit || ''}
           </div>
         </div>
-        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>
+        <p className="z-mono" style={{ fontSize: 13, lineHeight: '18px', color: 'var(--ink-mute)', marginTop: 4 }}>
           {min}{unit} – {max}{unit}
         </p>
       </div>
@@ -259,7 +265,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder || ''}
           className="z-input"
-          style={{ height: 40, padding: '0 12px', width: '100%', boxSizing: 'border-box' }}
+          style={{ height: 44, padding: '0 16px', width: '100%', boxSizing: 'border-box' }}
         />
       </div>
     )
@@ -308,7 +314,7 @@ export function IntentParamForm({ intent, value = {}, onChange, onError }) {
 
   if (params.length === 0) {
     return (
-      <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '4px 0' }}>
+      <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)', padding: '4px 0' }}>
         {t('intentForm.noParams')}
       </p>
     )

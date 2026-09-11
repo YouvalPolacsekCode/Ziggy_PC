@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
-import { Search, ChevronDown } from 'lucide-react'
+import { Search, ChevronDown, Check } from 'lucide-react'
 import { getEntities, getRooms } from '../../lib/api'
-import { domainIcon, slugToTitle, entityDisplayName } from '../../lib/utils'
+import { entityDisplayName } from '../../lib/utils'
 import { cn } from '../../lib/utils'
 import { useT, t as _t } from '../../lib/i18n'
 import { useDeviceStore } from '../../stores/deviceStore'
+import { getKind } from '../../lib/devices'
+import { DeviceIcon } from '../../lib/deviceIcons'
 
 // Resolve an action's display label. Prefers labelKey (i18n) and falls back to
 // the static English label so existing non-React consumers stay valid.
@@ -312,29 +314,32 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
       {label && (
         <label className="text-subhead font-medium text-ink-2">{label}</label>
       )}
+      {/* Trigger reads as an input: 44px min, 17px (no iOS zoom), r-ctl.
+          Line icon for the selected device — never an emoji glyph. */}
       <button
         type="button"
         ref={triggerRef}
         onClick={handleOpen}
+        aria-expanded={open}
         className={cn(
-          'h-10 rounded-[16px] px-3 text-subhead text-left flex items-center gap-2',
+          'min-h-[44px] rounded-[10px] px-3 text-body text-start flex items-center gap-2',
           'bg-surface-2',
           'border border-line',
           'text-ink',
-          'transition-colors focus:outline-none focus:ring-2 focus:ring-accent'
+          'transition-colors focus:outline-none focus:border-ink-mute'
         )}
       >
         {selectedEntity ? (
           <>
-            <span>{domainIcon(selectedEntity.domain)}</span>
-            <span className="flex-1 truncate text-subhead">{entityDisplayName(selectedEntity) || selectedEntity.friendly_name || t('entitySelect.unnamedDevice')}</span>
+            <span className="shrink-0 inline-flex text-ink-2"><DeviceIcon kind={getKind(selectedEntity)} customIcon={selectedEntity.icon} size={20} /></span>
+            <span className="flex-1 truncate">{entityDisplayName(selectedEntity) || selectedEntity.friendly_name || t('entitySelect.unnamedDevice')}</span>
           </>
         ) : value ? (
-          <span className="flex-1 truncate text-ink-mute text-subhead">{t('entitySelect.unknownDevice')}</span>
+          <span className="flex-1 truncate text-ink-mute">{t('entitySelect.unknownDevice')}</span>
         ) : (
-          <span className="text-ink-mute text-subhead">{resolvedPlaceholder}</span>
+          <span className="flex-1 truncate text-ink-mute">{resolvedPlaceholder}</span>
         )}
-        <ChevronDown size={14} className={cn('ml-auto text-ink-mute shrink-0 transition-transform', open && 'rotate-180')} />
+        <ChevronDown size={16} strokeWidth={1.75} className={cn('ms-auto text-ink-mute shrink-0', open && 'rotate-180')} style={{ transition: 'transform var(--dur-state) var(--ease-standard)' }} />
       </button>
 
       {open && (
@@ -349,19 +354,20 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
           }}
           className="bg-surface rounded-[16px] shadow-2xl border border-line overflow-hidden"
         >
-          <div className="p-2 border-b border-line flex gap-2">
+          <div className="p-2 border-b border-line flex gap-2 items-center">
             <div className="relative flex-1">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-mute" />
+              <Search size={16} strokeWidth={1.75} className="absolute start-3 top-1/2 -translate-y-1/2 text-ink-mute pointer-events-none" />
               <input
                 ref={searchInputRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('entitySelect.search')}
-                className="w-full h-8 pl-7 pr-3 text-footnote rounded-[10px] bg-surface-2 border-0 focus:outline-none text-ink placeholder:text-ink-mute"
+                className="w-full min-h-[44px] ps-10 pe-3 text-body rounded-[10px] bg-surface-2 border-0 focus:outline-none text-ink placeholder:text-ink-mute"
               />
             </div>
             <button
-              className="text-[11px] text-ink-mute hover:text-accent px-2 whitespace-nowrap transition-colors"
+              type="button"
+              className="min-h-[44px] px-3 text-footnote font-medium text-ink-mute hover:text-ink whitespace-nowrap transition-colors"
               onClick={() => {
                 const v = window.prompt(t('entitySelect.manualPrompt'), value || '')
                 if (v !== null) { onChange(v); setOpen(false) }
@@ -371,49 +377,54 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
             </button>
           </div>
 
-          <div className="max-h-56 overflow-y-auto scrollbar-thin">
+          <div className="max-h-72 overflow-y-auto scrollbar-thin">
             {loading && (
-              <div className="text-center py-4 text-footnote text-ink-mute">{t('entitySelect.loading')}</div>
+              <div className="text-center py-4 text-subhead text-ink-mute">{t('entitySelect.loading')}</div>
             )}
             {!loading && filteredEntities.length === 0 && (
-              <div className="text-center py-4 text-footnote text-ink-mute">{t('entitySelect.noEntities')}</div>
+              <div className="text-center py-4 text-subhead text-ink-mute">{t('entitySelect.noEntities')}</div>
             )}
 
             {roomOrder.map((room) => (
               <div key={room}>
-                <div className="px-3 pt-3 pb-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                <div className="px-4 pt-3 pb-1">
+                  <span className="z-eyebrow">
                     {room === OTHER ? t('entitySelect.other') : room}
                   </span>
                 </div>
-                {grouped[room].map((e) => (
-                  <button
-                    key={e.entity_id}
-                    onClick={() => { onChange(e.entity_id); setOpen(false); setSearch('') }}
-                    className={cn(
-                      'w-full flex items-center gap-3 px-3 py-2 text-left transition-colors',
-                      'hover:bg-surface-2',
-                      value === e.entity_id && 'bg-accent-soft'
-                    )}
-                  >
-                    <span className="text-body shrink-0">{domainIcon(e.domain)}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-footnote font-medium text-ink truncate">
-                        {e.friendly_name || t('entitySelect.unnamedDevice')}
-                      </p>
-                    </div>
-                    {e.state === 'on' && (
-                      <span className="text-[11px] px-2 py-0.5 rounded-full shrink-0 bg-ok-soft text-ok">
-                        {t('entitySelect.stateOn')}
-                      </span>
-                    )}
-                    {(e.state === 'unavailable' || e.state === 'unknown') && (
-                      <span className="text-[11px] px-2 py-0.5 rounded-full shrink-0 bg-surface-2 text-ink-mute">
-                        {t('entitySelect.stateOffline')}
-                      </span>
-                    )}
-                  </button>
-                ))}
+                {grouped[room].map((e) => {
+                  const selected = value === e.entity_id
+                  return (
+                    <button
+                      key={e.entity_id}
+                      type="button"
+                      onClick={() => { onChange(e.entity_id); setOpen(false); setSearch('') }}
+                      className={cn(
+                        'w-full flex items-center gap-3 px-4 min-h-[44px] text-start transition-colors',
+                        'hover:bg-surface-2',
+                        selected && 'bg-surface-2'
+                      )}
+                    >
+                      <span className="shrink-0 inline-flex text-ink-2"><DeviceIcon kind={getKind(e)} customIcon={e.icon} size={20} /></span>
+                      <div className="flex-1 min-w-0">
+                        <p className={cn('text-body truncate', selected ? 'font-semibold text-ink' : 'font-medium text-ink')}>
+                          {e.friendly_name || t('entitySelect.unnamedDevice')}
+                        </p>
+                      </div>
+                      {e.state === 'on' && (
+                        <span className="z-chip shrink-0" style={{ background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', borderColor: 'color-mix(in srgb, var(--ok) 30%, var(--line))', color: 'var(--ok-text)' }}>
+                          {t('entitySelect.stateOn')}
+                        </span>
+                      )}
+                      {(e.state === 'unavailable' || e.state === 'unknown') && (
+                        <span className="z-chip shrink-0" style={{ color: 'var(--ink-mute)' }}>
+                          {t('entitySelect.stateOffline')}
+                        </span>
+                      )}
+                      {selected && <Check size={16} strokeWidth={2} className="text-ink shrink-0" />}
+                    </button>
+                  )
+                })}
               </div>
             ))}
           </div>

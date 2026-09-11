@@ -5,6 +5,7 @@ import { useT } from '../../../lib/i18n'
 import { getEntities } from '../../../lib/api'
 import { entityDisplayName } from '../../../lib/utils'
 import { TRACKER_DOMAINS } from '../../../lib/automations/types'
+import { noteBox } from '../../../lib/automations/styles'
 
 // ── ZoneTriggerEditor ─────────────────────────────────────────────────────────
 function ZoneTriggerEditor({ trigger, onChange }) {
@@ -62,16 +63,12 @@ function ZoneTriggerEditor({ trigger, onChange }) {
         onChange={e => onChange({ ...trigger, event: e.target.value })}
       />
 
-      {/* Tip: approaching home */}
-      <div style={{
-        padding: '10px 12px', borderRadius: 10,
-        background: `color-mix(in srgb, var(--info) 6%, var(--surface))`,
-        border: `0.5px solid color-mix(in srgb, var(--info) 25%, var(--line))`,
-      }}>
-        <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--info)', marginBottom: 4 }}>
+      {/* Tip: approaching home — a quiet note, not a blue callout. */}
+      <div style={noteBox}>
+        <p className="z-subhead" style={{ fontWeight: 600, color: 'var(--ink)', margin: '0 0 4px' }}>
           {t('automations.editor.zoneBeforeTitle')}
         </p>
-        <p style={{ fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+        <p className="z-subhead" style={{ margin: 0 }}>
           {t('automations.editor.zoneBeforeBody')}
         </p>
       </div>

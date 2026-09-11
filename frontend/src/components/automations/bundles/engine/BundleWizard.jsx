@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useT } from '../../../../lib/i18n'
+import { T_ENTER } from '../../../../lib/motion'
 import { FieldList } from './fields'
 import { EditorBody } from './BundleEditor'
 import { StepFrame, ErrorBox } from './StepFrame'
@@ -38,9 +39,11 @@ export default function BundleWizard({ recipe, steps, values, setValue, ctx,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navBackSignal])
 
+  // Step titles are words only — the recipe's emoji `icon` is not drawn as a
+  // UI glyph (the eyebrow already names the step).
   const title = isReview
     ? t('automations.bundles.review')
-    : `${step?.icon ? `${step.icon} ` : ''}${step?.titleKey ? t(step.titleKey) : ''}`
+    : (step?.titleKey ? t(step.titleKey) : '')
 
   return (
     <StepFrame
@@ -55,14 +58,14 @@ export default function BundleWizard({ recipe, steps, values, setValue, ctx,
       hideFooter={navHidden}
     >
       {idx === 0 && recipe.subtitleKey && !isReview && (
-        <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5, margin: 0 }} dir="auto">
+        <p className="z-subhead" style={{ color: 'var(--ink-2)', margin: 0 }} dir="auto">
           {t(recipe.subtitleKey)}
         </p>
       )}
       <AnimatePresence mode="wait">
         <motion.div key={isReview ? '__review__' : step?.key}
           initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }}
-          transition={{ duration: 0.15 }}>
+          transition={T_ENTER}>
           {isReview
             ? <EditorBody steps={visibleSteps} values={values} setValue={setValue} ctx={ctx} />
             : <FieldList fields={step?.fields} values={values} setValue={setValue} ctx={ctx} />}

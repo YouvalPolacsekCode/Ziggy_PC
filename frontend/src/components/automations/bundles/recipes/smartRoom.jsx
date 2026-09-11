@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
+import { Check, Plus, Sun, Moon, DoorOpen, Settings } from 'lucide-react'
 import { designSmartRoom, applyAutomationBundle, deleteSmartRoom, toggleAutomation } from '../../../../lib/api'
 import { entityDisplayName } from '../../../../lib/utils'
 import { Toggle } from '../../../ui/Toggle'
 import { Eyebrow, WarnBox, RadioRow, listBox } from '../engine/fields'
+import { Spinner } from '../engine/StepFrame'
 import OccupancySensorForm from '../../OccupancySensorForm'
 
 // ── Smart Room recipe ─────────────────────────────────────────────────────────
@@ -122,30 +123,29 @@ function RoomPickField({ values, setValue, ctx, t }) {
   // unpickable here.
   const rooms = ctx.ziggyRooms || []
   if (rooms.length === 0) {
-    return <p style={{ fontSize: 12.5, color: 'var(--ink-faint)' }} dir="auto">{t('automations.smartRoom.noRooms')}</p>
+    return <p className="z-subhead" dir="auto">{t('automations.smartRoom.noRooms')}</p>
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: 0 }} dir="auto">{t('automations.smartRoom.pickPrompt')}</p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <p className="z-subhead" style={{ margin: 0 }} dir="auto">{t('automations.smartRoom.pickPrompt')}</p>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         {rooms.map((r) => {
           const sel = values.room && String(values.room.id) === String(r.id)
           return (
-            <button key={r.id || r.name} type="button" onClick={() => pick(r)}
+            <button key={r.id || r.name} type="button" onClick={() => pick(r)} aria-pressed={!!sel}
               className="z-btn-secondary"
-              style={{ padding: '12px 14px', borderRadius: 11, textAlign: 'start', fontSize: 13.5, fontWeight: 600,
+              style={{ justifyContent: 'flex-start', textAlign: 'start',
                 border: sel ? '1px solid var(--ok)' : undefined,
-                background: sel ? 'color-mix(in srgb, var(--ok) 9%, transparent)' : undefined }} dir="auto">
+                background: sel ? 'color-mix(in srgb, var(--ok) 9%, var(--surface))' : undefined }} dir="auto">
               {r.name || r.id}
             </button>
           )
         })}
       </div>
       {resolving && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <motion.span style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent' }}
-            animate={{ rotate: 360 }} transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }} />
-          <span style={{ fontSize: 12, color: 'var(--ink-mute)' }} dir="auto">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44 }}>
+          <Spinner size={18} />
+          <span className="z-subhead" dir="auto">
             {t('automations.smartRoom.designing', { room: values.room?.name || '' })}
           </span>
         </div>
@@ -181,7 +181,7 @@ function PresenceField({ values, setValue, ctx, t }) {
     const forced = !values._needsSensor && !values._creatingSensor && candidates.length === 0
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <p style={{ fontSize: 13, color: 'var(--ink)', margin: 0, lineHeight: 1.5 }} dir="auto">
+        <p className="z-subhead" style={{ color: 'var(--ink)', margin: 0 }} dir="auto">
           {t('automations.smartRoom.needPresence', { room: room?.name || '' })}
         </p>
         <OccupancySensorForm initialRoom={room?.name || ''}
@@ -204,11 +204,11 @@ function PresenceField({ values, setValue, ctx, t }) {
   const chosenInList = candidates.some((c) => c.id === values.occEntity)
   if (values._justCreated && values.occEntity && !chosenInList) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 13px', borderRadius: 11,
-          background: 'color-mix(in srgb, var(--ok) 9%, transparent)', border: '0.5px solid color-mix(in srgb, var(--ok) 30%, var(--line))' }}>
-          <span style={{ color: 'var(--ok)', fontSize: 15 }}>✓</span>
-          <span style={{ fontSize: 13, color: 'var(--ink)' }} dir="auto">{t('automations.smartRoom.wiz.sensorReady')}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '12px 16px', borderRadius: 'var(--r-ctl)',
+          background: 'color-mix(in srgb, var(--ok) 9%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--ok) 30%, var(--line))' }}>
+          <Check size={20} strokeWidth={2} aria-hidden="true" style={{ color: 'var(--ok)', flexShrink: 0 }} />
+          <span className="z-subhead" style={{ color: 'var(--ink)' }} dir="auto">{t('automations.smartRoom.wiz.sensorReady')}</span>
         </div>
       </div>
     )
@@ -217,10 +217,10 @@ function PresenceField({ values, setValue, ctx, t }) {
   const hasMerged = candidates.some((c) => c.kind === 'merged')
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: 0, lineHeight: 1.5 }} dir="auto">{t('automations.smartRoom.wiz.pickSensor')}</p>
+      <p className="z-subhead" style={{ margin: 0 }} dir="auto">{t('automations.smartRoom.wiz.pickSensor')}</p>
       {doorsUnfused.length > 0 && !hasMerged && (
-        <p style={{ fontSize: 12.5, color: 'var(--ink)', margin: 0, lineHeight: 1.55, padding: '9px 11px',
-          borderRadius: 10, background: 'color-mix(in srgb, var(--ok) 8%, transparent)' }} dir="auto">
+        <p className="z-subhead" style={{ color: 'var(--ink)', margin: 0, padding: '12px 16px',
+          borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }} dir="auto">
           {t('automations.smartRoom.wiz.doorNudge')}
         </p>
       )}
@@ -233,9 +233,10 @@ function PresenceField({ values, setValue, ctx, t }) {
         ))}
       </div>
       <button type="button" onClick={() => setValue('_creatingSensor', true)}
-        style={{ alignSelf: 'flex-start', background: 'none', border: '1px dashed var(--line)', borderRadius: 10,
-          padding: '9px 14px', fontSize: 12.5, color: 'var(--ink-mute)', cursor: 'pointer', fontFamily: 'inherit' }} dir="auto">
-        + {t('automations.smartRoom.wiz.createMerged')}
+        className="z-btn-secondary"
+        style={{ alignSelf: 'flex-start', fontSize: 15, fontWeight: 500, color: 'var(--ink-2)', border: '0.5px dashed var(--line-2)' }} dir="auto">
+        <Plus size={18} strokeWidth={1.75} aria-hidden="true" />
+        {t('automations.smartRoom.wiz.createMerged')}
       </button>
     </div>
   )
@@ -253,11 +254,11 @@ function LightsField({ values, setValue, ctx, t }) {
     setValue('lights', Array.from(n))
   }
   if (all.length === 0) {
-    return <p style={{ fontSize: 12.5, color: 'var(--ink-faint)' }} dir="auto">{t('automations.smartRoom.wiz.noLights')}</p>
+    return <p className="z-subhead" dir="auto">{t('automations.smartRoom.wiz.noLights')}</p>
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: 0, lineHeight: 1.5 }} dir="auto">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <p className="z-subhead" style={{ margin: 0 }} dir="auto">
         {t('automations.smartRoom.wiz.pickLights')}
       </p>
       <div style={listBox}>
@@ -271,12 +272,11 @@ function LightsField({ values, setValue, ctx, t }) {
 }
 
 // ── Installed helpers: read + round-trip the room's live rules ───────────────
-function partIcon(m) {
-  const id = (m.id || '').toLowerCase()
-  if (id.endsWith('_day')) return '☀️'
-  if (id.endsWith('_night')) return '🌙'
-  if (id.endsWith('_off')) return '🚪'
-  return '⚙️'
+// Line glyph per rule stage (day / night / off / other) — replaces the emoji.
+function PartIcon({ member }) {
+  const id = (member.id || '').toLowerCase()
+  const Icon = id.endsWith('_day') ? Sun : id.endsWith('_night') ? Moon : id.endsWith('_off') ? DoorOpen : Settings
+  return <Icon size={20} strokeWidth={1.75} aria-hidden="true" style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
 }
 
 const membersOf = (ctx, roomSlug) => (ctx.automations || []).filter((a) => {
@@ -329,19 +329,19 @@ function MembersField({ values, ctx, t }) {
   const members = membersOf(ctx, zoneSlugOf(ctx, values))
   const { onToggleMember } = ctx.hostActions || {}
   if (members.length === 0) {
-    return <p style={{ fontSize: 12.5, color: 'var(--ink-faint)' }} dir="auto">{t('automations.smartRoom.noSteps')}</p>
+    return <p className="z-subhead" dir="auto">{t('automations.smartRoom.noSteps')}</p>
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <p style={{ fontSize: 12.5, color: 'var(--ink-mute)', margin: 0, lineHeight: 1.45 }} dir="auto">
+      <p className="z-subhead" style={{ margin: 0 }} dir="auto">
         {t('automations.smartRoom.stepsIntro')}
       </p>
       {members.map((m) => (
-        <div key={m.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px',
-          borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
-          <span style={{ fontSize: 16, lineHeight: 1.2, flexShrink: 0 }}>{partIcon(m)}</span>
-          <span style={{ fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.4, flex: 1, minWidth: 0 }} dir="auto">{m.name}</span>
-          {onToggleMember && <Toggle checked={!!m.enabled} onCheckedChange={(v) => onToggleMember(m, v)} />}
+        <div key={m.id} style={{ display: 'flex', gap: 12, alignItems: 'center', minHeight: 56, padding: '8px 16px',
+          borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
+          <PartIcon member={m} />
+          <span className="z-body" style={{ flex: 1, minWidth: 0 }} dir="auto">{m.name}</span>
+          {onToggleMember && <Toggle checked={!!m.enabled} onCheckedChange={(v) => onToggleMember(m, v)} aria-label={m.name} />}
         </div>
       ))}
     </div>

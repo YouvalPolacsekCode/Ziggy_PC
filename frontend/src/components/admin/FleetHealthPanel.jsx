@@ -19,11 +19,12 @@ import {
  * act on is how alerts get ignored.
  */
 
+// `fill` drives the icon and the 12% tint; `text` is the AA-safe word colour.
 const LEVEL_UI = {
-  down:     { color: '#ef4444', Icon: XCircle,      label: 'Down' },
-  degraded: { color: 'var(--warn)', Icon: AlertTriangle, label: 'Degraded' },
-  unknown:  { color: '#6b7280', Icon: HelpCircle,   label: 'Unknown' },
-  ok:       { color: 'var(--ok)', Icon: CheckCircle2, label: 'Healthy' },
+  down:     { fill: 'var(--err)',       text: 'var(--err-text)',  Icon: XCircle,       label: 'Down' },
+  degraded: { fill: 'var(--warn)',      text: 'var(--warn-text)', Icon: AlertTriangle, label: 'Degraded' },
+  unknown:  { fill: 'var(--ink-faint)', text: 'var(--ink-mute)',  Icon: HelpCircle,    label: 'Unknown' },
+  ok:       { fill: 'var(--ok)',        text: 'var(--ok-text)',   Icon: CheckCircle2,  label: 'Healthy' },
 }
 
 const VERB_UI = {
@@ -37,15 +38,13 @@ function Pill({ level }) {
   const ui = LEVEL_UI[level] || LEVEL_UI.unknown
   const { Icon } = ui
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
-      color: ui.color,
-      background: `color-mix(in srgb, ${ui.color} 14%, var(--surface))`,
-      border: `0.5px solid color-mix(in srgb, ${ui.color} 30%, transparent)`,
+    <span className="z-chip" style={{
+      gap: 6, color: ui.text,
+      background: `color-mix(in srgb, ${ui.fill} 12%, var(--surface))`,
+      borderColor: `color-mix(in srgb, ${ui.fill} 30%, var(--line))`,
       whiteSpace: 'nowrap',
     }}>
-      <Icon size={12} /> {ui.label}
+      <Icon size={16} strokeWidth={1.75} style={{ color: ui.fill }} /> {ui.label}
     </span>
   )
 }
@@ -82,22 +81,22 @@ function HomeRow({ home, onRepaired }) {
 
   return (
     <div style={{
-      padding: '12px 14px', borderTop: '0.5px solid var(--border)',
-      display: 'flex', flexDirection: 'column', gap: 8,
+      padding: '12px 16px', borderTop: '0.5px solid var(--line)',
+      display: 'flex', flexDirection: 'column', gap: 8, minHeight: 56,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <Pill level={home.level} />
-        <strong style={{ fontSize: 13 }}>{home.name || home.home_id}</strong>
-        <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+        <strong className="z-headline">{home.name || home.home_id}</strong>
+        <span className="z-footnote z-mono">
           reported {humanAge(home.silent_for_s)}
         </span>
       </div>
 
       {!isFine && (
-        <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 15, color: 'var(--ink)', lineHeight: '20px' }}>
           {(home.issues || []).map((issue, i) => (
-            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-              <span style={{ color: (LEVEL_UI[issue.level] || LEVEL_UI.unknown).color }}>•</span>
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span className="z-dot" style={{ background: (LEVEL_UI[issue.level] || LEVEL_UI.unknown).fill }} />
               <span>{issue.message}</span>
             </div>
           ))}
@@ -115,20 +114,15 @@ function HomeRow({ home, onRepaired }) {
                 onClick={() => runVerb(verb)}
                 disabled={!!busy}
                 title={spec.hint}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  fontSize: 11, fontWeight: 600, padding: '5px 10px',
-                  borderRadius: 8, cursor: busy ? 'wait' : 'pointer',
-                  border: '0.5px solid var(--border)', background: 'var(--surface)',
-                  color: 'var(--text)',
-                }}
+                className="z-btn-secondary"
+                style={{ cursor: busy ? 'wait' : 'pointer' }}
               >
-                {busy === verb ? <Loader2Spin /> : <Wrench size={12} />} {spec.label}
+                {busy === verb ? <Loader2Spin /> : <Wrench size={18} strokeWidth={1.75} />} {spec.label}
               </button>
             )
           })}
           {result && (
-            <span style={{ fontSize: 11, color: result.ok ? 'var(--ok)' : '#ef4444' }}>
+            <span style={{ fontSize: 15, color: result.ok ? 'var(--ok-text)' : 'var(--err-text)' }}>
               {result.message}
             </span>
           )}
@@ -139,7 +133,7 @@ function HomeRow({ home, onRepaired }) {
 }
 
 function Loader2Spin() {
-  return <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />
+  return <RefreshCw size={18} strokeWidth={1.75} className="z-spin" />
 }
 
 /**
@@ -177,8 +171,8 @@ function RelaySignIn({ relayUrl, onSignedIn }) {
   }
 
   return (
-    <form onSubmit={submit} style={{ padding: '4px 14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <p style={{ fontSize: 11, color: 'var(--ink-faint)', lineHeight: 1.5, margin: 0 }}>
+    <form onSubmit={submit} style={{ padding: '4px 16px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <p className="z-subhead" style={{ margin: 0 }}>
         Sign in to {relayUrl || 'the relay'} to see every home. This browser will
         remember you.
       </p>
@@ -186,22 +180,18 @@ function RelaySignIn({ relayUrl, onSignedIn }) {
         <input
           value={email} onChange={e => setEmail(e.target.value)}
           placeholder="Founder email" type="email" autoComplete="username" dir="auto"
-          className="z-input" style={{ flex: '1 1 180px', height: 32, padding: '0 10px', fontSize: 12 }}
+          className="z-input" style={{ flex: '1 1 200px', width: 'auto' }}
         />
         <input
           value={password} onChange={e => setPassword(e.target.value)}
           placeholder="Password" type="password" autoComplete="current-password" dir="auto"
-          className="z-input" style={{ flex: '1 1 140px', height: 32, padding: '0 10px', fontSize: 12 }}
+          className="z-input" style={{ flex: '1 1 160px', width: 'auto' }}
         />
-        <button
-          type="submit" disabled={busy || !email || !password} className="z-btn-primary"
-          style={{ height: 32, padding: '0 14px', borderRadius: 8, fontSize: 12,
-                   display: 'flex', alignItems: 'center', gap: 6 }}
-        >
-          {busy ? <Loader2Spin /> : <LogIn size={12} />} Sign in
+        <button type="submit" disabled={busy || !email || !password} className="z-btn-primary">
+          {busy ? <Loader2Spin /> : <LogIn size={18} strokeWidth={1.75} />} Sign in
         </button>
       </div>
-      {error && <span style={{ fontSize: 11, color: '#ef4444' }}>{error}</span>}
+      {error && <span style={{ fontSize: 15, color: 'var(--err-text)' }}>{error}</span>}
     </form>
   )
 }
@@ -262,45 +252,38 @@ export default function FleetHealthPanel() {
   return (
     <Card>
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '14px 14px 12px', flexWrap: 'wrap',
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '16px 16px 12px', flexWrap: 'wrap',
       }}>
-        <Stethoscope size={16} style={{ color: ui.color }} />
-        <strong style={{ fontSize: 14 }}>Fleet health</strong>
+        <Stethoscope size={20} strokeWidth={1.75} style={{ color: ui.fill }} />
+        <strong className="z-headline">Fleet health</strong>
         {summary && (
-          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+          <span className="z-subhead z-mono">
             {summary.counts.ok} healthy · {summary.counts.degraded} degraded ·{' '}
             {summary.counts.down} down · {summary.counts.unknown} unknown
           </span>
         )}
-        <button
-          onClick={load}
-          style={{
-            marginInlineStart: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
-            fontSize: 11, padding: '5px 10px', borderRadius: 8, cursor: 'pointer',
-            border: '0.5px solid var(--border)', background: 'var(--surface)', color: 'var(--text)',
-          }}
-        >
-          <RefreshCw size={12} /> Refresh
+        <button onClick={load} className="z-btn-secondary" style={{ marginInlineStart: 'auto' }}>
+          <RefreshCw size={18} strokeWidth={1.75} className={loading ? 'z-spin' : undefined} /> Refresh
         </button>
       </div>
 
       {loading && !data && !needsAuth && (
-        <div style={{ padding: '0 14px 14px', fontSize: 12, color: 'var(--text-dim)' }}>
+        <p className="z-subhead" style={{ padding: '0 16px 16px' }}>
           Checking every home…
-        </div>
+        </p>
       )}
       {needsAuth && <RelaySignIn relayUrl={relayUrl} onSignedIn={load} />}
       {error && !needsAuth && (
-        <div style={{ padding: '0 14px 14px', fontSize: 12, color: '#ef4444' }}>{error}</div>
+        <div style={{ padding: '0 16px 16px', fontSize: 15, color: 'var(--err-text)' }}>{error}</div>
       )}
       {data?.homes?.map(h => (
         <HomeRow key={h.home_id} home={h} onRepaired={load} />
       ))}
       {data && data.homes?.length === 0 && (
-        <div style={{ padding: '0 14px 14px', fontSize: 12, color: 'var(--text-dim)' }}>
+        <p className="z-subhead" style={{ padding: '0 16px 16px' }}>
           No homes registered.
-        </div>
+        </p>
       )}
     </Card>
   )

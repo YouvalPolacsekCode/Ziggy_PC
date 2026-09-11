@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { ChevronLeft } from 'lucide-react'
 import {
   isNative, platform, plugin,
   getDeviceInfo, getCurrentPosition,
@@ -15,19 +16,23 @@ import {
 import { createMobileWs } from '../lib/mobileWs'
 import { useT } from '../lib/i18n'
 
+// Status words at 13px use the AA-safe text tokens, never the raw fills.
+const STATUS_COLOR = {
+  good: 'var(--ok-text)',
+  warn: 'var(--warn-text)',
+  bad:  'var(--err-text)',
+}
+
 function Row({ label, value, status }) {
-  const color = status === 'good' ? '#1aa356'
-              : status === 'warn' ? '#d49b00'
-              : status === 'bad'  ? '#c0392b'
-              : 'var(--ink-faint)'
+  const color = STATUS_COLOR[status] || 'var(--ink-mute)'
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
-      padding: '12px 14px',
-      borderTop: '1px solid var(--line)',
+      padding: '12px 16px', minHeight: 44,
+      borderTop: '0.5px solid var(--line)',
     }}>
-      <div style={{ flex: 1, fontSize: 13, color: 'var(--ink)' }}>{label}</div>
-      <div style={{ fontSize: 12, color, fontFamily: 'ui-monospace, monospace', textAlign: 'right', overflowWrap: 'anywhere' }}>
+      <div style={{ flex: 1, fontSize: 15, color: 'var(--ink)' }}>{label}</div>
+      <div className="z-code" style={{ fontSize: 13, color, textAlign: 'end', overflowWrap: 'anywhere' }}>
         {value}
       </div>
     </div>
@@ -115,18 +120,18 @@ export default function MobileDiagnostics() {
   const paired = !!diag.devTok
 
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 16px 48px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{t('mobileDiag.title')}</h1>
-        <Link to="/" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-faint)' }}>← {t('nav.home')}</Link>
+    <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
+      <div className="z-page-head" style={{ alignItems: 'center' }}>
+        <div>
+          <h1 className="z-display" style={{ margin: 0 }}>{t('mobileDiag.title')}</h1>
+        </div>
+        <Link to="/" className="z-btn-secondary" style={{ textDecoration: 'none' }}>
+          <ChevronLeft size={18} strokeWidth={1.75} className="icon-flip-rtl" />
+          {t('nav.home')}
+        </Link>
       </div>
 
-      <section style={{
-        borderRadius: 12,
-        background: 'var(--bg-2)',
-        border: '0.5px solid var(--line)',
-        overflow: 'hidden',
-      }}>
+      <section className="z-card" style={{ overflow: 'hidden' }}>
         <Row label={t('mobileDiag.runningNative')}
              value={diag.native ? t('common.yes').toLowerCase() : t('mobileDiag.noWeb')}
              status={diag.native ? 'good' : 'warn'} />
@@ -149,36 +154,25 @@ export default function MobileDiagnostics() {
                                      status={diag.pushPerm === 'granted' ? 'good' : diag.pushPerm === 'denied' ? 'bad' : 'warn'} />
       </section>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
         <button
           onClick={testPing}
           disabled={busy || !paired}
-          style={{
-            padding: '10px 14px', borderRadius: 8, border: 'none',
-            background: 'var(--accent)', color: 'white', fontWeight: 600,
-            cursor: busy ? 'wait' : 'pointer', fontSize: 13,
-          }}
+          className="z-btn-primary"
+          style={{ cursor: busy ? 'wait' : undefined }}
         >
           {busy ? t('mobileDiag.sendingPing') : t('mobileDiag.sendPing')}
         </button>
-        <button
-          onClick={load}
-          style={{
-            padding: '10px 14px', borderRadius: 8, border: '1px solid var(--line)',
-            background: 'transparent', color: 'var(--ink-faint)', fontSize: 13,
-            cursor: 'pointer',
-          }}
-        >
+        <button onClick={load} className="z-btn-secondary">
           {t('mobileDiag.reload')}
         </button>
       </div>
 
       {pingResult && (
-        <pre style={{
-          marginTop: 12, padding: 12, borderRadius: 8,
-          background: 'var(--bg-1)', border: '1px solid var(--line)',
-          fontSize: 11, color: 'var(--ink-faint)', whiteSpace: 'pre-wrap',
-          fontFamily: 'ui-monospace, monospace',
+        <pre className="z-code" style={{
+          marginTop: 12, padding: 12, borderRadius: 'var(--r-ctl)',
+          background: 'var(--surface-2)', border: '0.5px solid var(--line)',
+          fontSize: 13, lineHeight: '18px', color: 'var(--ink-mute)', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
         }}>{pingResult}</pre>
       )}
     </div>

@@ -32,13 +32,13 @@ import { motion, AnimatePresence, useDragControls, useReducedMotion } from 'fram
 import { X, Maximize2 } from 'lucide-react'
 import { useChatStore } from '../../stores/chatStore'
 import { useT } from '../../lib/i18n'
+import { SPRING_SHEET, T_STATE, T_ENTER } from '../../lib/motion'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import AIChat from '../../pages/AIChat'
 import { useChatSurfaceEligible } from './ChatBubble'
 
 const CLOSE_DISTANCE_PX = 120
 const CLOSE_VELOCITY = 600          // px/s — a flick closes regardless of distance
-const EASE_DRAWER = [0.32, 0.72, 0, 1]
 
 // Pre-JS height (CSS); the measure effect replaces it with pixels.
 const PANEL_H_CSS = 'min(calc(72 * var(--vh) / 100), calc(var(--vh) - var(--safe-top) - 48px))'
@@ -88,7 +88,7 @@ export function ChatSheet() {
   }, [location.pathname, setChatSheet])
 
   // Escape closes. Keyboard-initiated, so no animation would be ideal — but
-  // the exit is 200ms and the store flip is instant, which is close enough
+  // the exit is 240ms and the store flip is instant, which is close enough
   // without a second code path.
   useEffect(() => {
     if (!show) return
@@ -170,9 +170,12 @@ export function ChatSheet() {
     navigate('/chat')
   }
 
-  const panelTransition = reduce ? { duration: 0 } : { duration: 0.26, ease: EASE_DRAWER }
-  const exitTransition = reduce ? { duration: 0 } : { duration: 0.2, ease: EASE_DRAWER }
-  const scrimTransition = reduce ? { duration: 0 } : { duration: 0.2, ease: 'easeOut' }
+  // The one gesture-driven sheet in the app rides the shared sheet spring
+  // (tuned not to overshoot); leaving is a plain 240ms ease-out, the scrim
+  // a 200ms state change.
+  const panelTransition = reduce ? { duration: 0 } : SPRING_SHEET
+  const exitTransition = reduce ? { duration: 0 } : T_ENTER
+  const scrimTransition = reduce ? { duration: 0 } : T_STATE
 
   // Eligibility gate OUTSIDE AnimatePresence — see the header comment.
   if (!eligible) return null
@@ -226,9 +229,9 @@ export function ChatSheet() {
               height: PANEL_H_CSS,
               display: 'flex', flexDirection: 'column',
               background: 'var(--bg)',
-              borderStartStartRadius: 22, borderStartEndRadius: 22,
+              borderStartStartRadius: 'var(--r-sheet)', borderStartEndRadius: 'var(--r-sheet)',
               border: '0.5px solid var(--line)', borderBottom: 'none',
-              boxShadow: '0 -8px 40px -12px rgba(0,0,0,0.28), var(--shadow-lg)',
+              boxShadow: 'var(--shadow-lg)',
               paddingBottom: 'var(--safe-bottom)',
               pointerEvents: 'auto',
               overflow: 'hidden',
@@ -246,53 +249,43 @@ export function ChatSheet() {
               }}
             >
               <div aria-hidden="true" style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 4px' }}>
-                <span style={{ width: 36, height: 4, borderRadius: 999, background: 'var(--line)' }} />
+                <span style={{ width: 36, height: 5, borderRadius: 999, background: 'var(--line-2)' }} />
               </div>
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                padding: '2px 8px 8px 14px',
+                padding: '0 12px 8px 20px',
               }}>
                 <span
                   dir="auto"
-                  style={{
-                    fontSize: 14, fontWeight: 600, color: 'var(--ink)',
-                    minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}
+                  className="z-title3"
+                  style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 >
                   {title}
                 </span>
+                {/* Two 44px icon buttons: the way to the full page, and out. */}
                 <div
                   onPointerDown={(e) => e.stopPropagation()}
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}
                 >
                   <button
                     type="button"
+                    className="z-icon-btn"
                     onClick={openFull}
                     data-testid="chat-sheet-open-full"
                     title={t('chat.bubble.openFull')}
                     aria-label={t('chat.bubble.openFull')}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8,
-                      background: 'transparent', border: '0.5px solid var(--line)', color: 'var(--ink-mute)',
-                      fontSize: 11, fontFamily: 'inherit', cursor: 'pointer',
-                    }}
                   >
-                    <Maximize2 size={12} />
-                    <span>{t('chat.bubble.openFull')}</span>
+                    <Maximize2 size={20} strokeWidth={1.75} aria-hidden="true" />
                   </button>
                   <button
                     type="button"
+                    className="z-icon-btn"
                     onClick={close}
                     data-testid="chat-sheet-close"
                     title={t('chat.bubble.close')}
                     aria-label={t('chat.bubble.close')}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      width: 32, height: 32, borderRadius: 8, background: 'transparent', border: 'none',
-                      color: 'var(--ink-mute)', cursor: 'pointer',
-                    }}
                   >
-                    <X size={16} />
+                    <X size={20} strokeWidth={1.75} aria-hidden="true" />
                   </button>
                 </div>
               </div>

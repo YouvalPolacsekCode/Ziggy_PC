@@ -23,6 +23,7 @@ import {
 import { cn } from '../lib/utils'
 import { useT } from '../lib/i18n'
 import logger from '../lib/logger'
+import { T_ENTER } from '../lib/motion'
 
 // Device type ids — labels resolved via t() in the component.
 const DEVICE_TYPES = [
@@ -39,18 +40,30 @@ const LEARN_DURATION = 20  // seconds
 
 // ---------------------------------------------------------------------------
 
+// Numbered 24px dots (13px figures) joined by hairlines — the same step
+// indicator the other wizards use.
 function StepIndicator({ step, total }) {
   return (
-    <div className="flex items-center gap-2 mb-6">
-      {Array.from({ length: total }).map((_, i) => (
-        <div
-          key={i}
-          className={cn(
-            'h-1.5 flex-1 rounded-full transition-colors duration-300',
-            i < step ? 'bg-accent' : i === step - 1 ? 'bg-accent' : 'bg-surface/10',
-          )}
-        />
-      ))}
+    <div className="flex items-center justify-center gap-2 mb-6" aria-hidden>
+      {Array.from({ length: total }).map((_, i) => {
+        const done   = i + 1 < step
+        const active = i + 1 === step
+        return (
+          <div key={i} className="flex items-center gap-2">
+            <div className={cn(
+              'flex items-center justify-center w-6 h-6 rounded-full text-footnote font-semibold z-mono transition-colors duration-200',
+              done   ? 'bg-ink text-bg' :
+              active ? 'bg-surface-2 text-ink border border-ink' :
+                       'bg-surface text-ink-mute border border-line',
+            )}>
+              {done ? <Check size={14} strokeWidth={2.5} /> : i + 1}
+            </div>
+            {i < total - 1 && (
+              <div className={cn('w-6 h-px transition-colors duration-200', done ? 'bg-ink' : 'bg-line')} />
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -145,7 +158,7 @@ function StepSelectBlaster({ selected, onSelect, blasterName, onBlasterNameChang
       {/* Device (TV/AC) flow: pick an already-paired blaster — no re-scan/rename. */}
       {deviceMode && Array.isArray(registered) && registered.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-ink-mute mb-1">{t('wizard.ir.chooseBlaster') || 'Choose a blaster'}</p>
+          <p className="text-subhead text-ink-mute mb-1">{t('wizard.ir.chooseBlaster') || 'Choose a blaster'}</p>
           {registered.map((b) => {
             const host = b.ip || b.last_seen_ip || ''
             const isSel = (selected?.blaster_id && selected.blaster_id === b.id) || selected?.blaster_host === host
@@ -153,22 +166,23 @@ function StepSelectBlaster({ selected, onSelect, blasterName, onBlasterNameChang
               <button
                 key={b.id}
                 onClick={() => selectBlasterRecord(b)}
+                aria-pressed={isSel}
                 className={cn(
-                  'w-full text-left p-3 rounded-xl border transition-all',
-                  isSel ? 'border-accent bg-accent/10' : 'border-line bg-surface-2 hover:bg-line',
+                  'w-full text-start min-h-[56px] px-4 py-3 rounded-ctl border transition-colors duration-state ease-standard',
+                  isSel ? 'border-line-2 bg-surface-2' : 'border-line bg-surface hover:bg-surface-2',
                 )}
               >
                 <div className="flex items-center gap-2">
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                    background: b.status === 'online' ? 'var(--ok)' : b.status === 'stale' ? 'var(--warn, #d90)' : 'var(--err)' }} />
-                  <p className="text-sm font-medium text-ink flex-1">{b.name}</p>
+                  <span className="z-dot" style={{ flexShrink: 0,
+                    background: b.status === 'online' ? 'var(--ok)' : b.status === 'stale' ? 'var(--warn)' : 'var(--err)' }} />
+                  <p className="text-body font-semibold text-ink flex-1">{b.name}</p>
                 </div>
-                {host && <p className="text-xs text-ink-mute mt-0.5">{host}</p>}
+                {host && <p className="text-subhead text-ink-mute z-code mt-0.5">{host}</p>}
               </button>
             )
           })}
           {!showScan && (
-            <button onClick={() => { setShowScan(true); runDiscover() }} className="text-xs text-ink-mute hover:text-ink">
+            <button onClick={() => { setShowScan(true); runDiscover() }} className="min-h-[44px] px-2 text-subhead font-medium text-ink-mute hover:text-ink underline">
               {t('wizard.ir.scanForNew') || 'Pair a new blaster'}
             </button>
           )}
@@ -179,8 +193,8 @@ function StepSelectBlaster({ selected, onSelect, blasterName, onBlasterNameChang
 
       {/* Auto-discover results */}
       {discovering ? (
-        <div className="flex items-center gap-2 text-xs text-ink-mute py-2">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" /> {t('wizard.ir.scanning')}
+        <div className="flex items-center gap-2 text-subhead text-ink-mute py-2">
+          <Loader2 size={20} className="z-spin" aria-hidden /> {t('wizard.ir.scanning')}
         </div>
       ) : discovered.length > 0 ? (
         <div className="space-y-2">
@@ -190,31 +204,32 @@ function StepSelectBlaster({ selected, onSelect, blasterName, onBlasterNameChang
               <button
                 key={d.host}
                 onClick={() => selectDirect(d.host, d.name || d.type, d.mac, d.name || d.type)}
+                aria-pressed={isSelected}
                 className={cn(
-                  'w-full text-left p-3 rounded-xl border transition-all',
+                  'w-full text-start min-h-[56px] px-4 py-3 rounded-ctl border transition-colors duration-state ease-standard',
                   isSelected
-                    ? 'border-accent bg-accent/10'
-                    : 'border-line bg-surface-2 hover:bg-line',
+                    ? 'border-line-2 bg-surface-2'
+                    : 'border-line bg-surface hover:bg-surface-2',
                 )}
               >
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-ink">{d.name || d.type}</p>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-soft text-accent font-medium">{t('wizard.ir.irReceiveBadge')}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-body font-semibold text-ink">{d.name || d.type}</p>
+                  <span className="z-chip">{t('wizard.ir.irReceiveBadge')}</span>
                 </div>
-                <p className="text-xs text-ink-mute mt-0.5">{d.host}</p>
+                <p className="text-subhead text-ink-mute z-code mt-0.5">{d.host}</p>
               </button>
             )
           })}
-          <button onClick={runDiscover} className="text-xs text-ink-mute hover:text-ink-mute">{t('wizard.scanAgain')}</button>
+          <button onClick={runDiscover} className="min-h-[44px] px-2 text-subhead font-medium text-ink-mute hover:text-ink underline">{t('wizard.scanAgain')}</button>
         </div>
       ) : null}
 
       {/* Manual IP — always visible, primary path when discovery fails */}
       <div>
-        <p className="text-xs font-medium text-ink-mute mb-1.5">
+        <p className="text-subhead font-semibold text-ink mb-1">
           {discovered.length > 0 ? t('wizard.ir.enterIpManual') : t('wizard.ir.enterIpHint')}
         </p>
-        <p className="text-[11px] text-ink-mute mb-2">
+        <p className="text-footnote text-ink-mute mb-2">
           {t('wizard.ir.ipFindHint')}
         </p>
         <div className="flex gap-2">
@@ -225,27 +240,27 @@ function StepSelectBlaster({ selected, onSelect, blasterName, onBlasterNameChang
             placeholder={t('wizard.ir.ipPlaceholder')}
             dir="auto"
             className={cn(
-              'flex-1 h-9 px-3 rounded-xl text-sm border font-mono',
-              'bg-surface-2 text-ink',
+              'flex-1 min-w-0 h-11 px-4 rounded-ctl text-body border z-code',
+              'bg-surface text-ink',
               manualError
-                ? 'border-err-soft'
+                ? 'border-err'
                 : selected?.blaster_host === manualIp.trim() && manualIp.trim()
-                ? 'border-accent'
+                ? 'border-ink-mute'
                 : 'border-line',
-              'focus:outline-none focus:ring-2 focus:ring-accent',
+              'focus:outline-none focus:border-ink-mute',
             )}
           />
           <button
             onClick={handleManualIp}
             disabled={!manualIp.trim()}
-            className="px-3 h-9 rounded-xl text-xs font-medium bg-accent text-on-accent disabled:opacity-40 hover:bg-accent transition-colors"
+            className="z-btn-secondary z-button shrink-0"
           >
             {t('wizard.useThisIp')}
           </button>
         </div>
-        {manualError && <p className="text-xs text-err mt-1">{manualError}</p>}
+        {manualError && <p role="alert" className="text-subhead text-err-text mt-1">{manualError}</p>}
         {selected?.blaster_host && !selected?.entity_id && (
-          <p className="text-xs text-accent mt-1.5">
+          <p className="text-subhead text-ink-mute mt-2">
             {t('wizard.selected', { host: selected.blaster_host })}
           </p>
         )}
@@ -259,10 +274,10 @@ function StepSelectBlaster({ selected, onSelect, blasterName, onBlasterNameChang
           is idempotent, so re-selecting an existing blaster is a no-op). */}
       {!deviceMode && selected?.blaster_host && onBlasterNameChange && (
         <div className="border-t border-line pt-4">
-          <label className="block text-xs font-medium text-ink-2 mb-1.5">
+          <label className="block text-subhead font-semibold text-ink mb-1">
             {t('wizard.ir.nameBlasterLabel') || 'Name this blaster'}
           </label>
-          <p className="text-[11px] text-ink-mute mb-2">
+          <p className="text-footnote text-ink-mute mb-2">
             {t('wizard.ir.nameBlasterHint') || 'Used everywhere this blaster appears — Devices page, Rooms, automations.'}
           </p>
           <input
@@ -271,9 +286,9 @@ function StepSelectBlaster({ selected, onSelect, blasterName, onBlasterNameChang
             placeholder={selected.default_name || selected.label || 'Blaster name'}
             dir="auto"
             className={cn(
-              'w-full h-9 px-3 rounded-xl text-sm border',
-              'bg-surface-2 text-ink border-line',
-              'focus:outline-none focus:ring-2 focus:ring-accent',
+              'w-full h-11 px-4 rounded-ctl text-body border',
+              'bg-surface text-ink border-line',
+              'focus:outline-none focus:border-ink-mute',
             )}
           />
         </div>
@@ -311,7 +326,7 @@ function StepDeviceDetails({ details, onChange }) {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-xs text-ink-mute mb-1">{t('wizard.ir.deviceName')}</label>
+        <label className="block text-subhead font-semibold text-ink mb-1">{t('wizard.ir.deviceName')}</label>
         <Input
           value={details.name}
           onChange={(e) => onChange({ ...details, name: e.target.value })}
@@ -321,20 +336,21 @@ function StepDeviceDetails({ details, onChange }) {
       </div>
 
       <div>
-        <label className="block text-xs text-ink-mute mb-1.5">{t('wizard.ir.deviceTypeRequired')}</label>
+        <label className="block text-subhead font-semibold text-ink mb-2">{t('wizard.ir.deviceTypeRequired')}</label>
         <div className="grid grid-cols-3 gap-2">
           {DEVICE_TYPES.map(({ id, Icon }) => (
             <button
               key={id}
               onClick={() => onChange({ ...details, device_type: id })}
+              aria-pressed={details.device_type === id}
               className={cn(
-                'flex flex-col items-center gap-1 py-2 px-3 rounded-lg border text-xs transition-all',
+                'flex flex-col items-center justify-center gap-2 min-h-[64px] py-3 px-3 rounded-ctl border text-subhead transition-colors duration-state ease-standard',
                 details.device_type === id
-                  ? 'border-accent bg-accent/15 text-accent'
-                  : 'border-line bg-surface-2 text-ink-mute hover:bg-line',
+                  ? 'border-line-2 bg-surface-2 text-ink font-semibold'
+                  : 'border-line bg-surface text-ink-mute hover:bg-surface-2',
               )}
             >
-              <Icon className="w-4 h-4" />
+              <Icon size={24} strokeWidth={1.75} aria-hidden />
               {typeLabel(id)}
             </button>
           ))}
@@ -342,16 +358,16 @@ function StepDeviceDetails({ details, onChange }) {
       </div>
 
       <div>
-        <label className="block text-xs text-ink-mute mb-1">{t('wizard.ir.room')}</label>
+        <label className="block text-subhead font-semibold text-ink mb-1">{t('wizard.ir.room')}</label>
         <select
           value={details.room}
           onChange={(e) => onChange({ ...details, room: e.target.value })}
           className={cn(
-            'w-full h-10 px-3 rounded-xl text-sm border',
-            'bg-surface-2',
+            'w-full h-11 px-4 rounded-ctl text-body border',
+            'bg-surface',
             'text-ink',
             'border-line',
-            'focus:outline-none focus:ring-2 focus:ring-accent',
+            'focus:outline-none focus:border-ink-mute',
           )}
         >
           <option value="">{t('wizard.ir.selectRoom')}</option>
@@ -364,7 +380,7 @@ function StepDeviceDetails({ details, onChange }) {
       </div>
 
       <div>
-        <label className="block text-xs text-ink-mute mb-1">{t('wizard.ir.brandOptional')}</label>
+        <label className="block text-subhead font-semibold text-ink mb-1">{t('wizard.ir.brandOptional')}</label>
         <Input
           value={details.brand}
           onChange={(e) => onChange({ ...details, brand: e.target.value })}
@@ -432,50 +448,52 @@ function CatalogCommandRow({ cmd, deviceId, learnedNow, onLearned, recentSignal 
   useEffect(() => () => clearInterval(timerRef.current), [])
 
   return (
-    <div className="flex items-center gap-2 py-1.5">
+    <div className="flex items-center gap-2 min-h-[56px] py-2">
+      {/* The learning pulse is the one loop on this screen — it means "the
+          blaster is listening for your press". */}
       <div className={cn(
-        'w-2 h-2 rounded-full shrink-0',
+        'z-dot shrink-0',
         status === 'learned' ? 'bg-ok' :
         status === 'error'   ? 'bg-err' :
-        status === 'learning'? 'bg-warn animate-pulse' :
+        status === 'learning'? 'bg-warn z-pulse' :
                                'bg-line',
       )} />
 
-      <span className="flex-1 min-w-0 text-xs text-ink-2">
-        <span className="font-medium">{cmd.label}</span>
+      <span className="flex-1 min-w-0 text-body text-ink">
+        <span className="font-semibold">{cmd.label}</span>
         {cmd.id !== cmd.label && (
-          <span className="text-[10px] text-ink-mute ml-1 font-mono">· {cmd.id}</span>
+          <span className="text-footnote text-ink-mute ms-1 z-code">· {cmd.id}</span>
         )}
       </span>
 
       {recentSignal && status !== 'learned' && status !== 'learning' && (
         <button onClick={bindRecent}
-          className="text-[10px] text-accent hover:text-accent whitespace-nowrap"
+          className="min-h-[44px] px-2 text-subhead font-medium text-ink underline whitespace-nowrap"
           title={t('wizard.unassignedSignals.bindRecent')}>
           {t('wizard.ir.bind')}
         </button>
       )}
 
       {status === 'learning' ? (
-        <span className="text-xs text-warn w-14 text-center font-mono">{countdown}s…</span>
+        <span className="text-subhead text-warn-text w-16 text-center z-mono">{countdown}s…</span>
       ) : (
         <Button
-          size="xs"
+          size="sm"
           variant={status === 'learned' ? 'ghost' : 'secondary'}
           onClick={startLearning}
-          className="w-14 text-xs"
+          className="w-16"
           title={t('wizard.unassignedSignals.learnNew')}
         >
-          {status === 'learned' ? <Check className="w-3 h-3 text-ok" /> : t('wizard.ir.learn')}
+          {status === 'learned' ? <Check size={20} strokeWidth={2} className="text-ok" aria-hidden /> : t('wizard.ir.learn')}
         </Button>
       )}
 
       <Button
-        size="xs"
+        size="sm"
         variant="ghost"
         onClick={testCommand}
         disabled={!deviceId || status === 'learning' || status !== 'learned'}
-        className="text-xs w-10"
+        className="w-16"
         title={t('wizard.unassignedSignals.fireToVerify')}
       >
         {t('wizard.ir.test')}
@@ -518,14 +536,14 @@ function StepLearnCommands({ deviceType, deviceId, learnedSet, onLearnedChange }
   })
 
   if (!catalog) {
-    return <p className="text-xs text-ink-mute py-4">{t('wizard.ir.loadingCommands')}</p>
+    return <p className="text-subhead text-ink-mute py-4">{t('wizard.ir.loadingCommands')}</p>
   }
 
   const groups = catalog.groups || []
 
   return (
     <div>
-      <p className="text-xs text-ink-mute mb-3">
+      <p className="text-subhead text-ink-mute mb-3">
         {t('wizard.ir.coreHint')}
       </p>
 
@@ -538,10 +556,10 @@ function StepLearnCommands({ deviceType, deviceId, learnedSet, onLearnedChange }
           return (
             <div key={g.id} className="mb-3">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] uppercase tracking-wider text-ink-mute font-semibold">{g.label}</span>
+                <span className="z-eyebrow">{g.label}</span>
                 {extras.length > 0 && (
                   <button onClick={() => toggleGroup(g.id)}
-                    className="text-[10px] text-accent hover:text-accent">
+                    className="min-h-[44px] px-2 text-subhead font-medium text-ink-mute hover:text-ink underline text-end">
                     {isOpen
                       ? t('wizard.ir.hideOptional', { n: extras.length })
                       : `${t('wizard.ir.showOptional', { n: extras.length })}${learnedExtras.length ? t('wizard.ir.optionalLearned', { n: learnedExtras.length }) : ''}`}
@@ -569,7 +587,7 @@ function StepLearnCommands({ deviceType, deviceId, learnedSet, onLearnedChange }
           )
         })}
         {groups.length === 0 && (
-          <p className="text-xs text-ink-mute py-2">{t('wizard.ir.noCommandsForType')}</p>
+          <p className="text-subhead text-ink-mute py-2">{t('wizard.ir.noCommandsForType')}</p>
         )}
       </div>
     </div>
@@ -584,16 +602,16 @@ function StepDone({ deviceName }) {
   const t = useT()
   return (
     <div className="flex flex-col items-center py-8 gap-4">
-      <div className="w-14 h-14 rounded-full bg-ok-soft flex items-center justify-center">
-        <Check className="w-7 h-7 text-ok" />
+      <div className="w-16 h-16 rounded-full bg-ok-soft flex items-center justify-center text-ok" aria-hidden>
+        <Check size={32} strokeWidth={2} />
       </div>
-      <p className="text-ink font-medium">{t('wizard.ir.deviceReady', { name: deviceName })}</p>
-      <p className="text-sm text-ink-mute text-center">
+      <p className="z-title text-center">{t('wizard.ir.deviceReady', { name: deviceName })}</p>
+      <p className="text-body text-ink-mute text-center">
         {t('wizard.ir.doneBody')}
       </p>
-      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-accent/10 border border-accent-soft">
-        <Wifi className="w-4 h-4 text-accent shrink-0" />
-        <p className="text-xs text-accent">
+      <div className="flex items-center gap-3 px-4 py-3 rounded-ctl bg-surface-2 border border-line">
+        <Wifi size={20} strokeWidth={1.75} className="text-ink-mute shrink-0" aria-hidden />
+        <p className="text-subhead text-ink-mute">
           {t('wizard.ir.physicalDetect')}
         </p>
       </div>
@@ -614,11 +632,11 @@ function BlasterDone({ name }) {
   const t = useT()
   return (
     <div className="flex flex-col items-center py-8 gap-4">
-      <div className="w-14 h-14 rounded-full bg-ok-soft flex items-center justify-center">
-        <Check className="w-7 h-7 text-ok" />
+      <div className="w-16 h-16 rounded-full bg-ok-soft flex items-center justify-center text-ok" aria-hidden>
+        <Check size={32} strokeWidth={2} />
       </div>
-      <p className="text-ink font-medium">{t('wizard.ir.blasterReady', { name: name || '' })}</p>
-      <p className="text-sm text-ink-mute text-center">{t('wizard.ir.blasterPairedBody')}</p>
+      <p className="z-title text-center">{t('wizard.ir.blasterReady', { name: name || '' })}</p>
+      <p className="text-body text-ink-mute text-center">{t('wizard.ir.blasterPairedBody')}</p>
     </div>
   )
 }
@@ -769,10 +787,10 @@ export default function IRWizard({ onClose, onCreated, blasterOnly = false }) {
       <AnimatePresence mode="wait">
         <motion.div
           key={step}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-          transition={{ duration: 0.18 }}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={T_ENTER}
         >
           {step === 1 && (
             <StepSelectBlaster
@@ -807,31 +825,29 @@ export default function IRWizard({ onClose, onCreated, blasterOnly = false }) {
         </motion.div>
       </AnimatePresence>
 
-      {saveError && <p className="mt-3 text-xs text-err">{saveError}</p>}
+      {saveError && <p role="alert" className="mt-3 text-subhead text-err-text">{saveError}</p>}
 
-      <div className="flex items-center justify-between mt-6">
+      <div className="flex items-center justify-between gap-2 mt-6">
         {step > 1 && step < totalSteps ? (
-          <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1">
-            <ChevronLeft className="w-4 h-4 icon-flip-rtl" /> {t('wizard.back')}
+          <Button variant="secondary" onClick={handleBack}>
+            <ChevronLeft size={20} strokeWidth={1.75} className="icon-flip-rtl" aria-hidden /> {t('wizard.back')}
           </Button>
         ) : <div />}
 
         {step < totalSteps ? (
           <Button
-            size="sm"
             onClick={handleNext}
             disabled={!canNext() || saving}
-            className="gap-1"
           >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+            {saving ? <Loader2 size={20} className="z-spin" aria-hidden /> : (
               <>
                 {step === 2 ? t('wizard.saveContinue') : t('wizard.next')}
-                <ChevronRight className="w-4 h-4 icon-flip-rtl" />
+                <ChevronRight size={20} strokeWidth={1.75} className="icon-flip-rtl" aria-hidden />
               </>
             )}
           </Button>
         ) : (
-          <Button size="sm" onClick={onClose}>{t('wizard.close')}</Button>
+          <Button onClick={onClose}>{t('wizard.close')}</Button>
         )}
       </div>
     </Modal>

@@ -1,10 +1,12 @@
 import { useEffect, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Search, Plus, Pencil, X, RefreshCw, Brain } from 'lucide-react'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
 import { useUIStore } from '../stores/uiStore'
 import { getMemory, sendIntent } from '../lib/api'
 import { useT } from '../lib/i18n'
+import { T_ENTER } from '../lib/motion'
 
 // Derive a colour for any string via a simple hash
 const AVATAR_COLORS = [
@@ -28,24 +30,31 @@ function inferSource(key) {
   return 'told'
 }
 
+// Chip = neutral capsule; the source is carried by an 8px dot so no status
+// colour ever has to be read as 13px text.
 const SOURCE_META = {
-  learned: { label: 'learned', tint: 'var(--info)' },
-  told:    { label: 'told',    tint: 'var(--ok)' },
-  config:  { label: 'config',  tint: 'var(--ink-faint)' },
+  learned: { label: 'learned', dot: 'z-dot-info' },
+  told:    { label: 'told',    dot: 'z-dot-ok' },
+  config:  { label: 'config',  dot: null },
 }
 
 function SourcePill({ src }) {
   const m = SOURCE_META[src] || SOURCE_META.told
   return (
-    <span style={{
-      display: 'inline-block', padding: '1px 6px', borderRadius: 4, flexShrink: 0,
-      background: `color-mix(in srgb, ${m.tint} 14%, transparent)`,
-      color: m.tint, fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
-      textTransform: 'uppercase', fontFamily: '"IBM Plex Mono", monospace',
-    }}>
+    <span className="z-chip" style={{ flexShrink: 0 }}>
+      {m.dot
+        ? <span className={`z-dot ${m.dot}`} />
+        : <span className="z-dot" style={{ background: 'var(--ink-faint)' }} />}
       {m.label}
     </span>
   )
+}
+
+// Borderless 44×44 target for a card-level icon action.
+const ghostIcon = {
+  width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'transparent',
+  border: 'none', cursor: 'pointer', color: 'var(--ink-mute)', padding: 0,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
 }
 
 // ── Group memory entries by first segment of the key ─────────────────────────
@@ -78,25 +87,27 @@ function ProfileAvatar({ name, selected, count, onClick }) {
   return (
     <button
       onClick={onClick}
+      aria-pressed={selected}
       style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
         background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0,
-        opacity: selected ? 1 : 0.45, transition: 'opacity 0.15s',
+        padding: 0, fontFamily: 'inherit',
       }}
     >
       <span style={{
         width: 52, height: 52, borderRadius: '50%', background: color, color: '#fff',
         fontSize: 20, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        border: selected ? '2.5px solid var(--ink)' : 'none', boxSizing: 'border-box',
+        border: selected ? '2px solid var(--ink)' : '2px solid transparent', boxSizing: 'border-box',
         boxShadow: selected ? '0 0 0 3px color-mix(in srgb, var(--ink) 12%, transparent)' : 'none',
+        transition: 'box-shadow var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
       }}>
         {initial}
       </span>
-      <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--ink)', lineHeight: 1 }}>
+      <span style={{ fontSize: 15, fontWeight: selected ? 600 : 500, color: selected ? 'var(--ink)' : 'var(--ink-mute)', lineHeight: 1.2 }}>
         {name}
       </span>
       {count > 0 && (
-        <span style={{ fontSize: 9, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{count}</span>
+        <span style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{count}</span>
       )}
     </button>
   )
@@ -104,6 +115,7 @@ function ProfileAvatar({ name, selected, count, onClick }) {
 
 // ── Fact card ─────────────────────────────────────────────────────────────────
 function FactCard({ entry, onEdit, onDelete }) {
+  const t = useT()
   const key   = entry.key   || ''
   const sub   = entry.subkey || key
   const value = typeof entry.value === 'string' ? entry.value : JSON.stringify(entry.value)
@@ -113,22 +125,22 @@ function FactCard({ entry, onEdit, onDelete }) {
     <motion.div
       layout
       initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: 6 }}
-      transition={{ duration: 0.15 }}
-      style={{ padding: '14px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)' }}
+      transition={T_ENTER}
+      style={{ padding: 16, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)' }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <SourcePill src={src} />
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button onClick={() => onEdit(entry, value)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        <div style={{ display: 'flex', gap: 0 }}>
+          <button onClick={() => onEdit(entry, value)} style={ghostIcon} aria-label={t('common.edit')} title={t('common.edit')}>
+            <Pencil size={18} />
           </button>
-          <button onClick={() => onDelete(key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          <button onClick={() => onDelete(key)} style={ghostIcon} aria-label={t('common.remove')} title={t('common.remove')}>
+            <X size={18} />
           </button>
         </div>
       </div>
-      <p className="z-eyebrow" style={{ marginBottom: 5 }}>{sub.replace(/_/g, ' ')}</p>
-      <p style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.45, textWrap: 'pretty' }}>{value}</p>
+      <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 4, textTransform: 'capitalize' }}>{sub.replace(/_/g, ' ')}</p>
+      <p style={{ fontSize: 17, color: 'var(--ink)', lineHeight: 1.45, textWrap: 'pretty' }}>{value}</p>
     </motion.div>
   )
 }
@@ -199,6 +211,31 @@ function useMemoryLogic() {
   return { entries, loading, refreshing, search, setSearch, showAdd, setShowAdd, newKey, setNewKey, newValue, setNewValue, saving, editEntry, setEditEntry, editValue, setEditValue, editSaving, handleRefresh, handleDelete, handleEditSave, handleAdd, filtered, groups, profiles, activeProfile, setActiveProfile, activeFacts, addToast }
 }
 
+// Search field with a leading glyph, 44 tall / 17px like every other input.
+function SearchField({ value, onChange, placeholder }) {
+  return (
+    <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+      <Search size={18} style={{ position: 'absolute', insetInlineStart: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--ink-faint)', zIndex: 1 }} />
+      <Input value={value} onChange={onChange} placeholder={placeholder} style={{ paddingInlineStart: 44 }} />
+    </div>
+  )
+}
+
+// Filter chip for the profile row: an active chip is surface-2 + ink + a
+// hairline, never inverted.
+function ProfileChip({ label, active, onClick }) {
+  return (
+    <button onClick={onClick} aria-pressed={active} style={{
+      minHeight: 44, padding: '0 16px', borderRadius: 999, fontSize: 15, fontWeight: 500, cursor: 'pointer',
+      fontFamily: 'inherit', textTransform: 'capitalize',
+      background: active ? 'var(--surface-2)' : 'transparent',
+      color: active ? 'var(--ink)' : 'var(--ink-mute)',
+      border: '0.5px solid var(--line)',
+      transition: 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard)',
+    }}>{label}</button>
+  )
+}
+
 // ── Settings panel (embedded in Settings › General › Memory) ─────────────────
 export function MemoryPanel() {
   const t = useT()
@@ -206,35 +243,27 @@ export function MemoryPanel() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', gap: 8 }}>
-        <div style={{ position: 'relative', flex: 1 }}>
-          <svg style={{ position: 'absolute', insetInlineStart: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input value={s.search} onChange={e => s.setSearch(e.target.value)} placeholder={t('memory.search')} className="z-input" style={{ paddingInlineStart: 34, height: 36, fontSize: 12 }} />
-        </div>
-        <button onClick={() => s.setShowAdd(true)} className="z-btn-primary" style={{ padding: '0 14px', height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, flexShrink: 0 }}>
-          + {t('common.add')}
+        <SearchField value={s.search} onChange={e => s.setSearch(e.target.value)} placeholder={t('memory.search')} />
+        <button onClick={() => s.setShowAdd(true)} className="z-btn-primary" style={{ flexShrink: 0 }}>
+          <Plus size={18} /> {t('common.add')}
         </button>
       </div>
 
-      {s.loading && <div style={{ height: 60, borderRadius: 12, background: 'var(--surface-2)', opacity: 0.6 }} />}
+      {s.loading && <div style={{ height: 60, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)' }} />}
 
       {!s.loading && s.entries.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--ink-faint)', fontSize: 12 }}>{t('memory.empty')}</div>
+        <div style={{ textAlign: 'center', padding: 32, color: 'var(--ink-mute)', fontSize: 15 }}>{t('memory.empty')}</div>
       )}
 
       {s.profiles.length > 0 && (
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {s.profiles.map(p => (
-            <button key={p} onClick={() => s.setActiveProfile(p)} style={{
-              padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize',
-              background: s.activeProfile === p ? 'var(--ink)' : 'var(--surface-2)',
-              color: s.activeProfile === p ? 'var(--bg)' : 'var(--ink-mute)',
-              border: s.activeProfile === p ? 'none' : '0.5px solid var(--line)',
-            }}>{p}</button>
+            <ProfileChip key={p} label={p} active={s.activeProfile === p} onClick={() => s.setActiveProfile(p)} />
           ))}
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <AnimatePresence>
           {s.activeFacts.map(e => <FactCard key={e.key} entry={e} onEdit={(entry, val) => { s.setEditEntry(entry); s.setEditValue(val) }} onDelete={s.handleDelete} />)}
         </AnimatePresence>
@@ -265,59 +294,55 @@ export default function Memory() {
   const { entries, loading, refreshing, search, setSearch, showAdd, setShowAdd, newKey, setNewKey, newValue, setNewValue, saving, editEntry, setEditEntry, editValue, setEditValue, editSaving, handleRefresh, handleDelete, handleEditSave, handleAdd, filtered, groups, profiles, activeProfile, setActiveProfile, activeFacts } = useMemoryLogic()
 
   return (
-    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 24px' }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>
+      <div className="z-page-head">
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('memory.eyebrow')}</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>{t('memory.title')}</h1>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
+          <p className="z-eyebrow">{t('memory.eyebrow')}</p>
+          <h1 className="z-display" style={{ margin: 0 }}>{t('memory.title')}</h1>
+          <p className="z-footnote" style={{ fontVariantNumeric: 'tabular-nums' }}>
             {t(entries.length === 1 ? 'memory.entry' : 'memory.entries', { n: entries.length })} · {t(profiles.length === 1 ? 'memory.profile' : 'memory.profiles', { n: profiles.length })}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={handleRefresh} disabled={refreshing} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: '7px', cursor: 'pointer' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <button onClick={handleRefresh} disabled={refreshing} className="z-icon-btn" aria-label={t('common.refresh')} title={t('common.refresh')}>
+            <RefreshCw size={18} className={refreshing ? 'z-spin' : undefined} />
           </button>
-          <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '8px 14px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          <button onClick={() => setShowAdd(true)} className="z-btn-primary">
+            <Plus size={18} />
             {t('common.add')}
           </button>
         </div>
       </div>
 
       {/* Info banner */}
-      <div style={{ marginBottom: 18, padding: '10px 14px', borderRadius: 12, background: `color-mix(in srgb, var(--info) 8%, var(--surface))`, border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-        <span style={{ color: 'var(--info)', flexShrink: 0, marginTop: 1 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-1.07-4.58A3 3 0 0 1 4.5 9.5a2.5 2.5 0 0 1 3-3.45A2.5 2.5 0 0 1 9.5 2M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 1.07-4.58A3 3 0 0 0 19.5 9.5a2.5 2.5 0 0 0-3-3.45A2.5 2.5 0 0 0 14.5 2"/></svg>
-        </span>
-        <p style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-          {t('memory.infoBanner')} <span style={{ fontFamily: '"IBM Plex Mono", monospace' }}>youval_coffee</span>{t('memory.infoBannerAfter')}
+      <div style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <Brain size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0, marginTop: 1 }} />
+        <p style={{ fontSize: 15, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+          {t('memory.infoBanner')} <span className="z-code">youval_coffee</span>{t('memory.infoBannerAfter')}
         </p>
       </div>
 
       {/* Search */}
-      <div style={{ position: 'relative', marginBottom: 18 }}>
-        <span style={{ position: 'absolute', insetInlineStart: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-        </span>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('memory.search')} className="z-input" style={{ paddingInlineStart: 34 }} />
+      <div style={{ display: 'flex', marginBottom: 16 }}>
+        <SearchField value={search} onChange={e => setSearch(e.target.value)} placeholder={t('memory.search')} />
       </div>
 
       {/* Loading skeleton — only on cold start; cached entries stay visible
           during a background refresh. */}
       {loading && entries.length === 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {[1,2,3].map(i => <div key={i} style={{ height: 80, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
+          {[1,2,3].map(i => <div key={i} style={{ height: 80, borderRadius: 'var(--r-card)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }} />)}
         </div>
       )}
 
       {/* Empty */}
       {!loading && entries.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('memory.noMemoriesTitle')}</p>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{t('memory.noMemoriesHelp')}</p>
+        <div style={{ textAlign: 'center', padding: 32 }}>
+          <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('memory.noMemoriesTitle')}</p>
+          <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('memory.noMemoriesHelp')}</p>
+          <button onClick={() => setShowAdd(true)} className="z-btn-secondary">{t('common.add')}</button>
         </div>
       )}
 
@@ -325,7 +350,7 @@ export default function Memory() {
       {entries.length > 0 && (
         <>
           {/* Horizontal avatar picker */}
-          <div style={{ display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 16, marginBottom: 14, borderBottom: '0.5px solid var(--line)' }}>
+          <div style={{ display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 16, marginBottom: 16, borderBottom: '0.5px solid var(--line)' }}>
             {profiles.map(p => (
               <ProfileAvatar
                 key={p}
@@ -340,16 +365,16 @@ export default function Memory() {
           {/* Selected profile's facts */}
           <AnimatePresence mode="wait">
             {activeProfile && (
-              <motion.div key={activeProfile} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
+              <motion.div key={activeProfile} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={T_ENTER}>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--ink)', margin: 0, textTransform: 'capitalize' }}>
+                  <h2 className="z-title" style={{ margin: 0, textTransform: 'capitalize' }}>
                     {activeProfile}
                   </h2>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{t(activeFacts.length === 1 ? 'memory.fact' : 'memory.facts', { n: activeFacts.length })}</p>
+                  <p style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{t(activeFacts.length === 1 ? 'memory.fact' : 'memory.facts', { n: activeFacts.length })}</p>
                 </div>
 
                 {/* Facts grid: 2-col on wide, 1-col on narrow */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
                   <AnimatePresence mode="popLayout">
                     {activeFacts.map((entry, i) => (
                       <FactCard
@@ -364,13 +389,13 @@ export default function Memory() {
                   <button
                     onClick={() => { setNewKey(activeProfile === 'general' ? '' : `${activeProfile}_`); setNewValue(''); setShowAdd(true) }}
                     style={{
-                      padding: '14px', borderRadius: 12, minHeight: 84,
+                      padding: 16, borderRadius: 'var(--r-card)', minHeight: 84,
                       background: 'var(--bg-2)', border: '0.5px dashed var(--line-2)',
-                      color: 'var(--ink-mute)', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      color: 'var(--ink-mute)', fontSize: 15, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                     }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                    <Plus size={18} />
                     {t('memory.addFactFor', { profile: activeProfile })}
                   </button>
                 </div>
@@ -382,10 +407,10 @@ export default function Memory() {
 
       {/* Edit modal */}
       <Modal open={!!editEntry} onClose={() => setEditEntry(null)} title={t('memory.modalEditTitle')}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
-            <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('memory.labelKey')}</p>
-            <p style={{ fontSize: 13, color: 'var(--ink)', padding: '8px 12px', borderRadius: 9, background: 'var(--bg-2)', fontFamily: '"IBM Plex Mono", monospace' }}>{editEntry?.key}</p>
+            <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 4 }}>{t('memory.labelKey')}</p>
+            <p className="z-code" style={{ fontSize: 15, color: 'var(--ink)', padding: '12px 16px', borderRadius: 'var(--r-ctl)', background: 'var(--bg-2)' }}>{editEntry?.key}</p>
           </div>
           <Input label={t('memory.labelValue')} value={editValue} onChange={e => setEditValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleEditSave()} autoFocus />
           <button onClick={handleEditSave} disabled={!editValue.trim() || editSaving} className="z-btn-primary" style={{ width: '100%' }}>
@@ -396,11 +421,11 @@ export default function Memory() {
 
       {/* Add modal */}
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title={t('memory.modalAddTitle')}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Input label={t('memory.labelKey')} placeholder={t('memory.keyPlaceholder')} value={newKey} onChange={e => setNewKey(e.target.value)} autoFocus />
           <Input label={t('memory.labelValue')} placeholder={t('memory.valuePlaceholder')} value={newValue} onChange={e => setNewValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()} />
           {(newKey || newValue) && (
-            <p style={{ fontSize: 11, color: 'var(--ink-mute)', fontFamily: '"IBM Plex Mono", monospace' }}>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
               {t('memory.preview', { key: newKey || t('memory.previewKeyHolder'), value: newValue || t('memory.previewValueHolder') })}
             </p>
           )}

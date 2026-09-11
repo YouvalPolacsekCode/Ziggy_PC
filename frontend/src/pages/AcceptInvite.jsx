@@ -3,6 +3,26 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getInvite, acceptInvite } from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
 import { useT } from '../lib/i18n'
+import { Check, AlertTriangle, Home, Link2 } from 'lucide-react'
+import { Input } from '../components/ui/Input'
+
+// Result-screen glyph: a 64px tinted disc with a 32px line icon. Status
+// colour is allowed here because the icon is ≥ 20px.
+function ResultGlyph({ icon: Icon, tone = 'ok' }) {
+  const color = tone === 'ok' ? 'var(--ok)' : tone === 'warn' ? 'var(--warn)' : 'var(--ink-mute)'
+  return (
+    <div aria-hidden style={{
+      width: 64, height: 64, borderRadius: '50%', margin: '0 auto 16px',
+      background: `color-mix(in srgb, ${color} 12%, var(--surface))`, color,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <Icon size={32} strokeWidth={1.75} />
+    </div>
+  )
+}
+
+const resultTitle = { marginBottom: 8 }
+const resultBody  = { color: 'var(--ink-mute)', marginBottom: 16 }
 
 export default function AcceptInvite() {
   const { token } = useParams()
@@ -129,35 +149,36 @@ export default function AcceptInvite() {
       padding: 24,
     }}>
       <div style={{
-        width: '100%', maxWidth: 400,
+        width: '100%', maxWidth: 420,
         background: 'var(--surface)',
         border: '0.5px solid var(--line)',
-        borderRadius: 20,
+        borderRadius: 'var(--r-sheet)',
         overflow: 'hidden',
         boxShadow: 'var(--shadow-lg)',
       }}>
-        {/* Header */}
-        <div style={{ padding: '28px 28px 0', textAlign: 'center' }}>
-          <p style={{ fontWeight: 700, fontSize: 22, letterSpacing: '-0.025em', color: 'var(--ink)', marginBottom: 4 }}>
+        {/* Header — the accent period is the one accent on this screen */}
+        <div style={{ padding: '24px 24px 0', textAlign: 'center' }}>
+          <p className="z-display" style={{ marginBottom: 4 }}>
             ziggy<span style={{ color: 'var(--accent)' }}>.</span>
           </p>
           <p className="z-eyebrow" style={{ marginBottom: 24 }}>{t('invite.tagline')}</p>
         </div>
 
-        <div style={{ padding: '0 28px 28px' }}>
+        <div style={{ padding: '0 24px 24px' }}>
           {loading && (
-            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-faint)', fontSize: 13 }}>
+            <div className="z-subhead" style={{ textAlign: 'center', padding: '32px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+              <span className="z-spin" aria-hidden style={{ width: 16, height: 16, border: '2px solid var(--ink-mute)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} />
               {t('invite.validating')}
             </div>
           )}
 
           {!loading && error && !invite && (
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
-              <p style={{ fontSize: 28, marginBottom: 12 }}>🔗</p>
-              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+              <ResultGlyph icon={Link2} tone="mute" />
+              <p className="z-title" style={resultTitle}>
                 {t('invite.unavailable')}
               </p>
-              <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.5 }}>{error}</p>
+              <p className="z-subhead">{error}</p>
             </div>
           )}
 
@@ -165,42 +186,34 @@ export default function AcceptInvite() {
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
               {invite?.type === 'home' && homeUrl ? (
                 <>
-                  <p style={{ fontSize: 28, marginBottom: 12 }}>✅</p>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+                  <ResultGlyph icon={Check} tone="ok" />
+                  <p className="z-title" style={resultTitle}>
                     {t('invite.welcomeTo', { name: invite?.home_name || 'Ziggy' })}
                   </p>
-                  <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 16 }}>
+                  <p className="z-body" style={resultBody}>
                     {t('invite.homeReady')}
                   </p>
-                  <a
-                    href={homeUrl}
-                    style={{
-                      display: 'inline-block',
-                      background: 'var(--accent)', color: '#fff',
-                      padding: '10px 20px', borderRadius: 10,
-                      fontSize: 13, fontWeight: 600, textDecoration: 'none',
-                    }}
-                  >
+                  <a href={homeUrl} className="z-btn-primary" style={{ textDecoration: 'none' }}>
                     {t('invite.goToHome')}
                   </a>
                 </>
               ) : invite?.type === 'home' && String(provStatus?.status || '').startsWith('failed') ? (
                 <>
-                  <p style={{ fontSize: 28, marginBottom: 12 }}>⚠️</p>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+                  <ResultGlyph icon={AlertTriangle} tone="warn" />
+                  <p className="z-title" style={resultTitle}>
                     {t('invite.setupFailed')}
                   </p>
-                  <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.6 }}>
+                  <p className="z-body" style={{ color: 'var(--ink-mute)' }}>
                     {t('invite.setupFailedHelp')}
                   </p>
                 </>
               ) : invite?.type === 'home' ? (
                 <>
-                  <p style={{ fontSize: 28, marginBottom: 12 }}>🏠</p>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+                  <ResultGlyph icon={Home} tone="mute" />
+                  <p className="z-title" style={resultTitle}>
                     {t('invite.accountCreated')}
                   </p>
-                  <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.6 }}>
+                  <p className="z-body" style={{ color: 'var(--ink-mute)' }}>
                     {provStatus?.type === 'hub' ? (
                       <>
                         {t('invite.hubShipping1')}
@@ -216,32 +229,24 @@ export default function AcceptInvite() {
                 </>
               ) : homeUrl ? (
                 <>
-                  <p style={{ fontSize: 28, marginBottom: 12 }}>✅</p>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+                  <ResultGlyph icon={Check} tone="ok" />
+                  <p className="z-title" style={resultTitle}>
                     {t('invite.welcomeTo', { name: invite?.home_name || 'Ziggy' })}
                   </p>
-                  <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 16 }}>
+                  <p className="z-body" style={resultBody}>
                     {t('invite.accountReady')}
                   </p>
-                  <a
-                    href={homeUrl}
-                    style={{
-                      display: 'inline-block',
-                      background: 'var(--accent)', color: '#fff',
-                      padding: '10px 20px', borderRadius: 10,
-                      fontSize: 13, fontWeight: 600, textDecoration: 'none',
-                    }}
-                  >
+                  <a href={homeUrl} className="z-btn-primary" style={{ textDecoration: 'none' }}>
                     {t('invite.goToHome')}
                   </a>
                 </>
               ) : (
                 <>
-                  <p style={{ fontSize: 28, marginBottom: 12 }}>✅</p>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+                  <ResultGlyph icon={Check} tone="ok" />
+                  <p className="z-title" style={resultTitle}>
                     {relayBase ? t('invite.accountCreated') : t('invite.welcomeTo', { name: invite?.home_name || 'Ziggy' })}
                   </p>
-                  <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
+                  <p className="z-body" style={{ color: 'var(--ink-mute)' }}>
                     {relayBase
                       ? t('invite.adminWillShare')
                       : t('invite.takingToDashboard')}
@@ -254,70 +259,56 @@ export default function AcceptInvite() {
           {!loading && invite && !done && (
             <form onSubmit={handleSubmit}>
               {/* Invite context */}
-              <div style={{
-                background: 'var(--bg-2)', borderRadius: 12,
-                padding: '14px 16px', marginBottom: 20,
-              }}>
-                <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 4 }}>
-                  {t('invite.invitedByLabel')} <strong style={{ color: 'var(--ink)' }}>{invite.invited_by}</strong>
+              <div className="z-card-soft" style={{ padding: 16, marginBottom: 20 }}>
+                <p className="z-footnote" style={{ marginBottom: 4 }}>
+                  {t('invite.invitedByLabel')} <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{invite.invited_by}</strong>
                 </p>
-                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-                  {invite.type === 'home'
-                    ? t('invite.setUpHome', { name: invite.home_name || t('invite.yourNewHome') })
-                    : invite.home_name}
-                  <span style={{
-                    marginLeft: 8, fontSize: 10, fontWeight: 600,
-                    background: 'var(--accent)', color: '#fff',
-                    padding: '2px 8px', borderRadius: 999,
-                  }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span className="z-headline">
+                    {invite.type === 'home'
+                      ? t('invite.setUpHome', { name: invite.home_name || t('invite.yourNewHome') })
+                      : invite.home_name}
+                  </span>
+                  <span className="z-chip">
                     {invite.type === 'home' ? t('invite.newHomeBadge') : (ROLE_LABEL[invite.role] || invite.role)}
                   </span>
-                </p>
+                </div>
               </div>
 
               {/* Fields */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
-                <div>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('invite.email')}</p>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    required
-                    autoFocus={!invite.email}
-                    className="z-input"
-                    style={{ width: '100%', height: 40, padding: '0 12px', fontSize: 13, boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('common.password')}</p>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder={t('invite.passwordPlaceholder')}
-                    required
-                    className="z-input"
-                    style={{ width: '100%', height: 40, padding: '0 12px', fontSize: 13, boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('common.confirmPassword')}</p>
-                  <input
-                    type="password"
-                    value={confirm}
-                    onChange={e => setConfirm(e.target.value)}
-                    placeholder={t('invite.confirmPlaceholder')}
-                    required
-                    className="z-input"
-                    style={{ width: '100%', height: 40, padding: '0 12px', fontSize: 13, boxSizing: 'border-box' }}
-                  />
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 16 }}>
+                <Input
+                  label={t('invite.email')}
+                  type="email"
+                  dir="ltr"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  required
+                  autoFocus={!invite.email}
+                />
+                <Input
+                  label={t('common.password')}
+                  type="password"
+                  dir="ltr"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder={t('invite.passwordPlaceholder')}
+                  required
+                />
+                <Input
+                  label={t('common.confirmPassword')}
+                  type="password"
+                  dir="ltr"
+                  value={confirm}
+                  onChange={e => setConfirm(e.target.value)}
+                  placeholder={t('invite.confirmPlaceholder')}
+                  required
+                />
               </div>
 
               {error && (
-                <p style={{ fontSize: 12, color: 'var(--err)', marginBottom: 14, lineHeight: 1.4 }}>
+                <p role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)', marginBottom: 16 }}>
                   {error}
                 </p>
               )}
@@ -325,13 +316,8 @@ export default function AcceptInvite() {
               <button
                 type="submit"
                 disabled={saving}
-                style={{
-                  width: '100%', height: 42,
-                  background: 'var(--accent)', color: '#fff',
-                  border: 'none', borderRadius: 11,
-                  fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
-                  opacity: saving ? 0.7 : 1,
-                }}
+                className="z-btn-primary z-button"
+                style={{ width: '100%' }}
               >
                 {saving ? t('invite.creating') : (invite.type === 'home' ? t('invite.createMyAccount') : t('invite.createAndJoin'))}
               </button>

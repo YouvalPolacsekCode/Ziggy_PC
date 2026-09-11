@@ -30,7 +30,7 @@ import { useT } from '../../lib/i18n'
 
 function SectionTitle({ children, action }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: '4px 4px 10px' }}>
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: '4px 4px 12px' }}>
       <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, letterSpacing: 0.2, color: 'var(--ink)' }}>{children}</h3>
       {action}
     </div>
@@ -89,7 +89,7 @@ export function RoomsCarouselSection() {
              style={{
                flex: '0 0 180px', height: 110, scrollSnapAlign: 'start',
                background: 'var(--surface)', border: '0.5px solid var(--line)',
-               borderRadius: 14, padding: 14, color: 'var(--ink)', textDecoration: 'none',
+               borderRadius: 16, padding: 16, color: 'var(--ink)', textDecoration: 'none',
                display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
              }}>
             <span style={{ fontSize: 15, fontWeight: 600 }}>{r.display_name || r.name || r.id}</span>
@@ -133,15 +133,15 @@ export function SceneGridSection({ config = {} }) {
     <div>
       <SectionTitle>Scenes</SectionTitle>
       <div style={{
-        display: 'grid', gap: 10,
+        display: 'grid', gap: 12,
         gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
       }}>
         {shown.map(r => (
           <button key={r.id} onClick={() => onRun(r)}
             style={{
-              aspectRatio: '1.6 / 1', minHeight: 76, padding: 14,
+              aspectRatio: '1.6 / 1', minHeight: 76, padding: 16,
               background: 'var(--surface)', border: '0.5px solid var(--line)',
-              borderRadius: 14, cursor: 'pointer', textAlign: 'start',
+              borderRadius: 16, cursor: 'pointer', textAlign: 'start',
               display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
               color: 'var(--ink)',
             }}>
@@ -220,8 +220,8 @@ export function TasksListSection({ config = {} }) {
         <SectionTitle>Tasks</SectionTitle>
         <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {open.map(t => (
-            <li key={t.id} style={{ fontSize: 14, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 4, background: 'var(--accent)', flexShrink: 0 }} />
+            <li key={t.id} style={{ fontSize: 14, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 6, background: 'var(--accent)', flexShrink: 0 }} />
               <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.task || t.title || '(untitled)'}</span>
               {t.due && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t.due}</span>}
             </li>
@@ -263,7 +263,7 @@ export function AlertsInboxSection({ config = {} }) {
     )
   }
 
-  const sevColor = (s) => s === 'critical' ? 'var(--err)' : 'var(--warn, #d97706)'
+  const sevColor = (s) => s === 'critical' ? 'var(--err)' : 'var(--warn, var(--warn))'
   const fmtSince = (ts) => {
     if (!ts) return ''
     const age = Math.floor(Date.now() / 1000 - ts)
@@ -276,10 +276,10 @@ export function AlertsInboxSection({ config = {} }) {
   return (
     <Card><CardBody>
       <SectionTitle>Alerts</SectionTitle>
-      <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {alerts.map((a, i) => (
-          <li key={`${a.room_id}:${a.rule_id}:${i}`} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <span style={{ width: 8, height: 8, borderRadius: 4, background: sevColor(a.severity), marginTop: 6, flexShrink: 0 }} />
+          <li key={`${a.room_id}:${a.rule_id}:${i}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <span style={{ width: 8, height: 8, borderRadius: 6, background: sevColor(a.severity), marginTop: 8, flexShrink: 0 }} />
             <div style={{ minWidth: 0, flex: 1 }}>
               <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)' }}>{a.message || a.rule_id}</p>
               <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--ink-faint)' }}>
@@ -351,7 +351,7 @@ export function WeatherCardSection({ config = {} }) {
   return (
     <Card><CardBody>
       <SectionTitle>{data?.city || 'Weather'}</SectionTitle>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <span style={{ fontSize: 40, lineHeight: 1 }}>{glyph}</span>
         <div>
           <p style={{ margin: 0, fontSize: 30, fontWeight: 600, color: 'var(--ink)' }}>
@@ -408,8 +408,8 @@ export function ModeSwitcherSection() {
           return (
             <button key={k} onClick={() => onPick(k)} disabled={busy}
               style={{
-                padding: '12px 10px', borderRadius: 12, cursor: 'pointer', fontWeight: 600, fontSize: 13,
-                background: active ? 'var(--accent, #4f46e5)' : 'var(--bg)',
+                padding: '12px 12px', borderRadius: 10, cursor: 'pointer', fontWeight: 600, fontSize: 13,
+                background: active ? 'var(--accent, var(--info))' : 'var(--bg)',
                 color:      active ? 'white' : 'var(--ink)',
                 border:     `0.5px solid ${active ? 'transparent' : 'var(--line)'}`,
               }}>{label}</button>
@@ -504,7 +504,7 @@ export function CameraTileSection({ config = {} }) {
         tabIndex={editing ? -1 : 0}
         onKeyDown={editing ? undefined : (e) => { if (e.key === 'Enter') setLiveOpen(true) }}
         style={{
-          position: 'relative', borderRadius: 14, overflow: 'hidden',
+          position: 'relative', borderRadius: 16, overflow: 'hidden',
           background: '#000', border: '0.5px solid var(--line)',
           aspectRatio: '16 / 9',
           cursor: editing ? 'default' : 'pointer',
@@ -522,7 +522,7 @@ export function CameraTileSection({ config = {} }) {
           <div style={{
             position: 'absolute', right: 10, top: 8,
             background: 'rgba(0,0,0,0.55)', color: 'white',
-            fontSize: 10, padding: '3px 7px', borderRadius: 999,
+            fontSize: 11, padding: '4px 8px', borderRadius: 999,
             letterSpacing: 0.4, textTransform: 'uppercase',
           }}>Live ▸</div>
         )}
@@ -559,9 +559,9 @@ export function CommandButtonSection({ config = {} }) {
 
   return (
     <button onClick={onTap} style={{
-      width: '100%', minHeight: 76, padding: 14,
+      width: '100%', minHeight: 76, padding: 16,
       background: 'var(--surface)', border: '0.5px solid var(--line)',
-      borderRadius: 14, cursor: 'pointer', textAlign: 'start',
+      borderRadius: 16, cursor: 'pointer', textAlign: 'start',
       display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
       color: 'var(--ink)',
     }}>
@@ -648,9 +648,9 @@ function HubSpeakerRow({ item, t }) {
   const speakerName = item.display_name || t('media.unnamedSpeaker')
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 8px', borderRadius: 10, border: '0.5px solid var(--line)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 8px', borderRadius: 10, border: '0.5px solid var(--line)' }}>
       <div style={{
-        width: 44, height: 44, borderRadius: 8, flexShrink: 0,
+        width: 44, height: 44, borderRadius: 10, flexShrink: 0,
         background: item.art ? `center/cover no-repeat url('${item.art}')` : 'var(--line)',
       }} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -674,7 +674,7 @@ function HubSpeakerRow({ item, t }) {
 }
 
 const hubBtn = {
-  width: 40, height: 40, borderRadius: 20,
+  width: 40, height: 40, borderRadius: 24,
   background: 'var(--accent)', color: 'white',
   border: 'none', fontSize: 16, cursor: 'pointer',
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',

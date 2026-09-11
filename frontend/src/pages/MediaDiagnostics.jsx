@@ -23,16 +23,20 @@ export default function MediaDiagnostics() {
   if (role !== 'super_admin') return <Navigate to="/" replace />
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: '24px 16px 60px' }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>
-        {t('media.diagnosticsTitle')}
-      </h1>
-      <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 18 }}>
-        {t('media.diagnosticsSubtitle')}
-      </p>
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 24px' }}>
+      <div className="z-page-head">
+        <div>
+          <h1 className="z-display" style={{ margin: 0 }}>{t('media.diagnosticsTitle')}</h1>
+          <p className="z-footnote">{t('media.diagnosticsSubtitle')}</p>
+        </div>
+      </div>
 
-      {error && <div style={errBox}>{error}</div>}
-      {!data && !error && <div style={{ color: 'var(--ink-mute)', fontSize: 12 }}>{t('common.loading')}</div>}
+      {error && (
+        <div className="bg-err-soft" style={{ color: 'var(--err-text)', fontSize: 15, padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', marginBottom: 16 }}>
+          {error}
+        </div>
+      )}
+      {!data && !error && <p className="z-subhead">{t('common.loading')}</p>}
 
       {data && (
         <>
@@ -46,7 +50,7 @@ export default function MediaDiagnostics() {
 
           <Section title={t('media.diag.speakers')}>
             {(data.speakers || []).length === 0
-              ? <div style={emptyState}>{t('media.diag.empty')}</div>
+              ? <p className="z-body" style={{ color: 'var(--ink-mute)', textAlign: 'center', padding: 32 }}>{t('media.diag.empty')}</p>
               : <Pre>{JSON.stringify(data.speakers, null, 2)}</Pre>}
           </Section>
 
@@ -61,24 +65,21 @@ export default function MediaDiagnostics() {
 
 function Section({ title, children }) {
   return (
-    <section style={{ marginBottom: 18, background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 12, padding: 14 }}>
-      <h2 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 10 }}>{title}</h2>
+    <section className="z-card" style={{ marginBottom: 16, padding: 16 }}>
+      <h2 className="z-headline" style={{ marginBottom: 12 }}>{title}</h2>
       {children}
     </section>
   )
 }
 function Pre({ children }) {
   return (
-    <pre dir="ltr" style={{
-      fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
-      fontSize: 11, color: 'var(--ink)',
-      background: 'var(--surface-elev, var(--surface))',
-      border: '0.5px solid var(--line)', borderRadius: 8,
-      padding: 12, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+    <pre dir="ltr" className="z-code" style={{
+      fontSize: 13, lineHeight: '18px', color: 'var(--ink)',
+      background: 'var(--surface-2)',
+      border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)',
+      padding: 12, margin: 0, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
     }}>
       {children}
     </pre>
   )
 }
-const errBox = { color: '#c1452f', fontSize: 12, padding: '8px 12px', background: 'rgba(193,69,47,0.08)', borderRadius: 8, marginBottom: 12 }
-const emptyState = { fontSize: 12, color: 'var(--ink-faint)', textAlign: 'center', padding: 12 }

@@ -1,6 +1,6 @@
 // Per-section configuration sheet.
 //
-// Opens when the user taps the gear (⚙) on a section in edit mode. Each
+// Opens when the user taps the gear on a section in edit mode. Each
 // section type registers a tiny form here; types without configuration
 // surface a "Nothing to configure" message.
 //
@@ -8,6 +8,7 @@
 // hubStore.updateSectionConfig — replace semantics, not merge.
 
 import { useEffect, useState } from 'react'
+import { X } from 'lucide-react'
 import { useHubStore } from '../../stores/hubStore'
 import { useAutomationStore } from '../../stores/automationStore'
 import { getCameras } from '../../lib/api'
@@ -17,20 +18,11 @@ import { getCameras } from '../../lib/api'
 function Field({ label, hint, children }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{label}</span>
+      <span style={{ fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)' }}>{label}</span>
       {children}
-      {hint && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{hint}</span>}
+      {hint && <span className="z-footnote">{hint}</span>}
     </label>
   )
-}
-
-const inputStyle = {
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '0.5px solid var(--line)',
-  background: 'var(--bg)',
-  color: 'var(--ink)',
-  fontSize: 14,
 }
 
 // ─── Per-type forms ──────────────────────────────────────────────────────────
@@ -38,7 +30,7 @@ const inputStyle = {
 function WeatherForm({ config, onChange }) {
   return (
     <Field label="City" hint="Leave empty to use Settings → location.">
-      <input style={inputStyle} value={config.city || ''}
+      <input className="z-input" value={config.city || ''}
              placeholder="Tel Aviv"
              onChange={e => onChange({ ...config, city: e.target.value })} />
     </Field>
@@ -53,7 +45,7 @@ function CameraForm({ config, onChange }) {
   return (
     <>
       <Field label="Camera">
-        <select style={inputStyle} value={config.entity_id || ''}
+        <select className="z-input" value={config.entity_id || ''}
                 onChange={e => onChange({ ...config, entity_id: e.target.value })}>
           <option value="">— pick a camera —</option>
           {cameras.map(c => (
@@ -62,7 +54,7 @@ function CameraForm({ config, onChange }) {
         </select>
       </Field>
       <Field label="Refresh interval" hint="Snapshot poll rate. 4s is plenty for a hallway cam; 2s for an entry.">
-        <select style={inputStyle} value={String(config.refresh_ms || 4000)}
+        <select className="z-input" value={String(config.refresh_ms || 4000)}
                 onChange={e => onChange({ ...config, refresh_ms: Number(e.target.value) })}>
           <option value="2000">2 seconds</option>
           <option value="4000">4 seconds</option>
@@ -71,7 +63,7 @@ function CameraForm({ config, onChange }) {
         </select>
       </Field>
       <Field label="Label (optional)" hint="Defaults to the camera's name.">
-        <input style={inputStyle} value={config.label || ''}
+        <input className="z-input" value={config.label || ''}
                placeholder=""
                onChange={e => onChange({ ...config, label: e.target.value })} />
       </Field>
@@ -82,7 +74,7 @@ function CameraForm({ config, onChange }) {
 function LimitForm({ config, onChange, maxLimit = 20, label = 'Show items' }) {
   return (
     <Field label={label}>
-      <input style={inputStyle} type="number" min="1" max={maxLimit}
+      <input className="z-input" type="number" min="1" max={maxLimit}
              value={config.limit ?? ''}
              onChange={e => onChange({ ...config, limit: Number(e.target.value) || undefined })} />
     </Field>
@@ -115,23 +107,24 @@ function CommandButtonForm({ config, onChange }) {
   return (
     <>
       <Field label="Button label" hint="Shown on the tile.">
-        <input style={inputStyle} value={config.label || ''}
+        <input className="z-input" value={config.label || ''}
                placeholder="Turn off living room"
                onChange={e => onChange({ ...config, label: e.target.value })} />
       </Field>
       <Field label="Intent" hint="Ziggy intent name (e.g. turn_off_room, set_ac_temperature).">
-        <input style={inputStyle} value={action.intent || ''}
+        <input className="z-input z-code" value={action.intent || ''}
                placeholder="turn_off_room"
                onChange={e => onChange({ ...config, action: { ...action, kind: 'intent', intent: e.target.value } })} />
       </Field>
       <Field label="Params (JSON)" hint='e.g. {"room": "living_room"}'>
         <textarea
-          style={{ ...inputStyle, minHeight: 88, fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: 12 }}
+          className="z-input z-code"
+          style={{ minHeight: 88, fontSize: 13, lineHeight: '18px', resize: 'vertical' }}
           value={paramsText}
           onChange={e => setParamsText(e.target.value)}
           onBlur={onParamsBlur}
         />
-        {paramsErr && <span style={{ fontSize: 11, color: 'var(--err)' }}>{paramsErr}</span>}
+        {paramsErr && <span style={{ fontSize: 13, color: 'var(--err-text)' }}>{paramsErr}</span>}
       </Field>
     </>
   )
@@ -145,7 +138,7 @@ function SceneButtonForm({ config, onChange }) {
   return (
     <>
       <Field label="Routine">
-        <select style={inputStyle} value={action.id || ''}
+        <select className="z-input" value={action.id || ''}
                 onChange={e => onChange({ ...config, action: { kind: 'routine', id: e.target.value } })}>
           <option value="">— pick a routine —</option>
           {(routines || []).map(r => (
@@ -154,7 +147,7 @@ function SceneButtonForm({ config, onChange }) {
         </select>
       </Field>
       <Field label="Label override (optional)">
-        <input style={inputStyle} value={config.label || ''}
+        <input className="z-input" value={config.label || ''}
                onChange={e => onChange({ ...config, label: e.target.value })} />
       </Field>
     </>
@@ -194,28 +187,26 @@ export function SectionConfigSheet({ section, onClose }) {
     <div className="z-hub-picker-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="z-hub-picker" onClick={e => e.stopPropagation()}>
         <div className="z-hub-picker-head">
-          <div>
+          <div style={{ minWidth: 0 }}>
             <p className="z-eyebrow" style={{ margin: 0 }}>Configure</p>
-            <p style={{ margin: '2px 0 0', fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{section.type.replace(/_/g, ' ')}</p>
+            <p className="z-headline" style={{ margin: '2px 0 0' }}>{section.type.replace(/_/g, ' ')}</p>
           </div>
-          <button onClick={onClose} aria-label="Close" className="z-hub-picker-close">×</button>
+          <button onClick={onClose} aria-label="Close" className="z-hub-picker-close">
+            <X size={20} strokeWidth={1.75} />
+          </button>
         </div>
-        <div className="z-hub-picker-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="z-hub-picker-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {Form ? (
             <Form config={local} onChange={setLocal} />
           ) : (
-            <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-faint)' }}>
+            <p className="z-subhead" style={{ margin: 0 }}>
               This widget doesn't have any settings yet.
             </p>
           )}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: 16, borderTop: '0.5px solid var(--line)' }}>
-          <button onClick={onClose}
-            style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 999,
-                     padding: '10px 18px', cursor: 'pointer', color: 'var(--ink)' }}>Cancel</button>
-          <button onClick={save}
-            style={{ background: 'var(--accent, #4f46e5)', border: 'none', borderRadius: 999,
-                     padding: '10px 22px', cursor: 'pointer', color: 'white', fontWeight: 600 }}>Save</button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, padding: 16, borderTop: '0.5px solid var(--line)' }}>
+          <button onClick={onClose} className="z-btn-secondary">Cancel</button>
+          <button onClick={save} className="z-btn-primary">Save</button>
         </div>
       </div>
     </div>

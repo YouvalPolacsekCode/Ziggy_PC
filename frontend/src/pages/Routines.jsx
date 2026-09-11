@@ -59,9 +59,9 @@ const STEP_TYPES = [
 ]
 
 const selectStyle = {
-  width: '100%', height: 38, padding: '0 28px 0 10px',
+  width: '100%', height: 38, padding: '0 28px 0 12px',
   background: 'var(--surface)', border: '0.5px solid var(--line)',
-  borderRadius: 9, color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13,
+  borderRadius: 10, color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13,
   outline: 'none', appearance: 'none',
   backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.4)' d='M0 0h10L5 6z'/></svg>")`,
   backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
@@ -103,18 +103,18 @@ function SendIntentEditor({ value, onChange }) {
   const t = useT()
   const [showT, setShowT] = useState(false)
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'flex', gap: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
         <Input placeholder={t('automations.sendIntent.placeholder')} value={value} onChange={e => onChange(e.target.value)} style={{ flex: 1 }} dir="auto" />
-        <button onClick={() => setShowT(v => !v)} style={{ padding: '0 10px', borderRadius: 9, background: 'var(--bg-2)', border: '0.5px solid var(--line)', color: 'var(--ink-mute)', cursor: 'pointer', fontSize: 14, flexShrink: 0 }}>📝</button>
+        <button onClick={() => setShowT(v => !v)} style={{ padding: '0 12px', borderRadius: 10, background: 'var(--bg-2)', border: '0.5px solid var(--line)', color: 'var(--ink-mute)', cursor: 'pointer', fontSize: 14, flexShrink: 0 }}>📝</button>
       </div>
       {showT && (
-        <div style={{ borderRadius: 11, border: '0.5px solid var(--line)', overflow: 'hidden', background: 'var(--surface)' }}>
+        <div style={{ borderRadius: 10, border: '0.5px solid var(--line)', overflow: 'hidden', background: 'var(--surface)' }}>
           {SEND_TEMPLATES.map(({ groupKey, items }) => (
             <div key={groupKey}>
-              <p className="z-eyebrow" style={{ padding: '8px 10px 4px' }}>{t(groupKey)}</p>
+              <p className="z-eyebrow" style={{ padding: '8px 12px 4px' }}>{t(groupKey)}</p>
               {items.map(tpl => (
-                <button key={tpl} onClick={() => { onChange(tpl); setShowT(false) }} style={{ display: 'block', width: '100%', padding: '6px 10px', background: 'none', border: 'none', textAlign: 'left', fontSize: 12, color: 'var(--ink-2)', cursor: 'pointer', fontFamily: 'inherit' }}
+                <button key={tpl} onClick={() => { onChange(tpl); setShowT(false) }} style={{ display: 'block', width: '100%', padding: '8px 12px', background: 'none', border: 'none', textAlign: 'left', fontSize: 12, color: 'var(--ink-2)', cursor: 'pointer', fontFamily: 'inherit' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'none'}
                 >{tpl}</button>
@@ -123,7 +123,7 @@ function SendIntentEditor({ value, onChange }) {
           ))}
         </div>
       )}
-      <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{t('automations.sendIntent.replaceHint')}</p>
+      <p style={{ fontSize: 11, color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums', }}>{t('automations.sendIntent.replaceHint')}</p>
     </div>
   )
 }
@@ -196,8 +196,8 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse,
 
   if (collapsed) {
     return (
-      <div onClick={onToggleCollapse} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'var(--surface)', border: '0.5px solid var(--line)', cursor: 'pointer' }}>
-        <span style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, background: `color-mix(in srgb, var(--ok) 12%, transparent)`, color: 'var(--ok)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: '"IBM Plex Mono", monospace' }}>
+      <div onClick={onToggleCollapse} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 12px', borderRadius: 10, background: 'var(--surface)', border: '0.5px solid var(--line)', cursor: 'pointer' }}>
+        <span style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, background: `color-mix(in srgb, var(--ok) 12%, transparent)`, color: 'var(--ok)', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums', }}>
           {index + 1}
         </span>
         <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stepLabel}</span>
@@ -209,11 +209,11 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse,
   }
 
   return (
-    <div style={{ border: `0.5px solid color-mix(in srgb, var(--ok) 30%, var(--line))`, borderRadius: 11, padding: 12, display: 'flex', flexDirection: 'column', gap: 10, background: `color-mix(in srgb, var(--ok) 4%, var(--surface))` }}>
+    <div style={{ border: `0.5px solid color-mix(in srgb, var(--ok) 30%, var(--line))`, borderRadius: 10, padding: 12, display: 'flex', flexDirection: 'column', gap: 12, background: `color-mix(in srgb, var(--ok) 4%, var(--surface))` }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <p className="z-eyebrow">{t('routines.stepN', { n: index + 1 })}</p>
         <div style={{ display: 'flex', gap: 4 }}>
-          <button onClick={onToggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--ink-mute)', fontFamily: 'inherit', padding: '4px 8px', borderRadius: 7 }}>{t('routines.collapse')}</button>
+          <button onClick={onToggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--ink-mute)', fontFamily: 'inherit', padding: '4px 8px', borderRadius: 6 }}>{t('routines.collapse')}</button>
           <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
           </button>
@@ -233,7 +233,7 @@ function StepRow({ step, index, onChange, onRemove, collapsed, onToggleCollapse,
         }
       }} />
       {validationError && (
-        <p style={{ fontSize: 11, color: 'var(--err)', margin: '-4px 0 0', fontFamily: '"IBM Plex Mono", monospace' }}>
+        <p style={{ fontSize: 11, color: 'var(--err)', margin: '-4px 0 0', fontVariantNumeric: 'tabular-nums', }}>
           ⚠ {validationError}
         </p>
       )}
@@ -282,9 +282,9 @@ const STEPS_WIZARD = ['Name', 'Steps', 'Review']
 
 function StepIndicator({ current }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 20 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20 }}>
       {STEPS_WIZARD.map((s, i) => (
-        <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, background: i < current ? 'var(--ink)' : i === current ? `color-mix(in srgb, var(--ink) 12%, var(--surface))` : 'var(--bg-2)', color: i < current ? 'var(--bg)' : i === current ? 'var(--ink)' : 'var(--ink-faint)', border: i === current ? '1.5px solid var(--ink)' : '0.5px solid var(--line)' }}>
             {i < current ? '✓' : i + 1}
           </div>
@@ -359,7 +359,7 @@ export function RoutineWizard({ initial, onSave, onClose }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('routines.iconLabel')}</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {ICONS.map(ic => (
                     <button key={ic} onClick={() => setIcon(ic)} style={{
                       width: 36, height: 36, borderRadius: 10, fontSize: 18,
@@ -389,12 +389,12 @@ export function RoutineWizard({ initial, onSave, onClose }) {
                   validationError={showErrors ? stepErrors[i] : null}
                 />
               ))}
-              <button onClick={addStep} className="z-btn-secondary" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              <button onClick={addStep} className="z-btn-secondary" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                 {t('routines.addStep')}
               </button>
               {showErrors && firstInvalidIdx !== -1 && (
-                <p style={{ fontSize: 11.5, color: 'var(--err)', textAlign: 'center', marginTop: 4 }}>
+                <p style={{ fontSize: 13, color: 'var(--err)', textAlign: 'center', marginTop: 4 }}>
                   {t('routines.stepInvalid', { n: firstInvalidIdx + 1 })}
                 </p>
               )}
@@ -402,8 +402,8 @@ export function RoutineWizard({ initial, onSave, onClose }) {
           )}
           {wizardStep === 2 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--bg-2)', border: '0.5px solid var(--line)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <div style={{ padding: '16px 16px', borderRadius: 10, background: 'var(--bg-2)', border: '0.5px solid var(--line)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
                   <span style={{ fontSize: 22 }}>{icon}</span>
                   <div>
                     <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }} dir="auto">{name}</p>
@@ -413,8 +413,8 @@ export function RoutineWizard({ initial, onSave, onClose }) {
               </div>
               <p className="z-eyebrow">{steps.length === 1 ? t('routines.stepsOne', { n: steps.length }) : t('routines.stepsPlural', { n: steps.length })}</p>
               {steps.map((s, i) => (
-                <div key={i} style={{ fontSize: 12, color: 'var(--ink-mute)', display: 'flex', gap: 6 }}>
-                  <span style={{ fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ink-faint)' }}>{i + 1}</span>
+                <div key={i} style={{ fontSize: 12, color: 'var(--ink-mute)', display: 'flex', gap: 8 }}>
+                  <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--ink-faint)' }}>{i + 1}</span>
                   <span>{STEP_TYPES.find(t => t.value === s.type)?.label}</span>
                   <span style={{ color: 'var(--ink-faint)' }}>{s.entity_id || s.text || (s.delay_seconds && `${s.delay_seconds}s`) || ''}</span>
                 </div>
@@ -467,13 +467,13 @@ const RoutineCard = React.memo(function RoutineCard({ routine, onView, onEdit, o
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
       <div style={{
-        padding: '14px 16px', borderRadius: 12,
+        padding: '16px 16px', borderRadius: 10,
         background: 'var(--surface)', border: '0.5px solid var(--line)',
         display: 'flex', alignItems: 'flex-start', gap: 12,
       }}>
         {/* Tinted icon square — matches AutomationCard's left affordance */}
         <div style={{
-          width: 38, height: 38, borderRadius: 11, flexShrink: 0,
+          width: 38, height: 38, borderRadius: 10, flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: `color-mix(in srgb, ${tint} 12%, var(--surface-2))`,
           fontSize: 18,
@@ -491,15 +491,14 @@ const RoutineCard = React.memo(function RoutineCard({ routine, onView, onEdit, o
               {routineDesc}
             </p>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             <span style={{
-              fontSize: 9.5, padding: '1px 7px', borderRadius: 999, fontWeight: 600,
-              fontFamily: '"IBM Plex Mono", monospace',
-              background: `color-mix(in srgb, ${tint} 12%, transparent)`, color: tint,
+              fontSize: 11, padding: '2px 8px', borderRadius: 999, fontWeight: 600,
+              fontVariantNumeric: 'tabular-nums', background: `color-mix(in srgb, ${tint} 12%, transparent)`, color: tint,
             }}>
               ROUTINE
             </span>
-            <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+            <span style={{ fontSize: 13, color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums', }}>
               {stepCount} step{stepCount !== 1 ? 's' : ''}
             </span>
           </div>
@@ -547,9 +546,9 @@ function RoutineViewModal({ routine, onEdit, onRun, onClose }) {
     }
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 11, background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
           {routine.icon || '⚡'}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -563,15 +562,15 @@ function RoutineViewModal({ routine, onEdit, onRun, onClose }) {
         {steps.length === 0
           ? <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic' }}>{t('routines.noStepsConfigured')}</p>
           : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {steps.map((s, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
-                  <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'color-mix(in srgb, var(--ok) 12%, transparent)', color: 'var(--ok)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: '"IBM Plex Mono", monospace' }}>{i + 1}</span>
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 12px', borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
+                  <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'color-mix(in srgb, var(--ok) 12%, transparent)', color: 'var(--ok)', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontVariantNumeric: 'tabular-nums', }}>{i + 1}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>
                       {STEP_TYPES.find(t => t.value === s.type)?.label || s.type}
                     </p>
-                    <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {stepSummary(s)}
                     </p>
                   </div>
@@ -582,7 +581,7 @@ function RoutineViewModal({ routine, onEdit, onRun, onClose }) {
       </div>
 
       <div style={{ display: 'flex', gap: 8, paddingTop: 4, borderTop: '0.5px solid var(--line)' }}>
-        <button onClick={() => { onRun(routine); onClose?.() }} className="z-btn-secondary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+        <button onClick={() => { onRun(routine); onClose?.() }} className="z-btn-secondary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
           Run now
         </button>
@@ -613,12 +612,12 @@ const SuggestedRoutineCard = React.memo(function SuggestedRoutineCard({ template
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
       <div style={{
-        padding: '14px 16px', borderRadius: 12,
+        padding: '16px 16px', borderRadius: 10,
         background: 'var(--surface)', border: '0.5px solid var(--line)',
         display: 'flex', alignItems: 'flex-start', gap: 12,
       }}>
         <div style={{
-          width: 38, height: 38, borderRadius: 11, flexShrink: 0,
+          width: 38, height: 38, borderRadius: 10, flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: `color-mix(in srgb, ${tint} 12%, var(--surface-2))`,
           fontSize: 18,
@@ -635,16 +634,15 @@ const SuggestedRoutineCard = React.memo(function SuggestedRoutineCard({ template
               {template.description}
             </p>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             <span style={{
-              fontSize: 9.5, padding: '1px 7px', borderRadius: 999, fontWeight: 600,
-              fontFamily: '"IBM Plex Mono", monospace',
-              background: `color-mix(in srgb, ${tint} 12%, transparent)`, color: tint,
+              fontSize: 11, padding: '2px 8px', borderRadius: 999, fontWeight: 600,
+              fontVariantNumeric: 'tabular-nums', background: `color-mix(in srgb, ${tint} 12%, transparent)`, color: tint,
             }}>
               {t('routines.suggested.tag')}
             </span>
             {stepCount > 0 && (
-              <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+              <span style={{ fontSize: 13, color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums', }}>
                 {stepCount} step{stepCount !== 1 ? 's' : ''}
               </span>
             )}
@@ -656,7 +654,7 @@ const SuggestedRoutineCard = React.memo(function SuggestedRoutineCard({ template
             onClick={() => onConfigure(template)}
             disabled={tier === 'unavailable'}
             className={tier === 'ready' ? 'z-btn-primary' : 'z-btn-secondary'}
-            style={{ fontSize: 12, padding: '6px 12px', borderRadius: 9, whiteSpace: 'nowrap', opacity: tier === 'unavailable' ? 0.4 : 1 }}
+            style={{ fontSize: 12, padding: '8px 12px', borderRadius: 10, whiteSpace: 'nowrap', opacity: tier === 'unavailable' ? 0.4 : 1 }}
           >
             {t('routines.suggested.configure')}
           </button>
@@ -728,8 +726,8 @@ export function RoutinesListPanel({ embedded = false }) {
   return (
     <>
       {loading && routines.length === 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-          {[1,2,3].map(i => <div key={i} style={{ height: 62, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {[1,2,3].map(i => <div key={i} style={{ height: 62, borderRadius: 10, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
       )}
 
@@ -738,13 +736,13 @@ export function RoutinesListPanel({ embedded = false }) {
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('routines.empty')}</p>
           <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('routines.emptyHint')}</p>
           {!embedded && (
-            <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{t('routines.create')}</button>
+            <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 16px', borderRadius: 10, fontFamily: 'inherit' }}>{t('routines.create')}</button>
           )}
         </div>
       )}
 
       <AnimatePresence mode="popLayout">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {routines.map(r => (
             <RoutineCard key={r.id} routine={r} onView={handleView} onEdit={handleEdit} onDelete={handleDelete} onRun={handleRun} />
           ))}
@@ -755,8 +753,8 @@ export function RoutinesListPanel({ embedded = false }) {
         <button
           onClick={() => setShowWizard(true)}
           style={{
-            marginTop: 8, width: '100%', padding: '13px',
-            borderRadius: 14, background: 'var(--surface)',
+            marginTop: 8, width: '100%', padding: '12px',
+            borderRadius: 16, background: 'var(--surface)',
             border: '1px dashed var(--line-2)',
             color: 'var(--ink-2)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'inherit',
@@ -798,7 +796,7 @@ export default function Routines() {
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>Sequences of steps</p>
           <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Routines</h1>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>{routines.length} routine{routines.length !== 1 ? 's' : ''}</p>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontVariantNumeric: 'tabular-nums', }}>{routines.length} routine{routines.length !== 1 ? 's' : ''}</p>
         </div>
       </div>
       <RoutinesListPanel />

@@ -90,7 +90,7 @@ export default function LayoutRenderer() {
   const sections = doc?.sections || []
   if (sections.length === 0) {
     return (
-      <p style={{ padding: 24, color: 'var(--ink-faint)', fontSize: 13 }}>
+      <p className="z-body" style={{ padding: 32, color: 'var(--ink-mute)', textAlign: 'center', gridColumn: '1 / -1' }}>
         {editing ? 'No sections yet — tap the + button to add one.'
                  : 'This layout has no sections. Tap edit to add some.'}
       </p>

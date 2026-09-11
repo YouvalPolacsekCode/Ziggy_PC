@@ -1,7 +1,10 @@
 import React from 'react'
 import { motion } from 'framer-motion'
+import { Sparkles, Eye, Trash2 } from 'lucide-react'
 import { Toggle } from '../ui/Toggle'
 import { useT } from '../../lib/i18n'
+import { T_ENTER } from '../../lib/motion'
+import { cardIconBtn } from '../../lib/automations/styles'
 
 // ── SmartRoomGroupRow ─────────────────────────────────────────────────────────
 // Renders a room's 3 ziggy_smart_room_<room>_* automations as a SINGLE feature
@@ -12,37 +15,33 @@ import { useT } from '../../lib/i18n'
 //        onView, onEdit, onDelete.
 function SmartRoomGroupRow({ group, onToggleAll, onView, onEdit, onDelete }) {
   const t = useT()
-  const { roomName, allEnabled, count } = group
-  const tint = allEnabled ? 'var(--gold)' : 'var(--ink-faint)'
-
-  const iconBtn = (onClick, title, path, color = 'var(--ink-mute)') => (
-    <button onClick={onClick} title={title} aria-label={title}
-      style={{ background: 'none', border: 'none', cursor: 'pointer', color, padding: 4 }}>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{path}</svg>
-    </button>
-  )
+  const { roomName, allEnabled } = group
+  const title = t('automations.smartRoom.cardTitle', { room: roomName })
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
-      <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${tint} 14%, var(--surface-2))`, fontSize: 18 }}>
-          🪄
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em' }} dir="auto">
-            {t('automations.smartRoom.cardTitle', { room: roomName })}
-          </p>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }} dir="auto">
+    <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={T_ENTER}>
+      <div style={{ padding: 16, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+        <button onClick={onView} title={t('common.view')} aria-label={t('common.view')}
+          style={{ ...cardIconBtn(allEnabled ? 'var(--ink-2)' : 'var(--ink-faint)'), background: 'var(--surface-2)' }}>
+          <Sparkles size={22} strokeWidth={1.75} />
+        </button>
+        <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={onView}>
+          <p className="z-headline" style={{ margin: 0 }} dir="auto">{title}</p>
+          <p className="z-subhead" style={{ margin: '2px 0 0' }} dir="auto">
             {t('automations.smartRoom.cardSubtitle')}
           </p>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
-          <Toggle checked={allEnabled} onCheckedChange={() => onToggleAll(!allEnabled)} />
-          <div style={{ display: 'flex', gap: 2 }}>
-            {iconBtn(onView, t('common.view'),
-              <><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/></>)}
-            {iconBtn(onDelete, t('common.delete'),
-              <><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></>, 'var(--accent)')}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0, margin: '-4px -8px -8px 0' }}>
+          <div style={{ padding: '8px 8px 0' }}>
+            <Toggle checked={allEnabled} onCheckedChange={() => onToggleAll(!allEnabled)} aria-label={title} />
+          </div>
+          <div style={{ display: 'flex', gap: 0 }}>
+            <button onClick={onView} title={t('common.view')} aria-label={t('common.view')} style={cardIconBtn()}>
+              <Eye size={18} strokeWidth={1.75} />
+            </button>
+            <button onClick={onDelete} title={t('common.delete')} aria-label={t('common.delete')} style={cardIconBtn('var(--err-text)')}>
+              <Trash2 size={18} strokeWidth={1.75} />
+            </button>
           </div>
         </div>
       </div>

@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Maximize2, RefreshCw } from 'lucide-react'
+import { X, Maximize2, RefreshCw, CameraOff } from 'lucide-react'
 import { useCameraStore, cameraSnapshotUrl, cameraStreamUrl } from '../stores/cameraStore'
 import { useT, t as i18nT } from '../lib/i18n'
+import { T_ENTER, T_STATE } from '../lib/motion'
 
 const SNAPSHOT_INTERVAL_MS = 10_000
 
@@ -46,11 +47,11 @@ function CameraCard({ camera, onExpand, motionEvents }) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.18 }}
+      transition={T_ENTER}
       style={{
-        borderRadius: 14,
+        borderRadius: 'var(--r-card)',
         background: 'var(--surface)',
         border: '0.5px solid var(--line)',
         overflow: 'hidden',
@@ -80,21 +81,17 @@ function CameraCard({ camera, onExpand, motionEvents }) {
               objectFit: 'cover',
               display: 'block',
               opacity: loaded ? 1 : 0,
-              transition: 'opacity 0.2s',
+              transition: 'opacity var(--dur-state) var(--ease-standard)',
             }}
           />
         ) : (
           <div style={{
             width: '100%', height: '100%',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexDirection: 'column', gap: 6,
-            color: 'var(--ink-faint)', fontSize: 12,
+            flexDirection: 'column', gap: 8,
+            color: 'var(--ink-mute)', fontSize: 15, lineHeight: '20px',
           }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-              <circle cx="12" cy="13" r="4"/>
-              <line x1="1" y1="1" x2="23" y2="23"/>
-            </svg>
+            <CameraOff size={28} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-faint)' }} />
             <span>{i18nT('cameras.noFeed')}</span>
           </div>
         )}
@@ -104,27 +101,27 @@ function CameraCard({ camera, onExpand, motionEvents }) {
           <button
             onClick={e => { e.stopPropagation(); onExpand(camera) }}
             style={{
-              position: 'absolute', top: 8, right: 8,
-              width: 28, height: 28, borderRadius: 7,
-              background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)',
+              position: 'absolute', top: 8, insetInlineEnd: 8,
+              width: 44, height: 44, borderRadius: 'var(--r-ctl)',
+              background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
               border: 'none', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: '#fff',
             }}
             title={i18nT('cameras.goLive')}
+            aria-label={i18nT('cameras.goLive')}
           >
-            <Maximize2 size={13} />
+            <Maximize2 size={20} strokeWidth={1.75} />
           </button>
         )}
 
         {/* Motion badge */}
         {lastMotion && (
-          <div style={{
-            position: 'absolute', bottom: 8, left: 8,
+          <div className="z-mono" style={{
+            position: 'absolute', bottom: 8, insetInlineStart: 8,
             padding: '2px 8px', borderRadius: 999,
-            background: 'rgba(239,68,68,0.85)', color: '#fff',
-            fontSize: 10, fontWeight: 600,
-            fontFamily: '"IBM Plex Mono", monospace',
+            background: 'var(--err)', color: 'var(--on-accent)',
+            fontSize: 11, lineHeight: '13px', fontWeight: 500,
           }}>
             {i18nT('cameras.motionAt', { time: timeAgo(lastMotion.timestamp) })}
           </div>
@@ -132,21 +129,23 @@ function CameraCard({ camera, onExpand, motionEvents }) {
       </div>
 
       {/* Caption */}
-      <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ padding: '8px 8px 8px 16px', minHeight: 56, display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {camera.name}
           </p>
-          <p style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginTop: 1 }}>
+          <p className="z-footnote z-mono" style={{ marginTop: 2 }}>
             {camera.state}
           </p>
         </div>
         <button
           onClick={() => { setTick(t => t + 1); setLoaded(false); setError(false) }}
-          style={{ padding: 5, borderRadius: 7, background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', display: 'flex' }}
+          className="z-icon-btn"
+          style={{ background: 'transparent', border: 'none' }}
           title={i18nT('common.refresh')}
+          aria-label={i18nT('common.refresh')}
         >
-          <RefreshCw size={12} />
+          <RefreshCw size={20} strokeWidth={1.75} />
         </button>
       </div>
     </motion.div>
@@ -171,6 +170,7 @@ function LiveModal({ camera, onClose }) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        transition={T_STATE}
         style={{
           position: 'fixed', inset: 0, zIndex: 200,
           background: 'rgba(0,0,0,0.88)',
@@ -190,9 +190,9 @@ function LiveModal({ camera, onClose }) {
             alt={camera.name}
             style={{
               width: '100%',
-              borderRadius: 14,
+              borderRadius: 'var(--r-card)',
               display: 'block',
-              background: '#111',
+              background: 'rgba(0,0,0,0.6)',
               minHeight: 240,
             }}
           />
@@ -203,18 +203,21 @@ function LiveModal({ camera, onClose }) {
             padding: '12px 16px',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             background: 'linear-gradient(to bottom, rgba(0,0,0,0.6), transparent)',
-            borderRadius: '14px 14px 0 0',
+            borderRadius: 'var(--r-card) var(--r-card) 0 0',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--err)', display: 'inline-block' }} />
-              <span style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>{camera.name}</span>
-              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, fontFamily: '"IBM Plex Mono", monospace' }}>LIVE</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <span style={{ color: '#fff', fontSize: 17, lineHeight: '22px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{camera.name}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 999, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, lineHeight: '13px', fontWeight: 500, flexShrink: 0 }}>
+                <span className="z-dot" style={{ background: 'var(--err)' }} />
+                {i18nT('cameras.liveBadge')}
+              </span>
             </div>
             <button
               onClick={onClose}
-              style={{ padding: 6, borderRadius: 8, background: 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex' }}
+              aria-label={i18nT('common.close')}
+              style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'rgba(0,0,0,0.6)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
             >
-              <X size={16} />
+              <X size={20} strokeWidth={1.75} />
             </button>
           </div>
         </div>
@@ -228,8 +231,8 @@ function LiveModal({ camera, onClose }) {
 function MotionLog({ events }) {
   if (events.length === 0) {
     return (
-      <p style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '12px 0' }}>
-        No motion events in the last 24 hours.
+      <p className="z-subhead" style={{ padding: '12px 0' }}>
+        {i18nT('cameras.noMotion')}
       </p>
     )
   }
@@ -239,19 +242,16 @@ function MotionLog({ events }) {
         <div
           key={`${ev.entity_id}-${ev.timestamp}-${i}`}
           style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '8px 0',
+            display: 'flex', alignItems: 'center', gap: 12,
+            minHeight: 44, padding: '8px 0',
             borderBottom: i < Math.min(events.length, 50) - 1 ? '0.5px solid var(--line)' : 'none',
           }}
         >
-          <span style={{
-            width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-            background: ev.type === 'camera' ? 'var(--info)' : 'var(--err)',
-          }} />
-          <span style={{ flex: 1, fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span className="z-dot" style={{ flexShrink: 0, background: ev.type === 'camera' ? 'var(--info)' : 'var(--err)' }} />
+          <span style={{ flex: 1, fontSize: 15, lineHeight: '20px', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {ev.name || friendlyName(ev.entity_id)}
           </span>
-          <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', flexShrink: 0 }}>
+          <span className="z-footnote z-mono" style={{ flexShrink: 0 }}>
             {timeAgo(ev.timestamp)}
           </span>
         </div>
@@ -276,39 +276,36 @@ export default function Cameras() {
   const handleClose  = useCallback(() => setLiveCamera(null), [])
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: 'clamp(16px, 3vw, 36px)', paddingBottom: 40 }}>
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 24px' }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, paddingBottom: 14, borderBottom: '0.5px solid var(--line)' }}>
+      <div className="z-page-head">
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 3 }}>{i18nT('cameras.overview')}</p>
-          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>{i18nT('cameras.security')}</h1>
+          <p className="z-eyebrow">{i18nT('cameras.overview')}</p>
+          <h1 className="z-display">{i18nT('cameras.security')}</h1>
         </div>
         {cameras.length > 0 && (
-          <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-            {cameras.length} camera{cameras.length !== 1 ? 's' : ''}
+          <span className="z-footnote z-mono" style={{ marginTop: 8, flexShrink: 0 }}>
+            {i18nT(cameras.length === 1 ? 'cameras.countOne' : 'cameras.count', { n: cameras.length })}
           </span>
         )}
       </div>
 
       {/* Loading — skeleton only on cold start; cached cameras stay visible */}
       {loading && cameras.length === 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, marginBottom: 24 }}>
           {[1, 2].map(i => (
-            <div key={i} style={{ borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', aspectRatio: '16/9', opacity: 0.5 }} />
+            <div key={i} style={{ borderRadius: 'var(--r-card)', background: 'var(--surface-2)', border: '0.5px solid var(--line)', aspectRatio: '16/9' }} />
           ))}
         </div>
       )}
 
       {/* No cameras */}
       {!loading && cameras.length === 0 && (
-        <div style={{
-          padding: '48px 24px', borderRadius: 14, background: 'var(--surface)',
-          border: '0.5px solid var(--line)', textAlign: 'center', marginBottom: 28,
-        }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>{i18nT('cameras.notFound')}</p>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
-            {i18nT('cameras.notFoundHelp1')} <code style={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: 11 }}>camera.*</code> {i18nT('cameras.notFoundHelp2')}
+        <div className="z-card" style={{ padding: 32, textAlign: 'center', marginBottom: 24 }}>
+          <p className="z-body" style={{ fontWeight: 600, marginBottom: 8 }}>{i18nT('cameras.notFound')}</p>
+          <p className="z-subhead">
+            {i18nT('cameras.notFoundHelp1')} <code className="z-code">camera.*</code> {i18nT('cameras.notFoundHelp2')}
           </p>
         </div>
       )}
@@ -319,8 +316,8 @@ export default function Cameras() {
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: 14,
-            marginBottom: 28,
+            gap: 16,
+            marginBottom: 24,
           }}
         >
           {cameras.map(cam => (
@@ -335,10 +332,10 @@ export default function Cameras() {
       )}
 
       {/* Motion log */}
-      <div style={{ padding: '14px 16px', borderRadius: 13, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+      <div className="z-card" style={{ padding: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <p className="z-eyebrow">{i18nT('cameras.motionLog24h')}</p>
-          <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+          <span className="z-footnote z-mono">
             {i18nT(motionEvents.length === 1 ? 'cameras.event' : 'cameras.events', { n: motionEvents.length })}
           </span>
         </div>

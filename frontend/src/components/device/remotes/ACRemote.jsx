@@ -59,14 +59,17 @@ const HVAC_MODE_LABELS = new Proxy({}, {
   get: (_, k) => HVAC_MODE_LABEL_KEYS[k] ? i18nT(HVAC_MODE_LABEL_KEYS[k]) : k,
 })
 
+// Mode tint drives the stepper's fill + arrow glyph (≥ 20px, so the raw
+// status tokens are allowed). Never the brand accent: that is reserved for
+// the page's one primary action.
 const TINT_BY_MODE = {
   cool:     'var(--info)',
   heat:     'var(--warn)',
-  dry:      'var(--accent)',
+  dry:      'var(--ink-2)',
   fan_only: 'var(--ink-mute)',
   auto:     'var(--ok)',
   heat_cool:'var(--ok)',
-  off:      'var(--ink-ghost)',
+  off:      'var(--ink-faint)',
 }
 
 export function ACRemote({ entity, automations, suggestion }) {
@@ -117,12 +120,12 @@ export function ACRemote({ entity, automations, suggestion }) {
   const extras    = extrasForRemote(entity, AC_REMOTE_CONSUMES)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 22, alignItems: 'center' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, alignItems: 'center' }}>
 
       {/* Temperature stepper — ▲ / temp / ▼ */}
       <TempStepper
         temp={displayTemp}
-        hvacLabel={(HVAC_MODE_LABELS[facts.hvacMode] || facts.stateLabel || '').toUpperCase()}
+        hvacLabel={HVAC_MODE_LABELS[facts.hvacMode] || facts.stateLabel || ''}
         currentTemp={facts.currentTemp}
         upOk={upOk}
         downOk={downOk}
@@ -194,10 +197,7 @@ export function ACRemote({ entity, automations, suggestion }) {
         title={powerOk ? '' : i18nT('remote.powerNotLearnedYet')}
         className="z-btn-primary"
         style={{
-          width: '100%', height: 48, fontSize: 14, letterSpacing: '0.02em',
-          background: facts.isOn ? 'var(--ink)' : 'var(--surface)',
-          color: facts.isOn ? 'var(--bg)' : 'var(--ink)',
-          border: facts.isOn ? 'none' : '0.5px solid var(--line)',
+          width: '100%',
           opacity: powerOk ? 1 : 0.45,
           cursor: powerOk ? 'pointer' : 'not-allowed',
         }}
@@ -208,29 +208,40 @@ export function ACRemote({ entity, automations, suggestion }) {
   )
 }
 
+// One chip style for every mode / fan / swing / preset / extra button:
+// `.z-chip` type (13/500, capsule) stretched to a 44px target. Selected =
+// surface-2 fill + ink text + 0.5px ink line — never inverted, never accent.
+function chipStyle({ active = false, enabled = true } = {}) {
+  return {
+    minHeight: 44, padding: '0 16px', boxSizing: 'border-box',
+    background: 'var(--surface-2)',
+    color: active ? 'var(--ink)' : 'var(--ink-2)',
+    border: '0.5px solid ' + (active ? 'var(--ink)' : 'var(--line)'),
+    fontWeight: active ? 600 : 500,
+    cursor: enabled ? 'pointer' : 'not-allowed',
+    fontFamily: 'inherit', textTransform: 'capitalize',
+    opacity: enabled ? 1 : 0.4,
+    transition: 'border-color var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
+  }
+}
+
 // Generic chip row for the Extras / Macros sections. Same visual language as
 // the SubChipRow but doesn't track an "active" selection (these are one-shot).
-function ExtraChipRow({ label, items, onPick, accent }) {
+function ExtraChipRow({ label, items, onPick }) {
   if (!items?.length) return null
   return (
     <div style={{ width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <span className="z-eyebrow">{label}</span>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {items.map((m) => {
           const id = typeof m === 'string' ? m : m.id
           const lbl = typeof m === 'string' ? m : m.label
           return (
-            <button key={id} onClick={() => onPick(id)}
-              style={{
-                padding: '7px 12px', borderRadius: 9,
-                background: 'var(--surface-2)',
-                color: accent || 'var(--ink-2)',
-                border: '0.5px solid var(--line)',
-                fontSize: 11.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-                textTransform: 'capitalize',
-              }}>{(lbl + '').replace(/_/g, ' ')}</button>
+            <button key={id} onClick={() => onPick(id)} className="z-chip" style={chipStyle()}>
+              {(lbl + '').replace(/_/g, ' ')}
+            </button>
           )
         })}
       </div>
@@ -280,12 +291,13 @@ function TempStepper({ temp, hvacLabel, currentTemp, upOk, downOk, accent, onUp,
         width: '100%', maxWidth: 280, height: 72,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: enabled ? `color-mix(in srgb, ${accent} 14%, var(--surface))` : 'var(--surface)',
-        color: enabled ? accent : 'var(--ink-ghost)',
+        color: enabled ? accent : 'var(--ink-faint)',
         border: `0.5px solid ${enabled ? `color-mix(in srgb, ${accent} 30%, var(--line))` : 'var(--line)'}`,
-        borderRadius: 16, cursor: enabled ? 'pointer' : 'not-allowed',
+        borderRadius: 'var(--r-card)', cursor: enabled ? 'pointer' : 'not-allowed',
         opacity: enabled ? 1 : 0.45,
         touchAction: 'manipulation',
         padding: 0,
+        transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
       }}
     >
       {/* Wide-but-not-huge chevron. Stretches to ~45% of the button width
@@ -309,12 +321,12 @@ function TempStepper({ temp, hvacLabel, currentTemp, upOk, downOk, accent, onUp,
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
       {arrowBtn(upOk, ChevronUp, onUp, i18nT('remote.tempUpAria'))}
       <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 56, fontWeight: 700, letterSpacing: '-0.04em', color: 'var(--ink)', lineHeight: 1 }}>
+        <div className="z-display z-mono" style={{ color: 'var(--ink)' }}>
           {temp != null ? `${Math.round(temp)}°` : '—'}
         </div>
-        <div className="z-mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 6, letterSpacing: '0.06em' }}>
+        <div className="z-mono" style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 4 }}>
           {hvacLabel}
-          {currentTemp != null ? ` · ${Math.round(currentTemp)}° NOW` : ''}
+          {currentTemp != null ? ` · ${Math.round(currentTemp)}°${i18nT('remote.now')}` : ''}
         </div>
       </div>
       {arrowBtn(downOk, ChevronDown, onDown, i18nT('remote.tempDownAria'))}
@@ -326,7 +338,7 @@ function TempStepper({ temp, hvacLabel, currentTemp, upOk, downOk, accent, onUp,
 
 function ModeRow({ items, current, renderLabel, isEnabled, onPick }) {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', width: '100%' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', width: '100%' }}>
       {items.map((m) => {
         const active  = current === m
         const enabled = isEnabled ? isEnabled(m) : true
@@ -335,18 +347,11 @@ function ModeRow({ items, current, renderLabel, isEnabled, onPick }) {
           <button key={m}
             onClick={() => enabled && onPick(m)}
             disabled={!enabled}
-            title={enabled ? '' : `${renderLabel(m)} not learned`}
-            style={{
-              padding: '9px 14px', borderRadius: 10,
-              background: active ? 'var(--ink)' : 'var(--surface)',
-              color: active ? 'var(--bg)' : 'var(--ink-2)',
-              border: '0.5px solid ' + (active ? 'var(--ink)' : 'var(--line)'),
-              fontSize: 12, fontWeight: 600, cursor: enabled ? 'pointer' : 'not-allowed',
-              fontFamily: 'inherit',
-              display: 'inline-flex', alignItems: 'center', gap: 6, textTransform: 'capitalize',
-              opacity: enabled ? 1 : 0.4,
-            }}>
-            {Icon ? <Icon size={13} /> : null}
+            aria-pressed={active}
+            title={enabled ? '' : i18nT('remote.notLearned', { name: renderLabel(m) })}
+            className="z-chip"
+            style={chipStyle({ active, enabled })}>
+            {Icon ? <Icon size={18} strokeWidth={1.75} /> : null}
             {renderLabel(m)}
           </button>
         )
@@ -361,7 +366,7 @@ function SubChipRow({ label, items, current, isEnabled, onPick }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <span className="z-eyebrow">{label}</span>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {items.map((m) => {
           const active  = current === m
           const enabled = isEnabled ? isEnabled(m) : true
@@ -369,17 +374,10 @@ function SubChipRow({ label, items, current, isEnabled, onPick }) {
             <button key={m}
               onClick={() => enabled && onPick(m)}
               disabled={!enabled}
-              title={enabled ? '' : `${m} not learned`}
-              style={{
-                padding: '7px 12px', borderRadius: 9,
-                background: active ? 'var(--ink)' : 'var(--surface-2)',
-                color:      active ? 'var(--bg)'  : 'var(--ink-2)',
-                border: '0.5px solid ' + (active ? 'var(--ink)' : 'var(--line)'),
-                fontSize: 11.5, fontWeight: 500, cursor: enabled ? 'pointer' : 'not-allowed',
-                fontFamily: 'inherit',
-                textTransform: 'capitalize',
-                opacity: enabled ? 1 : 0.4,
-              }}>{(m + '').replace(/_/g, ' ')}</button>
+              aria-pressed={active}
+              title={enabled ? '' : i18nT('remote.notLearned', { name: m })}
+              className="z-chip"
+              style={chipStyle({ active, enabled })}>{(m + '').replace(/_/g, ' ')}</button>
           )
         })}
       </div>
@@ -394,56 +392,57 @@ function ScheduleCard({ automation }) {
   return (
     <a
       href="/actions"
+      className="z-card"
       style={{
         width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-        padding: '12px 14px', borderRadius: 14,
-        background: 'var(--surface)', border: '0.5px solid var(--line)',
+        minHeight: 56, padding: '8px 16px',
         textDecoration: 'none', cursor: 'pointer',
       }}
     >
       <div style={{
-        width: 32, height: 32, borderRadius: 9, flexShrink: 0,
-        background: 'color-mix(in srgb, var(--ok) 12%, var(--surface-2))',
-        color: 'var(--ok)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+        background: 'var(--surface-2)',
+        color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <Zap size={14} />
+        <Zap size={20} strokeWidth={1.75} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)',
+        <div dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {trigger || automation.name}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{automation.name}</div>
+        <div dir="auto" style={{ fontSize: 15, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{automation.name}</div>
       </div>
-      <ChevronRight size={14} style={{ color: 'var(--ink-ghost)', flexShrink: 0 }} />
+      <ChevronRight size={18} strokeWidth={1.75} className="icon-flip-rtl" style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
     </a>
   )
 }
 
+// A suggestion is a nudge, not the page's primary action — it reads as a
+// soft card in ink, with no accent tint.
 function SuggestionCard({ suggestion }) {
   return (
     <a
       href="/actions"
+      className="z-card-soft"
       style={{
         width: '100%', display: 'flex', alignItems: 'flex-start', gap: 12,
-        padding: '12px 14px', borderRadius: 14,
-        background: 'var(--accent-2)',
-        border: '0.5px solid color-mix(in srgb, var(--accent) 22%, var(--line))',
+        padding: '12px 16px',
         textDecoration: 'none', cursor: 'pointer', color: 'var(--ink)',
       }}
     >
       <div style={{
-        width: 32, height: 32, borderRadius: 9, flexShrink: 0,
-        background: 'color-mix(in srgb, var(--accent) 22%, transparent)',
-        color: 'var(--accent-3)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+        background: 'var(--surface)', border: '0.5px solid var(--line)',
+        color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <Sparkles size={14} />
+        <Sparkles size={20} strokeWidth={1.75} />
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.35 }}>
+      <div style={{ flex: 1, minWidth: 0, alignSelf: 'center' }}>
+        <div dir="auto" style={{ fontSize: 17, color: 'var(--ink)', lineHeight: 1.3 }}>
           {suggestion.user_message}
           {suggestion.status === 'pending' && (
-            <span style={{ color: 'var(--accent-3)', fontWeight: 600 }}> Make it a routine?</span>
+            <span style={{ fontWeight: 600 }}>{i18nT('remote.makeRoutine')}</span>
           )}
         </div>
       </div>
@@ -456,8 +455,8 @@ function describeAutomationTrigger(a) {
   if (!a) return null
   const t = a.trigger || a.triggers?.[0]
   if (!t) return null
-  if (t.platform === 'time' && t.at) return `Will run at ${t.at}`
-  if (t.type === 'time' && t.value) return `Will run at ${t.value}`
+  if (t.platform === 'time' && t.at) return i18nT('remote.willRunAt', { when: t.at })
+  if (t.type === 'time' && t.value) return i18nT('remote.willRunAt', { when: t.value })
   if (t.platform === 'sun' && t.event) return t.event === 'sunset' ? i18nT('remote.runsAtSunset') : i18nT('remote.runsAtSunrise')
   return null
 }

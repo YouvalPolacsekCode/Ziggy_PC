@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { Plus } from 'lucide-react'
 import { Input } from '../../../ui/Input'
 import { saveClimate, deleteClimate, getIrDevices } from '../../../../lib/api'
 import { entityDisplayName } from '../../../../lib/utils'
@@ -117,7 +118,7 @@ function EdgeField({ dir, values, setValue, ctx, t }) {
           ))}
         </div>
       )}
-      <div style={{ display: 'flex', gap: 14 }}>
+      <div style={{ display: 'flex', gap: 16 }}>
         <div style={{ flex: 1 }}>
           <Eyebrow>{t(dir === 'cool' ? 'automations.smartClimate.coolOn' : 'automations.smartClimate.heatOn')} (°C)</Eyebrow>
           <Input type="number" inputMode="numeric" min={10} max={35} value={onTemp}
@@ -137,16 +138,17 @@ function HeatingToggle({ values, setValue, t }) {
   if (values.showHeating) {
     return (
       <button type="button" onClick={() => { setValue('showHeating', false); setValue('heating', null) }}
-        className="z-btn-secondary" style={{ alignSelf: 'flex-start', padding: '7px 12px', borderRadius: 9, fontSize: 12 }}>
+        className="z-btn-secondary" style={{ alignSelf: 'flex-start' }}>
         {t('automations.smartClimate.removeHeating')}
       </button>
     )
   }
   return (
     <button type="button" onClick={() => setValue('showHeating', true)}
-      style={{ alignSelf: 'flex-start', background: 'none', border: '1px dashed var(--line)', borderRadius: 10,
-        padding: '9px 14px', fontSize: 12.5, color: 'var(--ink-mute)', cursor: 'pointer', fontFamily: 'inherit' }} dir="auto">
-      + {t('automations.smartClimate.addHeating')}
+      className="z-btn-secondary"
+      style={{ alignSelf: 'flex-start', fontSize: 15, fontWeight: 500, color: 'var(--ink-2)', border: '0.5px dashed var(--line-2)' }} dir="auto">
+      <Plus size={18} strokeWidth={1.75} aria-hidden="true" />
+      {t('automations.smartClimate.addHeating')}
     </button>
   )
 }
@@ -156,14 +158,13 @@ function RightNow({ values, t }) {
   const cur = values._status?.current
   if (!cur) return null
   return (
-    <div style={{ borderRadius: 14, padding: '14px 16px',
-      background: 'color-mix(in srgb, var(--ok) 7%, var(--surface))',
-      border: '0.5px solid color-mix(in srgb, var(--ok) 22%, var(--line))' }}>
+    <div style={{ borderRadius: 'var(--r-card)', padding: 16,
+      background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
       <p className="z-eyebrow" style={{ margin: '0 0 4px' }}>{t('automations.smartClimate.rightNow')}</p>
-      <p style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', margin: 0 }} dir="auto">
+      <p className="z-title z-mono" style={{ margin: 0 }} dir="auto">
         {cur.temp != null ? `${cur.temp}°C` : t('automations.smartClimate.noReadingShort')}
       </p>
-      <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: '2px 0 0' }} dir="auto">{values._status?.roomName || ''}</p>
+      <p className="z-subhead" style={{ margin: '2px 0 0' }} dir="auto">{values._status?.roomName || ''}</p>
     </div>
   )
 }

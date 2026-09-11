@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
+import { SquarePen, MessagesSquare, X, Mic, Send, Check } from 'lucide-react'
 import { sendChat, sendVoiceTranscribe, sendDirectIntent, speakTtsStream, flagTts, getRehearsal, patchRehearsal } from '../lib/api'
 import logger from '../lib/logger'
 import { useQuickAskStore } from '../stores/quickAskStore'
@@ -9,10 +10,9 @@ import { useChatStore } from '../stores/chatStore'
 import { useChatThreads } from '../hooks/useChatThreads'
 import ThreadList from '../components/chat/ThreadList'
 import { useVoiceStore } from '../stores/voiceStore'
-import { useDeviceStore } from '../stores/deviceStore'
-import { useAutomationStore } from '../stores/automationStore'
 import { formatTime, isHebrew } from '../lib/utils'
 import { useT, useLang, translateNamePhrase, t as translateWithLang } from '../lib/i18n'
+import { T_ENTER, T_STATE, T_PRESS } from '../lib/motion'
 import BundlePreviewCard from '../components/automations/BundlePreviewCard'
 import ChatCard from '../components/chat/ChatCards'
 import { useFollowNavigateCards } from '../components/chat/useFollowNavigateCards'
@@ -41,15 +41,29 @@ function cardOf(res) {
 const DIAG_TOGGLE_PHRASE = 'claude ziggy'
 
 // ── Voice wave ────────────────────────────────────────────────────────────────
+// Five 3px bars on the `waveBar` keyframes (index.css), 700–940ms so they
+// never move in lockstep. The loop is the one ambient motion on this screen
+// and it means exactly one thing: the mic is open. Bars take the current
+// text colour, so inside the accent mic they read in --on-accent and inside
+// the ink-mute status chip they read in ink-mute.
 function VoiceWave({ active, size = 22 }) {
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, opacity: active ? 1 : 0, transition: 'opacity 0.3s' }}>
+    <div
+      aria-hidden="true"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 2,
+        opacity: active ? 1 : 0,
+        transition: 'opacity var(--dur-state) var(--ease-standard)',
+      }}
+    >
       {[0, 1, 2, 3, 4].map(i => (
         <span
           key={i}
           className="z-wave-bar"
           style={{
             height: size * 0.55,
+            background: 'currentColor',
+            transformOrigin: 'center',
             animation: active ? `waveBar ${0.7 + i * 0.06}s ease-in-out ${i * 0.07}s infinite alternate` : 'none',
           }}
         />
@@ -64,37 +78,34 @@ function PatternCard({ msg, onSaveRoutine }) {
   const [saved, setSaved] = useState(false)
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
+      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={T_ENTER}
       style={{ maxWidth: '92%', alignSelf: 'flex-start' }}
     >
       <div style={{
-        padding: 14, borderRadius: 14,
+        padding: 16, borderRadius: 'var(--r-card)',
         background: 'var(--surface)', border: '0.5px solid var(--line)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/></svg>
-          <span className="z-mono" style={{ fontSize: 10, color: 'var(--accent)', letterSpacing: '0.12em', fontWeight: 600 }}>{t('chat.patternDetected')}</span>
+        {/* Group header, not a headline: an eyebrow in ink-mute with a
+            quiet 16px glyph. Nothing on a card is accent-coloured. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/></svg>
+          <span className="z-eyebrow">{t('chat.patternDetected')}</span>
         </div>
-        <div style={{ fontSize: 13, color: 'var(--ink)', marginBottom: 10, lineHeight: 1.45 }}>
+        <p className="z-body" style={{ margin: '0 0 12px', lineHeight: 1.45 }}>
           {msg.text} {t('chat.saveRoutinePrompt', { name: msg.patternLabel })}
-        </div>
+        </p>
         {!saved ? (
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              onClick={() => setSaved(true)}
-              style={{ padding: '7px 14px', borderRadius: 10, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-            >
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="z-btn-primary" onClick={() => setSaved(true)}>
               {t('chat.saveRoutine')}
             </button>
-            <button
-              style={{ padding: '7px 14px', borderRadius: 10, background: 'var(--surface-2)', color: 'var(--ink-mute)', border: '0.5px solid var(--line)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
-            >
+            <button type="button" className="z-btn-secondary">
               {t('dashboard.notNow')}
             </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ok)' }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6"/></svg>
+          <div className="z-subhead" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ok-text)' }}>
+            <Check size={16} strokeWidth={2.25} aria-hidden="true" />
             {t('chat.routineSaved')}
           </div>
         )}
@@ -143,8 +154,7 @@ function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
   // breakdown plus Accept/Discard, which is the actionable surface.
   if (msg.bundle) {
     return (
-      <div style={{ maxWidth: '92%', alignSelf: 'flex-start', width: '100%' }}>
-        <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('chat.ziggy')}</p>
+      <div style={{ maxWidth: '92%', alignSelf: 'flex-start', width: '100%' }} aria-label={t('chat.ziggy')}>
         <BundlePreviewCard
           bundle={msg.bundle}
           onAccept={(result) => onBundleAccept?.(msg, result)}
@@ -157,24 +167,27 @@ function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
   // The text side of a reply: the bubble, the "Said wrong?" flag (and its
   // note input), and the action chips — the pieces that stay together under
   // the prose whether or not a card sits beside it.
+  // The bubble: Body (17/1.45) in ink on the surface for Ziggy, inverted for
+  // the user, on the card radius with a 6px tail corner on the speaker's
+  // side. The side says who is talking, so there is no per-message label —
+  // the aria-label on the bubble carries that for a screen reader.
   const textBlock = (
     <>
       <div
         dir="auto"
         className={hasCard ? 'zc-bubble' : undefined}
+        aria-label={isUser ? undefined : t('chat.ziggy')}
         style={{
-          padding: '10px 14px',
-          borderRadius: 18,
-          borderEndStartRadius: !isUser ? 4 : 18,
-          borderEndEndRadius:    isUser ? 4 : 18,
+          padding: '12px 16px',
+          borderRadius: 'var(--r-card)',
+          borderEndStartRadius: !isUser ? 6 : 'var(--r-card)',
+          borderEndEndRadius:    isUser ? 6 : 'var(--r-card)',
           background:  isUser ? 'var(--ink)'    : 'var(--surface)',
           color:       isUser ? 'var(--bg)'     : 'var(--ink)',
           border:      isError
             ? '0.5px solid color-mix(in srgb, var(--err) 60%, var(--line))'
             : isUser ? 'none' : '0.5px solid var(--line)',
-          // Beside a card the prose is the quieter half of the row: a notch
-          // smaller and more open, capped at 420px (chatCards.css).
-          fontSize: hasCard ? 14 : 14.5, lineHeight: hasCard ? 1.5 : 1.45,
+          fontSize: 17, lineHeight: 1.45,
           // Bubble text aligns with the bubble's bidi direction (which `dir="auto"`
           // resolves from the message content — Hebrew → rtl, English → ltr,
           // mixed → first strong character wins). Timestamp goes on the
@@ -186,8 +199,15 @@ function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
       >
         {/* pre-wrap: replies can be several sentences with line breaks and
             short lists; keep them as the server shaped them (no markdown). */}
-        <p style={{ margin: 0, whiteSpace: 'pre-wrap', color: isError ? 'var(--err)' : undefined }}>{msg.text}</p>
-        <p style={{ fontSize: 10, marginTop: 4, opacity: 0.4, textAlign: 'end' }}>
+        <p style={{ margin: 0, whiteSpace: 'pre-wrap', color: isError ? 'var(--err-text)' : undefined }}>{msg.text}</p>
+        {/* Footnote timestamp, in a token rather than a dimmed copy of the
+            text colour: ink-faint on the surface, the deep page shade on the
+            inverted user bubble. */}
+        <p style={{
+          fontSize: 13, lineHeight: '18px', margin: '4px 0 0', textAlign: 'end',
+          color: isUser ? 'var(--bg-3)' : 'var(--ink-faint)',
+          fontVariantNumeric: 'tabular-nums',
+        }}>
           {formatTime(msg.ts)}
         </p>
       </div>
@@ -199,9 +219,11 @@ function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
           disabled={flagState !== 'idle'}
           aria-label={t('chat.flagTts')}
           style={{
-            background: 'none', border: 'none', padding: '0 4px', cursor: flagState === 'idle' ? 'pointer' : 'default',
-            fontSize: 10.5, color: flagState === 'done' ? 'var(--ok)' : 'var(--ink-3, var(--ink-2))',
-            opacity: flagState === 'idle' ? 0.55 : 1, font: 'inherit',
+            background: 'none', border: 'none', padding: '0 8px', marginInlineStart: -8, minHeight: 44,
+            display: 'inline-flex', alignItems: 'center',
+            cursor: flagState === 'idle' ? 'pointer' : 'default',
+            fontSize: 13, lineHeight: '18px', font: 'inherit',
+            color: flagState === 'done' ? 'var(--ok-text)' : flagState === 'error' ? 'var(--err-text)' : 'var(--ink-mute)',
           }}
         >
           {flagState === 'done' ? t('chat.flagTtsDone')
@@ -213,59 +235,44 @@ function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
       {flagState === 'ask' && (
         <form
           onSubmit={(e) => { e.preventDefault(); flagPronunciation(flagNote) }}
-          style={{ display: 'flex', gap: 6, alignItems: 'center', maxWidth: '88%' }}
+          style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', width: '100%' }}
         >
           <input
             autoFocus
             dir="auto"
+            className="z-input"
             value={flagNote}
             onChange={(e) => setFlagNote(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') setFlagState('idle') }}
             placeholder={t('chat.flagTtsHow')}
-            style={{
-              flex: 1, minWidth: 180, fontSize: 12.5, padding: '6px 10px', borderRadius: 999,
-              border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', font: 'inherit',
-            }}
+            style={{ flex: '1 1 200px', minWidth: 0, width: 'auto', borderRadius: 999 }}
           />
-          <button type="submit" style={{
-            fontSize: 11, padding: '6px 10px', borderRadius: 999, border: 'none', cursor: 'pointer',
-            background: 'var(--ink)', color: 'var(--bg)', font: 'inherit',
-          }}>{t('chat.flagTtsSend')}</button>
-          <button type="button" onClick={() => flagPronunciation('')} style={{
-            fontSize: 11, padding: '6px 8px', borderRadius: 999, border: '0.5px solid var(--line)', cursor: 'pointer',
-            background: 'none', color: 'var(--ink-2)', font: 'inherit',
-          }}>{t('chat.flagTtsSkip')}</button>
+          <button type="submit" className="z-btn-primary">{t('chat.flagTtsSend')}</button>
+          <button type="button" className="z-btn-secondary" onClick={() => flagPronunciation('')}>{t('chat.flagTtsSkip')}</button>
         </form>
       )}
 
-      {/* Action chips — green check bubbles per design */}
+      {/* Action chips — what Ziggy did this turn, one 13px chip each with a
+          green check. The check is the only status colour on the row. */}
       {msg.actions && msg.actions.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, maxWidth: '88%' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, maxWidth: '88%' }}>
           {msg.actions.map((a, i) => (
-            <div key={i} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              padding: '5px 10px', borderRadius: 999,
-              background: 'color-mix(in srgb, var(--ok) 10%, var(--surface))',
-              border: '0.5px solid color-mix(in srgb, var(--ok) 35%, var(--line))',
-              fontSize: 11, color: 'var(--ink-2)',
-            }}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6"/></svg>
+            <span key={i} className="z-chip" dir="auto">
+              <Check size={14} strokeWidth={2.25} aria-hidden="true" style={{ color: 'var(--ok-text)', flexShrink: 0 }} />
               {a}
-            </div>
+            </span>
           ))}
         </div>
       )}
     </>
   )
 
-  // Entrance: a plain bubble keeps its quick 6px rise; a reply with a card
-  // is a bigger object and gets 8px over 220ms on a strong ease-out so the
+  // Entrance: the app's enter beat (240ms, decelerating). A plain bubble
+  // rises 6px; a reply with a card is a bigger object and rises 8px so the
   // row lands as one piece. Reduced motion: mount in place, no transition.
   const enter = reduceMotion
     ? { initial: false }
-    : hasCard
-      ? { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.22, ease: [0.23, 1, 0.32, 1] } }
-      : { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.18 } }
+    : { initial: { opacity: 0, y: hasCard ? 8 : 6 }, animate: { opacity: 1, y: 0 }, transition: T_ENTER }
 
   return (
     <motion.div
@@ -282,9 +289,6 @@ function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
         alignSelf: isUser ? 'flex-end' : 'flex-start',
       }}
     >
-      {!isUser && (
-        <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('chat.ziggy')}</p>
-      )}
       {hasCard ? (
         /* Text at inline-start, card at inline-end when the column is wide
            enough; stacked (text, then card) otherwise. The chat auto-scrolls
@@ -313,7 +317,7 @@ function LiveUserBubble({ text }) {
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.12 }}
+      transition={T_ENTER}
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
         gap: 4, maxWidth: '88%', alignSelf: 'flex-end',
@@ -322,21 +326,22 @@ function LiveUserBubble({ text }) {
       <div
         dir="auto"
         style={{
-          padding: '10px 14px', borderRadius: 18, borderEndEndRadius: 4,
+          padding: '12px 16px', borderRadius: 'var(--r-card)', borderEndEndRadius: 6,
           background: 'var(--ink)', color: 'var(--bg)',
-          fontSize: 14.5, lineHeight: 1.45,
+          fontSize: 17, lineHeight: 1.45,
           textAlign: 'start', unicodeBidi: 'plaintext',
-          minWidth: 36,
+          minWidth: 40,
           display: 'flex', alignItems: 'center', gap: 8,
         }}
       >
         {text
-          ? <span style={{ opacity: 0.92 }}>{text}</span>
+          ? <span>{text}</span>
           : <motion.span
-              style={{ width: 6, height: 6, borderRadius: '50%',
+              aria-hidden="true"
+              style={{ width: 8, height: 8, borderRadius: '50%',
                        background: 'var(--bg)', display: 'inline-block' }}
-              animate={{ opacity: [0.3, 1, 0.3] }}
-              transition={{ duration: 0.9, repeat: Infinity }}
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut' }}
             />}
       </div>
     </motion.div>
@@ -398,25 +403,33 @@ function ThinkingBubble({ mode }) {
     return () => timers.forEach(clearTimeout)
   }, [mode])
 
+  // The same bubble as a reply (surface, card radius, 6px tail), labelled
+  // for a screen reader. Three 8px dots on an 800ms loop: it means "thinking"
+  // and lives only while a reply is in flight.
+  const bubbleStyle = {
+    padding: '12px 16px', borderRadius: 'var(--r-card)', borderEndStartRadius: 6,
+    background: 'var(--surface)', border: '0.5px solid var(--line)',
+    display: 'flex', gap: 8, alignItems: 'center', minHeight: 44,
+  }
+  const dots = [0, 1, 2].map(i => (
+    <motion.span
+      key={i}
+      aria-hidden="true"
+      style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ink-mute)', display: 'block' }}
+      animate={{ y: [0, -4, 0] }}
+      transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity, ease: 'easeInOut' }}
+    />
+  ))
+
   // Generic chat → just the bouncing dots
   if (mode !== 'pro') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'flex-start' }}>
-        <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('chat.ziggy')}</p>
-        <div style={{
-          padding: '10px 14px', borderRadius: 18, borderEndStartRadius: 4,
-          background: 'var(--surface)', border: '0.5px solid var(--line)',
-          display: 'flex', gap: 5, alignItems: 'center',
-        }}>
-          {[0, 1, 2].map(i => (
-            <motion.span
-              key={i}
-              style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--ink-mute)', display: 'block' }}
-              animate={{ y: [0, -4, 0] }}
-              transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }}
-            />
-          ))}
-        </div>
+      <div
+        role="status"
+        aria-label={`${t('chat.ziggy')} · ${t('chat.thinking')}`}
+        style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'flex-start' }}
+      >
+        <div style={{ ...bubbleStyle, gap: 6 }}>{dots}</div>
       </div>
     )
   }
@@ -429,27 +442,18 @@ function ThinkingBubble({ mode }) {
     t('chat.proStage.finishing'),
   ]
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'flex-start' }}>
-      <p className="z-eyebrow" style={{ marginBottom: 2 }}>{t('chat.ziggy')}</p>
-      <div style={{
-        padding: '10px 14px', borderRadius: 18, borderEndStartRadius: 4,
-        background: 'var(--surface)', border: '0.5px solid var(--line)',
-        display: 'flex', gap: 8, alignItems: 'center',
-        fontSize: 14, color: 'var(--ink-mute)',
-      }}>
-        {[0, 1, 2].map(i => (
-          <motion.span
-            key={i}
-            style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--ink-mute)', display: 'block' }}
-            animate={{ y: [0, -3, 0] }}
-            transition={{ duration: 0.8, delay: i * 0.15, repeat: Infinity }}
-          />
-        ))}
+    <div
+      role="status"
+      aria-label={t('chat.ziggy')}
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'flex-start' }}
+    >
+      <div className="z-subhead" style={bubbleStyle}>
+        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>{dots}</span>
         <motion.span
           key={stage}
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25 }}
+          transition={T_STATE}
           dir="auto"
         >
           {stages[stage]}
@@ -513,14 +517,6 @@ export default function AIChat({ docked = false }) {
   // preview card in place. The chatStore exposes the array via `messages`
   // — useChatStore.setState() patches it without going through addMessage.
   const { items: quickAsks, fetch: fetchQuickAsks } = useQuickAskStore()
-  // Awareness counters for the header strip — same pattern as the TV-remote
-  // page's "HDMI 2 · Apple TV" contextual cue: tells you what Ziggy can act on
-  // before you ask. Read from caches; no fetches added on this surface.
-  // Length-only selectors keep this page out of the re-render fanout on
-  // every entity/room/routine update.
-  const knownDevices  = useDeviceStore(s => s.entities.length)
-  const knownRooms    = useDeviceStore(s => s.ziggyRooms.length)
-  const knownRoutines = useAutomationStore(s => (s.routines || []).length)
   const {
     micEnabled,
     wakewordEnabled,
@@ -1850,70 +1846,37 @@ export default function AIChat({ docked = false }) {
         overflow: 'hidden',
       }}
     >
-      {/* ── Header bar ── (docked: controls only — the dock header carries the
-          title, and the width has no room for the awareness strip) */}
+      {/* ── Header bar ── one line: the Large Title, then the controls on the
+          trailing side, every one of them 44px tall. Docked, the dock header
+          carries the title, so only the controls render. */}
       <div style={{
-        padding: docked ? '8px 12px' : '14px 20px 10px',
+        padding: docked ? '8px 12px' : '16px 20px 12px',
         display: 'flex', alignItems: 'center', justifyContent: docked ? 'flex-end' : 'space-between',
+        gap: 12,
         borderBottom: '0.5px solid var(--line)',
         flexShrink: 0,
       }}>
-        {!docked && <div>
-          <p className="z-eyebrow">{t('chat.eyebrow')}</p>
-          <h1 className="z-display" style={{ fontSize: 20, margin: '2px 0 0' }}>{t('chat.headerTitle')}</h1>
-          {knownDevices > 0 && (
-            <p className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 3 }}>
-              {knownDevices === 1 ? t('chat.knowsDevicesOne', { n: knownDevices }) : t('chat.knowsDevicesMany', { n: knownDevices })}
-              {' · '}
-              {knownRooms === 1 ? t('chat.roomsOne', { n: knownRooms }) : t('chat.roomsMany', { n: knownRooms })}
-              {knownRoutines > 0 ? ` · ${knownRoutines === 1 ? t('chat.routinesOne', { n: knownRoutines }) : t('chat.routinesMany', { n: knownRoutines })}` : ''}
-            </p>
-          )}
-        </div>}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: docked ? 'wrap' : 'nowrap', justifyContent: 'flex-end' }}>
-          {/* Durable-thread switcher — opens a side drawer of past conversations. */}
-          <button
-            onClick={() => setShowThreads(true)}
-            title={t('chat.eyebrow')}
-            aria-label={t('chat.eyebrow')}
-            style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              width: 32, height: 32, borderRadius: 8, background: 'transparent',
-              border: '0.5px solid var(--line)', color: 'var(--ink-mute)', cursor: 'pointer',
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 strokeWidth="2" strokeLinecap="round">
-              <line x1="4" y1="7" x2="20" y2="7" />
-              <line x1="4" y1="12" x2="20" y2="12" />
-              <line x1="4" y1="17" x2="14" y2="17" />
-            </svg>
-          </button>
+        {!docked && (
+          <h1 className="z-display" style={{ margin: 0, minWidth: 0, flexShrink: 0 }}>{t('chat.headerTitle')}</h1>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0 }}>
           {/* Rehearsal mode — Ziggy replies and speaks, but nothing reaches
-              the home. Loud on purpose while on: the user must never wonder
-              why the light didn't come on. */}
+              the home. Loud on purpose while on (warn tint + the banner
+              below): the user must never wonder why the light didn't come on. */}
           {rehearsal !== null && (
             <button
+              type="button"
               onClick={onToggleRehearsal}
+              className={`z-chip${rehearsal ? ' bg-warn-soft border-warn-soft' : ''}`}
               title={rehearsal ? t('chat.rehearsalOnTitle') : t('chat.rehearsalOffTitle')}
+              aria-pressed={rehearsal}
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '4px 10px', borderRadius: 999,
-                background: rehearsal
-                  ? 'color-mix(in srgb, var(--warn, #b3541e) 16%, var(--surface))'
-                  : 'var(--surface)',
-                border: rehearsal
-                  ? '0.5px solid color-mix(in srgb, var(--warn, #b3541e) 60%, var(--line))'
-                  : '0.5px solid var(--line)',
-                fontSize: 11, fontWeight: rehearsal ? 700 : 400,
-                color: rehearsal ? 'var(--warn, #b3541e)' : 'var(--ink-mute)',
-                cursor: 'pointer', fontFamily: 'inherit',
+                minHeight: 44, cursor: 'pointer', fontFamily: 'inherit',
+                fontWeight: rehearsal ? 600 : 500,
+                color: rehearsal ? 'var(--warn-text)' : 'var(--ink-mute)',
               }}
             >
-              <span style={{
-                width: 6, height: 6, borderRadius: '50%',
-                background: rehearsal ? 'var(--warn, #b3541e)' : 'var(--ink-faint)',
-              }} />
+              <span className="z-dot" aria-hidden="true" style={{ background: rehearsal ? 'var(--warn)' : 'var(--ink-faint)' }} />
               {rehearsal ? t('chat.rehearsalOn') : t('chat.rehearsalOff')}
             </button>
           )}
@@ -1922,49 +1885,33 @@ export default function AIChat({ docked = false }) {
               owned; shown only while on. Tap = leave (sends the toggle phrase). */}
           {mode === 'diagnostic' && (
             <button
+              type="button"
               onClick={onLeaveDiagnostic}
+              className="z-chip"
               title={t('chat.diagModeTitle')}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '4px 10px', borderRadius: 999,
-                background: 'color-mix(in srgb, var(--accent) 12%, var(--surface))',
-                border: '0.5px solid color-mix(in srgb, var(--accent) 45%, var(--line))',
-                fontSize: 11, fontWeight: 700, color: 'var(--accent)',
-                cursor: 'pointer', fontFamily: 'inherit',
-              }}
+              style={{ minHeight: 44, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, color: 'var(--ink)' }}
             >
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)' }} />
+              <span className="z-dot" aria-hidden="true" style={{ background: 'var(--ink)' }} />
               {t('chat.diagModeOn')}
             </button>
           )}
 
           {/* Wake-word master toggle — controls the backend always-on listener,
               NOT the hold-to-talk mic on this page. Hidden when wake-word is
-              not configured/working; in that case only push-to-talk is in play. */}
+              not configured/working; in that case only push-to-talk is in play.
+              No accent here: the mic in the composer is this screen's one. */}
           {wakewordEnabled && !wakeInitFailed && micEnabled !== null && (
             <button
+              type="button"
               onClick={onToggleMic}
+              className="z-chip"
+              aria-pressed={!!micEnabled}
               title={micEnabled
                 ? t('chat.wakeOnTitle')
                 : t('chat.wakeOffTitle')}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '4px 10px', borderRadius: 999,
-                background: micEnabled
-                  ? 'color-mix(in srgb, var(--accent) 12%, var(--surface))'
-                  : 'var(--surface)',
-                border: micEnabled
-                  ? '0.5px solid color-mix(in srgb, var(--accent) 45%, var(--line))'
-                  : '0.5px solid var(--line)',
-                fontSize: 11,
-                color: micEnabled ? 'var(--accent)' : 'var(--ink-mute)',
-                cursor: 'pointer', fontFamily: 'inherit',
-              }}
+              style={{ minHeight: 44, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--ink-mute)' }}
             >
-              <span style={{
-                width: 6, height: 6, borderRadius: '50%',
-                background: micEnabled ? 'var(--accent)' : 'var(--ink-faint)',
-              }} />
+              <span className="z-dot" aria-hidden="true" style={{ background: micEnabled ? 'var(--ok)' : 'var(--ink-faint)' }} />
               {micEnabled ? t('chat.wakeOn') : t('chat.muted')}
             </button>
           )}
@@ -1974,17 +1921,10 @@ export default function AIChat({ docked = false }) {
               this pill is just the steady "what stage am I in" indicator
               (Listening → Transcribing → Thinking → Speaking). */}
           {(listening || transcribing || speaking) && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '4px 10px', borderRadius: 999,
-              background: 'var(--surface)', border: '0.5px solid var(--line)',
-              fontSize: 11, color: 'var(--ink-mute)',
-              maxWidth: '70vw',
-            }}>
-              {listening && <VoiceWave active size={14} />}
+            <span className="z-chip" role="status" style={{ minHeight: 44, color: 'var(--ink-mute)', maxWidth: '70vw' }}>
+              {listening && <VoiceWave active size={16} />}
               <span
-                style={{ fontFamily: '"IBM Plex Mono", monospace',
-                         overflow: 'hidden', textOverflow: 'ellipsis',
+                style={{ fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis',
                          whiteSpace: 'nowrap', minWidth: 0 }}
                 dir="auto"
               >
@@ -1995,17 +1935,29 @@ export default function AIChat({ docked = false }) {
               </span>
             </span>
           )}
+
+          {/* Durable-thread switcher — opens a side drawer of past conversations. */}
+          <button
+            type="button"
+            className="z-icon-btn"
+            onClick={() => setShowThreads(true)}
+            title={t('chat.eyebrow')}
+            aria-label={t('chat.eyebrow')}
+            aria-haspopup="dialog"
+            aria-expanded={showThreads}
+          >
+            <MessagesSquare size={20} strokeWidth={1.75} aria-hidden="true" />
+          </button>
+
           {hasMessages && (
             <button
+              type="button"
+              className="z-icon-btn"
               onClick={resetChat}
-              style={{
-                background: 'transparent', border: '0.5px solid var(--line)',
-                borderRadius: 8, padding: '5px 10px',
-                fontSize: 11, color: 'var(--ink-mute)', cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
+              title={t('chat.newChat')}
+              aria-label={t('chat.newChat')}
             >
-              {t('chat.newChat')}
+              <SquarePen size={20} strokeWidth={1.75} aria-hidden="true" />
             </button>
           )}
         </div>
@@ -2016,15 +1968,16 @@ export default function AIChat({ docked = false }) {
           strip above the conversation cannot. Same toggle as the chip. */}
       {rehearsal && (
         <button
+          type="button"
           onClick={onToggleRehearsal}
           title={t('chat.rehearsalOnTitle')}
+          className="bg-warn-soft"
           style={{
-            display: 'block', width: '100%', flexShrink: 0,
-            paddingBlock: 6, paddingInline: 18,
-            background: 'color-mix(in srgb, var(--warn, #b3541e) 10%, var(--surface))',
-            borderBlockEnd: '0.5px solid color-mix(in srgb, var(--warn, #b3541e) 50%, var(--line))',
+            display: 'block', width: '100%', flexShrink: 0, minHeight: 44,
+            paddingBlock: 8, paddingInline: 20,
+            borderBlockEnd: '0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))',
             borderInline: 'none', borderBlockStart: 'none',
-            color: 'var(--warn, #b3541e)', fontSize: 12, fontWeight: 600,
+            color: 'var(--warn-text)', fontSize: 15, lineHeight: '20px', fontWeight: 600,
             textAlign: 'start', cursor: 'pointer', fontFamily: 'inherit',
           }}
         >
@@ -2036,93 +1989,111 @@ export default function AIChat({ docked = false }) {
       {showThreads && (
         <div
           onClick={() => setShowThreads(false)}
-          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.35)' }}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--backdrop)' }}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('chat.eyebrow')}
             onClick={(e) => e.stopPropagation()}
             style={{
               position: 'absolute', insetInlineStart: 0, top: 0, bottom: 0,
               width: 'min(84vw, 320px)', background: 'var(--bg)',
-              borderInlineEnd: '0.5px solid var(--line)', boxShadow: '0 0 40px rgba(0,0,0,0.25)',
-              display: 'flex', flexDirection: 'column', padding: '14px 12px', overflowY: 'auto',
+              borderInlineEnd: '0.5px solid var(--line)', boxShadow: 'var(--shadow-lg)',
+              display: 'flex', flexDirection: 'column', padding: '16px 12px', overflowY: 'auto',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span className="z-eyebrow">{t('chat.eyebrow')}</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, paddingInlineStart: 12 }}>
+              <span className="z-title3">{t('chat.eyebrow')}</span>
               <button
+                type="button"
+                className="z-icon-btn"
                 onClick={() => setShowThreads(false)}
-                aria-label="close"
-                style={{ background: 'transparent', border: 'none', fontSize: 20, lineHeight: 1, color: 'var(--ink-mute)', cursor: 'pointer' }}
-              >×</button>
+                aria-label={t('common.close')}
+                title={t('common.close')}
+              >
+                <X size={20} strokeWidth={1.75} aria-hidden="true" />
+              </button>
             </div>
             <ThreadList onSwitch={(id) => { switchThread(id); setShowThreads(false) }} />
           </div>
         </div>
       )}
 
-      {/* ── Empty state ── */}
+      {/* ── Empty state ── the identity block floats in the upper half; the
+          suggestion chips are bottom-anchored so they sit right above the
+          composer, where the thumb already is. */}
       <AnimatePresence>
         {!hasMessages && (
           <motion.div
-            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 20px', gap: 24 }}
+            initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+            transition={T_ENTER}
+            style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 20px 12px', gap: 24 }}
           >
-            {/* Identity strip — replaces the redundant middle mic. The composer
-                below already has a mic; one prominent voice affordance is enough.
-                A subtle sparkle + friendly prompt sets the stage without
-                competing with the suggestion chips that follow. */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                width: 44, height: 44, borderRadius: '50%',
-                background: 'color-mix(in srgb, var(--accent) 12%, var(--tile-base))',
-                border: '0.5px solid color-mix(in srgb, var(--accent) 28%, var(--line))',
+            {/* Identity — a quiet sparkle in ink-2 on surface-2. The composer's
+                mic is the one accent on this screen; the identity does not
+                compete with it. */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, marginTop: 'auto' }}>
+              <div aria-hidden="true" style={{
+                width: 56, height: 56, borderRadius: '50%',
+                background: 'var(--surface-2)',
+                border: '0.5px solid var(--line)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: 'color-mix(in srgb, var(--accent) 80%, var(--ink))',
+                color: 'var(--ink-2)',
               }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/>
                 </svg>
               </div>
-              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', margin: 0, letterSpacing: '-0.01em' }}>
+              <p className="z-title" style={{ margin: 0, textAlign: 'center' }}>
                 {listening ? t('chat.listening') : t('chat.whatCanIDo')}
               </p>
-              <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: 0, textAlign: 'center', maxWidth: 280 }}>
+              <p style={{ fontSize: 17, lineHeight: '22px', color: 'var(--ink-mute)', margin: 0, textAlign: 'center', maxWidth: 320 }}>
                 {t('chat.tryOneBelow')}
               </p>
             </div>
 
-            {/* Quick ask chips */}
-            {quickAsks.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', maxWidth: 420 }}>
-                {quickAsks.slice(0, 6).map(qa => (
+            {/* Suggestion chips — 44px targets in the card radius. A person's
+                own quick-ask keeps the emoji they gave it; the built-in
+                fallbacks are plain words. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', maxWidth: 560, marginTop: 'auto' }}>
+              {quickAsks.length > 0
+                ? quickAsks.slice(0, 6).map(qa => (
                   <button
                     key={qa.id}
+                    type="button"
                     onClick={() => handleDirectQuickAsk(qa)}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      padding: '8px 14px', borderRadius: 999, flexShrink: 0,
+                      display: 'inline-flex', alignItems: 'center', gap: 8,
+                      minHeight: 44, padding: '12px 16px', borderRadius: 'var(--r-card)', flexShrink: 0,
                       background: 'var(--surface)', border: '0.5px solid var(--line)',
-                      fontSize: 12, fontWeight: 500, color: 'var(--ink-2)',
+                      fontSize: 15, lineHeight: '20px', fontWeight: 500, color: 'var(--ink)',
                       cursor: 'pointer', fontFamily: 'inherit',
+                      transition: 'background var(--dur-press) var(--ease-standard)',
                     }}
                   >
-                    {qa.icon && <span style={{ fontSize: 14 }}>{qa.icon}</span>}
+                    {qa.icon && <span aria-hidden="true">{qa.icon}</span>}
                     <span dir="auto">{translateNamePhrase(qa.label, lang)}</span>
                   </button>
+                ))
+                : [t('chat.suggestGoodnight'), t('chat.suggestMovie'), t('chat.suggestWhoHome'), t('chat.suggestMorning')].map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => handleSend(s)}
+                    dir="auto"
+                    style={{
+                      minHeight: 44, padding: '12px 16px', borderRadius: 'var(--r-card)',
+                      background: 'var(--surface)', border: '0.5px solid var(--line)',
+                      fontSize: 15, lineHeight: '20px', fontWeight: 500, color: 'var(--ink)',
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      transition: 'background var(--dur-press) var(--ease-standard)',
+                    }}
+                  >
+                    {s}
+                  </button>
                 ))}
-              </div>
-            )}
-            {!quickAsks.length && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', maxWidth: 380 }}>
-                {[t('chat.suggestGoodnight'), t('chat.suggestMovie'), t('chat.suggestWhoHome'), t('chat.suggestMorning')].map(s => (
-                  <button key={s} onClick={() => handleSend(s)} style={{
-                    padding: '7px 14px', borderRadius: 999,
-                    background: 'var(--surface)', border: '0.5px solid var(--line)',
-                    fontSize: 12, color: 'var(--ink-2)', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-                  }}>{s}</button>
-                ))}
-              </div>
-            )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -2131,7 +2102,7 @@ export default function AIChat({ docked = false }) {
       {(hasMessages || recording) && (
         <div
           className="scrollbar-thin"
-          style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 18px 12px', display: 'flex', flexDirection: 'column', gap: 16 }}
+          style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px 12px', display: 'flex', flexDirection: 'column', gap: 16 }}
         >
           {messages.map(msg => (
             <Message
@@ -2154,21 +2125,25 @@ export default function AIChat({ docked = false }) {
         </div>
       )}
 
-      {/* Suggestion chips above input (when has messages) */}
+      {/* Suggestion chips above input (when has messages): the person's own
+          quick-asks as 44px chips in one scrolling row. */}
       {hasMessages && quickAsks.length > 0 && (
-        <div style={{ padding: '8px 16px 0', display: 'flex', gap: 6, overflowX: 'auto', flexShrink: 0 }} className="scrollbar-thin">
+        <div style={{ padding: '8px 20px 0', display: 'flex', gap: 8, overflowX: 'auto', flexShrink: 0 }} className="scrollbar-thin">
           {quickAsks.slice(0, 4).map(qa => (
-            <div key={qa.id} onClick={() => handleDirectQuickAsk(qa)} style={{
-              padding: '6px 12px', borderRadius: 999, flexShrink: 0, cursor: 'pointer',
-              background: 'var(--surface)', border: '0.5px solid var(--line)',
-              fontSize: 11, color: 'var(--ink-2)', fontWeight: 500,
-            }}>
-              {qa.icon && <span style={{ marginInlineEnd: 4 }}>{qa.icon}</span>}
+            <button
+              key={qa.id}
+              type="button"
+              onClick={() => handleDirectQuickAsk(qa)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                minHeight: 44, padding: '8px 16px', borderRadius: 999, flexShrink: 0, cursor: 'pointer',
+                background: 'var(--surface)', border: '0.5px solid var(--line)',
+                fontSize: 15, lineHeight: '20px', color: 'var(--ink)', fontWeight: 500, fontFamily: 'inherit',
+              }}
+            >
+              {qa.icon && <span aria-hidden="true">{qa.icon}</span>}
               <span dir="auto">{translateNamePhrase(qa.label, lang)}</span>
-            </div>
-          ))}
-          {!quickAsks.length && [t('chat.suggestGoodnight'), t('chat.suggestMovie'), t('chat.suggestWhoHome')].map(s => (
-            <div key={s} onClick={() => handleSend(s)} style={{ padding: '6px 12px', borderRadius: 999, flexShrink: 0, cursor: 'pointer', background: 'var(--surface)', border: '0.5px solid var(--line)', fontSize: 11, color: 'var(--ink-2)', fontWeight: 500 }}>{s}</div>
+            </button>
           ))}
         </div>
       )}
@@ -2180,18 +2155,18 @@ export default function AIChat({ docked = false }) {
 
       {/* ── Composer ── */}
       <div style={{
-        padding: '10px 16px 18px',
+        padding: '12px 20px 16px',
         borderTop: recording ? 'none' : '0.5px solid var(--line)',
-        display: 'flex', alignItems: 'center', gap: 10,
+        display: 'flex', alignItems: 'center', gap: 12,
         flexShrink: 0,
       }}>
         <div style={{
-          flex: 1, display: 'flex', alignItems: 'center', gap: 10,
+          flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 12,
           background: 'var(--surface)', border: '0.5px solid var(--line)',
-          borderRadius: 22, padding: '12px 16px',
+          borderRadius: 'var(--r-sheet)', padding: '12px 16px',
         }}>
-          {/* Sparkle icon */}
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          {/* Sparkle glyph — quiet, in ink-mute; the mic is the accent. */}
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink-mute)" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4L18.4 5.6"/>
           </svg>
           <input
@@ -2202,16 +2177,17 @@ export default function AIChat({ docked = false }) {
             placeholder={t('chat.composerPlaceholder')}
             dir={isHebrew(input) ? 'rtl' : 'ltr'}
             style={{
-              flex: 1, background: 'none', border: 'none', outline: 'none',
-              fontSize: 13, color: 'var(--ink)', fontFamily: 'inherit',
+              flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none',
+              fontSize: 17, lineHeight: '22px', color: 'var(--ink)', fontFamily: 'inherit', padding: 0,
             }}
           />
         </div>
 
-        {/* Send (when there's text) / hold-to-talk mic (when empty).
-            Wrapper carries the pulsing ring overlay while held so the button
-            itself stays a clean 44px hit target. */}
-        <div style={{ position: 'relative', width: 44, height: 44, flexShrink: 0 }}>
+        {/* Send (when there's text) / hold-to-talk mic (when empty). This is
+            the ONE accent element on the screen. The wrapper carries the
+            pulsing ring while held so the button itself stays a clean 48px
+            hit target. */}
+        <div style={{ position: 'relative', width: 48, height: 48, flexShrink: 0 }}>
           {recording && (
             <motion.span
               aria-hidden="true"
@@ -2220,7 +2196,7 @@ export default function AIChat({ docked = false }) {
               transition={{ duration: 1.2, ease: 'easeOut', repeat: Infinity }}
               style={{
                 position: 'absolute', inset: 0, borderRadius: '50%',
-                background: 'color-mix(in srgb, var(--accent) 35%, transparent)',
+                background: 'color-mix(in srgb, var(--accent) 25%, transparent)',
                 pointerEvents: 'none',
               }}
             />
@@ -2240,15 +2216,12 @@ export default function AIChat({ docked = false }) {
             aria-label={ptt ? (recording ? t('chat.releaseToSendAria') : t('chat.holdToSpeak')) : t('chat.sendMessage')}
             title={ptt ? t('chat.holdToSpeakTitle') : t('chat.sendTitle')}
             whileTap={ptt ? undefined : { scale: 0.9 }}
+            transition={T_PRESS}
             style={{
               position: 'relative', zIndex: 1,
-              width: 44, height: 44, borderRadius: '50%',
-              background: ptt
-                ? (recording
-                    ? 'color-mix(in srgb, var(--accent) 80%, var(--ink))'
-                    : 'var(--accent)')
-                : 'var(--ink)',
-              color: '#fff',
+              width: 48, height: 48, borderRadius: '50%',
+              background: ptt ? 'var(--accent)' : 'var(--ink)',
+              color: ptt ? 'var(--on-accent)' : 'var(--bg)',
               border: 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer',
@@ -2258,15 +2231,15 @@ export default function AIChat({ docked = false }) {
                 ? '0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent), var(--shadow-md)'
                 : 'var(--shadow-md)',
               transform: recording ? 'scale(1.06)' : 'scale(1)',
-              transition: 'transform 0.12s ease, box-shadow 0.15s ease, background 0.15s ease',
+              transition: 'transform var(--dur-press) var(--ease-standard), box-shadow var(--dur-state) var(--ease-standard), background var(--dur-state) var(--ease-standard)',
             }}
           >
             {recording ? (
-              <VoiceWave active size={18} />
+              <VoiceWave active size={20} />
             ) : input.trim() ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              <Send size={20} strokeWidth={1.75} aria-hidden="true" />
             ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+              <Mic size={20} strokeWidth={1.75} aria-hidden="true" />
             )}
           </motion.button>
           )})()}

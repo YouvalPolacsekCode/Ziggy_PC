@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Trash2, Edit2, Play, Cpu } from 'lucide-react'
+import { Plus, Trash2, Edit2, Play, Cpu, Check, MapPin } from 'lucide-react'
+import { T_ENTER } from '../lib/motion'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -86,9 +87,9 @@ function ParamField({ schema, value, onChange }) {
   }
   if (schema.type === 'boolean') {
     return (
-      <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
         <Toggle checked={!!value} onCheckedChange={onChange} />
-        <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>{schema.label}</span>
+        <span style={{ fontSize: 17, lineHeight: '22px', color: 'var(--ink)' }}>{schema.label}</span>
       </label>
     )
   }
@@ -113,6 +114,19 @@ function ParamField({ schema, value, onChange }) {
   )
 }
 
+// Filter chip — active is surface-2 + ink + hairline, never inverted (the
+// inverted look is reserved for the one primary action on the screen).
+function filterChip(active) {
+  return {
+    minHeight: 36, padding: '8px 16px', borderRadius: 999, fontSize: 13, lineHeight: '18px',
+    fontWeight: active ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit',
+    background: active ? 'var(--surface-2)' : 'var(--surface)',
+    color: active ? 'var(--ink)' : 'var(--ink-mute)',
+    border: `0.5px solid ${active ? 'var(--line-2)' : 'var(--line)'}`,
+    transition: 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard)',
+  }
+}
+
 // ── Wizard ────────────────────────────────────────────────────────────────────
 
 const WIZARD_STEP_KEYS = ['stepCapability', 'stepConfigure', 'stepAssign']
@@ -120,11 +134,11 @@ const WIZARD_STEP_COUNT = WIZARD_STEP_KEYS.length
 
 function StepIndicator({ current }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 20 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20 }}>
       {WIZARD_STEP_KEYS.map((s, i) => (
-        <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, background: i < current ? 'var(--ink)' : i === current ? `color-mix(in srgb, var(--ink) 12%, var(--surface))` : 'var(--bg-2)', color: i < current ? 'var(--bg)' : i === current ? 'var(--ink)' : 'var(--ink-faint)', border: i === current ? '1.5px solid var(--ink)' : '0.5px solid var(--line)' }}>
-            {i < current ? '✓' : i + 1}
+        <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="z-mono" style={{ width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, background: i < current ? 'var(--ink)' : i === current ? 'var(--surface-2)' : 'var(--surface)', color: i < current ? 'var(--bg)' : i === current ? 'var(--ink)' : 'var(--ink-mute)', border: i === current ? '1px solid var(--ink)' : i < current ? 'none' : '0.5px solid var(--line)', transition: 'background var(--dur-state) var(--ease-standard)' }}>
+            {i < current ? <Check size={14} strokeWidth={2.5} aria-hidden /> : i + 1}
           </div>
           {i < WIZARD_STEP_COUNT - 1 && <div style={{ width: 24, height: 1, background: i < current ? 'var(--ink)' : 'var(--line)' }} />}
         </div>
@@ -192,35 +206,36 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
       <AnimatePresence mode="wait">
         <motion.div
           key={step}
-          initial={{ opacity: 0, x: 10 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -10 }}
-          transition={{ duration: 0.15 }}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={T_ENTER}
         >
           {/* Step 0 — pick capability */}
           {step === 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                <button onClick={() => setFilterCat('all')} style={{ padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === 'all' ? 'var(--ink)' : 'var(--surface)', color: filterCat === 'all' ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === 'all' ? 'none' : '0.5px solid var(--line)' }}>{t('virtual.allCats')}</button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={() => setFilterCat('all')} aria-pressed={filterCat === 'all'} className="z-button" style={filterChip(filterCat === 'all')}>{t('virtual.allCats')}</button>
                 {categories.map(cat => (
-                  <button key={cat.id} onClick={() => setFilterCat(cat.id)} style={{ padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === cat.id ? 'var(--ink)' : 'var(--surface)', color: filterCat === cat.id ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === cat.id ? 'none' : '0.5px solid var(--line)' }}>
+                  <button key={cat.id} onClick={() => setFilterCat(cat.id)} aria-pressed={filterCat === cat.id} className="z-button" style={filterChip(filterCat === cat.id)}>
                     {cat.icon} {cat.label}
                   </button>
                 ))}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 260, overflowY: 'auto' }} className="scrollbar-thin">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 260, overflowY: 'auto' }} className="scrollbar-thin">
                 {filteredCaps.map(cap => (
-                  <button key={cap.id} onClick={() => selectCapability(cap)} style={{
-                    display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 11, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
-                    background: selectedCap?.id === cap.id ? `color-mix(in srgb, var(--accent) 8%, var(--surface))` : 'var(--surface)',
-                    border: `0.5px solid ${selectedCap?.id === cap.id ? 'var(--accent)' : 'var(--line)'}`,
+                  <button key={cap.id} onClick={() => selectCapability(cap)} aria-pressed={selectedCap?.id === cap.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '12px 16px', borderRadius: 'var(--r-ctl)', textAlign: 'start', cursor: 'pointer', fontFamily: 'inherit',
+                    background: selectedCap?.id === cap.id ? 'var(--surface-2)' : 'var(--surface)',
+                    border: `0.5px solid ${selectedCap?.id === cap.id ? 'var(--line-2)' : 'var(--line)'}`,
+                    transition: 'background var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
                   }}>
-                    <span style={{ fontSize: 20, flexShrink: 0 }}>{cap.icon}</span>
+                    <span style={{ fontSize: 22, lineHeight: '24px', flexShrink: 0 }} aria-hidden>{cap.icon}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{cap.name}</p>
-                      <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{cap.description}</p>
+                      <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{cap.name}</p>
+                      <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{cap.description}</p>
                     </div>
-                    {selectedCap?.id === cap.id && <span style={{ color: 'var(--accent)', flexShrink: 0 }}>✓</span>}
+                    {selectedCap?.id === cap.id && <Check size={20} strokeWidth={2} style={{ color: 'var(--ink)', flexShrink: 0 }} aria-hidden />}
                   </button>
                 ))}
               </div>
@@ -248,18 +263,18 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
               ))}
 
               {configParams.length === 0 && (
-                <p className="text-sm text-ink-faint text-center py-2">
+                <p className="text-subhead text-ink-mute text-center py-2">
                   {t('virtual.noConfig')}
                 </p>
               )}
 
               {/* Inform user about runtime params */}
               {runtimeParams.length > 0 && (
-                <div className="rounded-xl bg-surface-2/60 border border-line px-4 py-3 mt-1">
-                  <p className="text-xs font-medium text-ink-mute mb-1">{t('virtual.runtimeIntro')}</p>
-                  <div className="flex flex-wrap gap-1.5">
+                <div className="rounded-card bg-surface-2 border border-line px-4 py-3 mt-1">
+                  <p className="text-subhead text-ink-mute mb-2">{t('virtual.runtimeIntro')}</p>
+                  <div className="flex flex-wrap gap-2">
                     {runtimeParams.map(([key, schema]) => (
-                      <span key={key} className="text-[11px] text-ink-faint bg-line px-2 py-0.5 rounded-full">
+                      <span key={key} className="z-chip">
                         {schema.label}
                       </span>
                     ))}
@@ -281,19 +296,19 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
                   ...rooms.map((r) => ({ value: r.id, label: r.name })),
                 ]}
               />
-              <div className="bg-surface-2 rounded-xl p-4">
+              <div className="bg-surface-2 rounded-[16px] p-4">
                 <div className="flex items-center gap-3 mb-2">
-                  <span className="text-2xl">{selectedCap?.icon}</span>
+                  <span className="text-title2" aria-hidden>{selectedCap?.icon}</span>
                   <div>
-                    <p className="font-semibold text-ink" dir="auto">{name}</p>
-                    <p className="text-xs text-ink-mute" dir="auto">{selectedCap?.description}</p>
+                    <p className="text-body font-semibold text-ink" dir="auto">{name}</p>
+                    <p className="text-subhead text-ink-mute" dir="auto">{selectedCap?.description}</p>
                   </div>
                 </div>
                 {Object.keys(params).filter((k) => params[k] != null && params[k] !== '').length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-2">
                     {Object.entries(params).map(([k, v]) =>
                       v != null && v !== '' ? (
-                        <Badge key={k} className="text-[10px]">{k}: {String(v)}</Badge>
+                        <Badge key={k} className="text-[11px]">{k}: {String(v)}</Badge>
                       ) : null
                     )}
                   </div>
@@ -335,10 +350,10 @@ function TriggerModal({ device, capability, onConfirm, onClose }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3 mb-1">
-        <span className="text-2xl">{device.icon}</span>
+        <span className="text-title2" aria-hidden>{device.icon}</span>
         <div>
-          <p className="font-semibold text-ink" dir="auto">{device.name}</p>
-          <p className="text-xs text-ink-mute" dir="auto">{capability?.description}</p>
+          <p className="text-body font-semibold text-ink" dir="auto">{device.name}</p>
+          <p className="text-subhead text-ink-mute" dir="auto">{capability?.description}</p>
         </div>
       </div>
 
@@ -364,41 +379,45 @@ function TriggerModal({ device, capability, onConfirm, onClose }) {
 function VirtualDeviceCard({ device, onToggle, onTrigger, onEdit, onDelete, triggering }) {
   const t = useT()
   return (
-    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}>
-      <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, background: device.enabled ? `color-mix(in srgb, var(--info) 12%, var(--surface))` : 'var(--bg-2)', opacity: device.enabled ? 1 : 0.55 }}>
+    <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={T_ENTER}>
+      <div className="z-card" style={{ padding: 16, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, lineHeight: '24px', background: device.enabled ? 'var(--surface-2)' : 'var(--surface)', border: '0.5px solid var(--line)', color: device.enabled ? 'var(--ink)' : 'var(--ink-faint)' }} aria-hidden>
           {device.icon}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{device.name}</p>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.capability}</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+          <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{device.name}</p>
+          <p className="z-footnote z-code" style={{ marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.capability}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             {device.category && (
-              <span style={{ fontSize: 9.5, padding: '1px 7px', borderRadius: 999, background: `color-mix(in srgb, var(--info) 12%, transparent)`, color: 'var(--info)', fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{device.category}</span>
+              <span className="z-chip">{device.category}</span>
             )}
-            {device.room && <span style={{ fontSize: 10, color: 'var(--ink-faint)' }}>📍 {device.room}</span>}
-            {device.last_triggered && <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>{t('virtual.lastRun', { when: device.last_triggered })}</span>}
+            {device.room && (
+              <span className="z-footnote" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <MapPin size={14} strokeWidth={1.75} aria-hidden /> {device.room}
+              </span>
+            )}
+            {device.last_triggered && <span className="z-footnote z-mono">{t('virtual.lastRun', { when: device.last_triggered })}</span>}
           </div>
           {Object.keys(device.default_params || {}).length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
               {Object.entries(device.default_params).slice(0, 3).map(([k, v]) => (
-                <span key={k} style={{ fontSize: 9.5, color: 'var(--ink-faint)', background: 'var(--bg-2)', padding: '2px 7px', borderRadius: 5, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130, whiteSpace: 'nowrap' }}>
+                <span key={k} className="z-footnote z-mono" style={{ background: 'var(--surface-2)', padding: '2px 8px', borderRadius: 'var(--r-chip)', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 160, whiteSpace: 'nowrap' }}>
                   {k}: {String(v)}
                 </span>
               ))}
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
           <Toggle checked={device.enabled} onCheckedChange={() => onToggle(device)} />
-          <div style={{ display: 'flex', gap: 2 }}>
+          <div style={{ display: 'flex', gap: 0 }}>
             {[
-              { onClick: () => onTrigger(device), color: triggering === device.id ? 'var(--ink-faint)' : 'var(--ok)', disabled: triggering === device.id, title: t('virtual.runNow'), path: <path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none"/> },
-              { onClick: () => onEdit(device), color: 'var(--ink-faint)', title: t('virtual.editTitle'), path: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></> },
-              { onClick: () => onDelete(device), color: 'var(--accent)', title: t('virtual.deleteTitle'), path: <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/> },
-            ].map(({ onClick, color, disabled, title, path }) => (
-              <button key={title} onClick={onClick} disabled={disabled} title={title} aria-label={title} style={{ background: 'none', border: 'none', cursor: disabled ? 'default' : 'pointer', color, padding: 4, opacity: disabled ? 0.4 : 1 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{path}</svg>
+              { onClick: () => onTrigger(device), Icon: Play,   color: triggering === device.id ? 'var(--ink-faint)' : 'var(--ink-2)', disabled: triggering === device.id, title: t('virtual.runNow') },
+              { onClick: () => onEdit(device),    Icon: Edit2,  color: 'var(--ink-2)', title: t('virtual.editTitle') },
+              { onClick: () => onDelete(device),  Icon: Trash2, color: 'var(--err)',   title: t('virtual.deleteTitle') },
+            ].map(({ onClick, Icon, color, disabled, title }) => (
+              <button key={title} onClick={onClick} disabled={disabled} title={title} aria-label={title} className="z-icon-btn" style={{ background: 'transparent', border: 'none', cursor: disabled ? 'default' : 'pointer', color }}>
+                <Icon size={20} strokeWidth={1.75} aria-hidden />
               </button>
             ))}
           </div>
@@ -447,7 +466,7 @@ function EditVirtualDevice({ device, capability, rooms, onSave, onClose }) {
       />
       <label className="flex items-center gap-3 cursor-pointer">
         <Toggle checked={enabled} onCheckedChange={setEnabled} />
-        <span className="text-sm text-ink-2">{t('virtual.enabled')}</span>
+        <span className="text-subhead text-ink-2">{t('virtual.enabled')}</span>
       </label>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>{t('virtual.cancel')}</button>
@@ -567,38 +586,38 @@ export default function VirtualDevices({ embedded = false }) {
   }, {})
 
   return (
-    <div style={embedded ? {} : { maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
+    <div style={embedded ? {} : { maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 24px' }}>
       {/* Header — hidden when embedded */}
       {!embedded && (
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div className="z-page-head">
           <div>
-            <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('virtual.softwareOnly')}</p>
-            <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('virtual.heading')}</h1>
-            <p className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>
+            <p className="z-eyebrow">{t('virtual.softwareOnly')}</p>
+            <h1 className="z-display" style={{ margin: 0 }}>{t('virtual.heading')}</h1>
+            <p className="z-footnote z-mono">
               {t('virtual.statusCounts', { active: devices.filter(d => d.enabled).length, total: devices.length })}
             </p>
           </div>
-          <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '9px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexShrink: 0 }}>
-            <Plus size={13} /> {t('virtual.addCapability')}
+          <button onClick={() => setShowAdd(true)} className="z-btn-primary z-button" style={{ flexShrink: 0 }}>
+            <Plus size={18} strokeWidth={2} aria-hidden /> {t('virtual.addCapability')}
           </button>
         </div>
       )}
       {embedded && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
-          <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ padding: '6px 12px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
-            <Plus size={12} /> {t('virtual.addCapability')}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+          <button onClick={() => setShowAdd(true)} className="z-btn-primary z-button">
+            <Plus size={18} strokeWidth={2} aria-hidden /> {t('virtual.addCapability')}
           </button>
         </div>
       )}
 
       {/* Category filter */}
       {devices.length > 0 && (
-        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 18 }}>
-          <button onClick={() => setFilterCat('all')} style={{ padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === 'all' ? 'var(--ink)' : 'var(--surface)', color: filterCat === 'all' ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === 'all' ? 'none' : '0.5px solid var(--line)' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+          <button onClick={() => setFilterCat('all')} aria-pressed={filterCat === 'all'} className="z-button" style={filterChip(filterCat === 'all')}>
             {t('virtual.allFilter', { n: devices.length })}
           </button>
           {categories.filter(c => catCounts[c.id] > 0).map(cat => (
-            <button key={cat.id} onClick={() => setFilterCat(cat.id)} style={{ padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: filterCat === cat.id ? 'var(--ink)' : 'var(--surface)', color: filterCat === cat.id ? 'var(--bg)' : 'var(--ink-mute)', border: filterCat === cat.id ? 'none' : '0.5px solid var(--line)' }}>
+            <button key={cat.id} onClick={() => setFilterCat(cat.id)} aria-pressed={filterCat === cat.id} className="z-button" style={filterChip(filterCat === cat.id)}>
               {cat.icon} {cat.label} ({catCounts[cat.id]})
             </button>
           ))}
@@ -608,23 +627,23 @@ export default function VirtualDevices({ embedded = false }) {
       {/* Loading skeleton */}
       {loading && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {[1,2,3].map(i => <div key={i} style={{ height: 72, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
+          {[1,2,3].map(i => <div key={i} style={{ height: 76, borderRadius: 'var(--r-card)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }} />)}
         </div>
       )}
 
       {/* Empty state */}
       {!loading && devices.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('virtual.emptyTitle')}</p>
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('virtual.emptyHelp')}</p>
-          <button onClick={() => setShowAdd(true)} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Plus size={13} /> {t('virtual.addFirst')}
+        <div className="z-card" style={{ textAlign: 'center', padding: 32 }}>
+          <p className="z-body" style={{ fontWeight: 600, marginBottom: 4 }}>{t('virtual.emptyTitle')}</p>
+          <p className="z-subhead" style={{ marginBottom: 16 }}>{t('virtual.emptyHelp')}</p>
+          <button onClick={() => setShowAdd(true)} className="z-btn-secondary z-button">
+            <Plus size={18} strokeWidth={2} aria-hidden /> {t('virtual.addFirst')}
           </button>
         </div>
       )}
 
       <AnimatePresence mode="popLayout">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {filtered.map(device => (
             <VirtualDeviceCard
               key={device.id}

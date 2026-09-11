@@ -56,7 +56,7 @@ export default function Remote() {
   const target = parseTarget(routeId)
 
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto', padding: '0 0 32px' }}>
+    <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
       {target.kind === 'ir' && <IrPath irId={target.irId} navigate={navigate} />}
       {target.kind === 'ha' && <HaPath entityId={target.entityId} navigate={navigate} />}
       {target.kind === 'unknown' && <NotFound navigate={navigate} />}
@@ -121,13 +121,13 @@ function Body({ entity, loading, error, navigate }) {
   }
   const facts = deviceFacts(entity)
   return (
-    <div style={{ padding: '24px 20px' }}>
+    <div>
       <Header
         title={facts.name}
-        subtitle={`${facts.meta.label}${facts.isIr ? ' · IR' : facts.linkedIr ? ' · IR + WiFi' : ''}`}
+        subtitle={`${facts.meta.label}${facts.isIr ? i18nT('remote.metaIr') : facts.linkedIr ? i18nT('remote.metaIrWifi') : ''}`}
         onBack={() => navigate(-1)}
       />
-      <div className="z-card" style={{ padding: 18, borderRadius: 18 }}>
+      <div className="z-card" style={{ padding: 16 }}>
         <DeviceRemote entity={entity} />
       </div>
     </div>
@@ -136,21 +136,20 @@ function Body({ entity, loading, error, navigate }) {
 
 function Header({ title, subtitle, onBack }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '24px 20px 16px' }}>
-      <button onClick={onBack} className="z-icon-btn" style={{ width: 36, height: 36, borderRadius: 12 }}>
-        <ArrowLeft size={16} className="icon-flip-rtl" />
-      </button>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p className="z-eyebrow" style={{ marginBottom: 2 }}>{i18nT('remote.title')}</p>
-        <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {title}
-        </h1>
-        {subtitle && (
-          <p className="z-mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2 }}>
-            {subtitle}
-          </p>
-        )}
+    <div className="z-page-head" style={{ alignItems: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+        <button onClick={onBack} className="z-icon-btn" aria-label={i18nT('common.back')}>
+          <ArrowLeft size={20} strokeWidth={1.75} className="icon-flip-rtl" />
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p className="z-eyebrow">{i18nT('remote.title')}</p>
+          <h1 className="z-display" style={{ margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {title}
+          </h1>
+          {subtitle && (
+            <p className="z-footnote">{subtitle}</p>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -158,10 +157,8 @@ function Header({ title, subtitle, onBack }) {
 
 function Empty({ text }) {
   return (
-    <div style={{ margin: '0 20px', padding: '32px 16px', borderRadius: 14,
-      background: 'var(--surface)', border: '0.5px solid var(--line)',
-      textAlign: 'center', color: 'var(--ink-mute)', fontSize: 13 }}>
-      {text}
+    <div className="z-card" style={{ padding: 32, textAlign: 'center' }}>
+      <p className="z-body" style={{ color: 'var(--ink-mute)' }}>{text}</p>
     </div>
   )
 }

@@ -65,21 +65,24 @@ export default function ConfigFlowRunner({ flowId, title, onDone, onCancel, onGo
 
   const cancel = async () => { try { await configFlowCancel(flowId) } catch {} onCancel?.() }
 
-  const box = { display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center', textAlign: 'center', padding: '12px 4px' }
-  const btn = (primary) => ({
-    padding: '12px 16px', borderRadius: 10, border: primary ? 'none' : '1px solid var(--line)',
-    background: primary ? 'var(--accent)' : 'transparent', color: primary ? 'white' : 'var(--ink-mute)',
-    fontWeight: 600, fontSize: 14, cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
+  const box = { display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center', textAlign: 'center', padding: '12px 4px' }
+  // One inverted primary per screen; everything else is a hairline secondary.
+  const btnCls = (primary) => (primary ? 'z-btn-primary z-button' : 'z-btn-secondary z-button')
+  const btn = () => ({ cursor: busy ? 'wait' : 'pointer' })
+  const statusDisc = (tone) => ({
+    width: 56, height: 56, borderRadius: '50%',
+    background: `color-mix(in srgb, var(--${tone}) 12%, var(--surface))`, color: `var(--${tone})`,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   })
 
   if (gone) {
     return (
       <div style={box}>
-        <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--warn-soft, #fff4e5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={22} className="text-warn" /></div>
-        <div style={{ fontSize: 14, color: 'var(--ink)' }}>{gone}</div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => (onGone ? onGone() : onCancel?.())} style={btn(true)}>{t('wizard.configFlow.rescan')}</button>
-          <button onClick={cancel} style={btn(false)}>{t('wizard.configFlow.cancel')}</button>
+        <div style={statusDisc('warn')} aria-hidden><X size={28} strokeWidth={1.75} /></div>
+        <div className="z-body">{gone}</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <button onClick={() => (onGone ? onGone() : onCancel?.())} className={btnCls(true)} style={btn()}>{t('wizard.configFlow.rescan')}</button>
+          <button onClick={cancel} className={btnCls(false)} style={btn()}>{t('wizard.configFlow.cancel')}</button>
         </div>
       </div>
     )
@@ -88,26 +91,26 @@ export default function ConfigFlowRunner({ flowId, title, onDone, onCancel, onGo
   if (error) {
     return (
       <div style={box}>
-        <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--err-soft, #fee)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={22} className="text-err" /></div>
-        <div style={{ fontSize: 14, color: 'var(--ink)' }}>{error}</div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => send({})} style={btn(true)}>{t('wizard.configFlow.retry')}</button>
-          <button onClick={cancel} style={btn(false)}>{t('wizard.configFlow.cancel')}</button>
+        <div style={statusDisc('err')} aria-hidden><X size={28} strokeWidth={1.75} /></div>
+        <div className="z-body" role="alert">{error}</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <button onClick={() => send({})} className={btnCls(true)} style={btn()}>{t('wizard.configFlow.retry')}</button>
+          <button onClick={cancel} className={btnCls(false)} style={btn()}>{t('wizard.configFlow.cancel')}</button>
         </div>
       </div>
     )
   }
 
   if (!step || busy && !step) {
-    return <div style={box}><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--accent)' }} /><div style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{t('wizard.configFlow.configuring')}</div></div>
+    return <div style={box}><Loader2 size={24} className="z-spin" style={{ color: 'var(--ink-mute)' }} /><div className="z-subhead">{t('wizard.configFlow.configuring')}</div></div>
   }
 
   if (step.status === 'done') {
     return (
       <div style={box}>
-        <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--ok-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Check size={24} className="text-ok" /></div>
-        <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>{t('wizard.configFlow.added', { name: title || step.title || '' })}</div>
-        <button onClick={() => onDone?.(step)} style={btn(true)}>{t('wizard.configFlow.done')}</button>
+        <div style={statusDisc('ok')} aria-hidden><Check size={28} strokeWidth={2} /></div>
+        <div className="z-title">{t('wizard.configFlow.added', { name: title || step.title || '' })}</div>
+        <button onClick={() => onDone?.(step)} className={btnCls(true)} style={btn()}>{t('wizard.configFlow.done')}</button>
       </div>
     )
   }
@@ -115,8 +118,8 @@ export default function ConfigFlowRunner({ flowId, title, onDone, onCancel, onGo
   if (step.status === 'aborted') {
     return (
       <div style={box}>
-        <div style={{ fontSize: 14, color: 'var(--ink)' }}>{t('wizard.configFlow.couldntAdd', { reason: step.reason || '' })}</div>
-        <button onClick={cancel} style={btn(false)}>{t('wizard.configFlow.cancel')}</button>
+        <div className="z-body">{t('wizard.configFlow.couldntAdd', { reason: step.reason || '' })}</div>
+        <button onClick={cancel} className={btnCls(false)} style={btn()}>{t('wizard.configFlow.cancel')}</button>
       </div>
     )
   }
@@ -124,9 +127,9 @@ export default function ConfigFlowRunner({ flowId, title, onDone, onCancel, onGo
   if (step.status === 'progress') {
     return (
       <div style={box}>
-        <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--accent)' }} />
-        <div style={{ fontSize: 14, color: 'var(--ink)' }}>{t('wizard.configFlow.confirmOnDevice', { name: title || '' })}</div>
-        <button onClick={cancel} style={btn(false)}>{t('wizard.configFlow.cancel')}</button>
+        <Loader2 size={24} className="z-spin" style={{ color: 'var(--ink-mute)' }} />
+        <div className="z-body">{t('wizard.configFlow.confirmOnDevice', { name: title || '' })}</div>
+        <button onClick={cancel} className={btnCls(false)} style={btn()}>{t('wizard.configFlow.cancel')}</button>
       </div>
     )
   }
@@ -135,24 +138,24 @@ export default function ConfigFlowRunner({ flowId, title, onDone, onCancel, onGo
   const fields = step.fields || []
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{title || t('wizard.configFlow.setup')}</div>
+      <div className="z-title">{title || t('wizard.configFlow.setup')}</div>
       {fields.map((f) => {
         const val = input[f.name] ?? f.default ?? ''
         const set = (v) => setInput((s) => ({ ...s, [f.name]: v }))
         const label = f.label || f.name
         if (f.type === 'boolean') {
           return (
-            <label key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)' }}>
-              <input type="checkbox" checked={!!input[f.name]} onChange={(e) => set(e.target.checked)} /> {label}
+            <label key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, fontSize: 17, lineHeight: '22px', color: 'var(--ink)' }}>
+              <input type="checkbox" checked={!!input[f.name]} onChange={(e) => set(e.target.checked)} style={{ width: 20, height: 20 }} /> {label}
             </label>
           )
         }
         if (Array.isArray(f.options) && f.options.length) {
           return (
             <div key={f.name}>
-              <label style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{label}</label>
-              <select value={val} onChange={(e) => set(e.target.value)}
-                style={{ width: '100%', height: 40, padding: '0 10px', borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface-2)', color: 'var(--ink)' }}>
+              <label style={{ display: 'block', fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{label}</label>
+              <select value={val} onChange={(e) => set(e.target.value)} className="z-input"
+                style={{ height: 44, padding: '0 16px' }}>
                 <option value="" />
                 {f.options.map((o) => <option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o.value ?? o}</option>)}
               </select>
@@ -161,19 +164,19 @@ export default function ConfigFlowRunner({ flowId, title, onDone, onCancel, onGo
         }
         return (
           <div key={f.name}>
-            <label style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{label}</label>
+            <label style={{ display: 'block', fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{label}</label>
             <input type={/pass|token|pin/i.test(f.name) ? 'password' : 'text'} value={val}
-              onChange={(e) => set(e.target.value)} dir="auto"
-              style={{ width: '100%', height: 40, padding: '0 10px', borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface-2)', color: 'var(--ink)', boxSizing: 'border-box' }} />
+              onChange={(e) => set(e.target.value)} dir="auto" className="z-input"
+              style={{ height: 44, padding: '0 16px', boxSizing: 'border-box' }} />
           </div>
         )
       })}
-      {step.errors?.base && <div style={{ fontSize: 12, color: 'var(--err)' }}>{step.errors.base}</div>}
-      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-        <button onClick={() => send(input)} disabled={busy} style={btn(true)}>
-          {fields.length === 0 ? t('wizard.configFlow.confirm') : t('wizard.configFlow.submit')} {!busy && <Send size={12} style={{ marginInlineStart: 6, verticalAlign: 'middle' }} />}
+      {step.errors?.base && <div role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)' }}>{step.errors.base}</div>}
+      <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+        <button onClick={() => send(input)} disabled={busy} className={btnCls(true)} style={btn()}>
+          {fields.length === 0 ? t('wizard.configFlow.confirm') : t('wizard.configFlow.submit')} {!busy && <Send size={18} strokeWidth={1.75} aria-hidden />}
         </button>
-        <button onClick={cancel} style={btn(false)}>{t('wizard.configFlow.cancel')}</button>
+        <button onClick={cancel} className={btnCls(false)} style={btn()}>{t('wizard.configFlow.cancel')}</button>
       </div>
     </div>
   )

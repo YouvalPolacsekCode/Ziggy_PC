@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { mintPairCode } from '../lib/mobileApi'
 import { isNative } from '../lib/native'
 import { useT } from '../lib/i18n'
+import { Button } from './ui/Button'
 
 export function PairWithPhone() {
   if (isNative()) return null
@@ -42,7 +43,7 @@ export function PairWithPhone() {
         const relay = (typeof window !== 'undefined' && window.__RELAY_URL__) || ''
         if (relay) payload += `&relay=${encodeURIComponent(relay)}`
         await mod.default.toCanvas(qrRef.current, payload, {
-          width: 160, margin: 1, color: { dark: '#111111', light: '#ffffff' },
+          width: 160, margin: 2, color: { dark: '#111111', light: '#ffffff' },
         })
       } catch {
         // qrcode lib not installed — text fallback only, no user-visible error.
@@ -79,16 +80,13 @@ export function PairWithPhone() {
   }
 
   return (
-    <section style={{
+    <section className="z-card-soft" style={{
       padding: 16,
-      borderRadius: 12,
-      background: 'var(--bg-2)',
-      border: '0.5px solid var(--line)',
       display: 'flex', flexDirection: 'column', gap: 12,
     }}>
       <div>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{t('pairPhone.title')}</h3>
-        <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--ink-faint)' }}>
+        <h3 className="z-headline" style={{ margin: 0 }}>{t('pairPhone.title')}</h3>
+        <p className="z-subhead" style={{ margin: '4px 0 0' }}>
           {t('pairPhone.subtitle')}
         </p>
       </div>
@@ -97,74 +95,50 @@ export function PairWithPhone() {
         <button
           onClick={generate}
           disabled={loading}
-          style={{
-            alignSelf: 'flex-start',
-            padding: '8px 16px',
-            borderRadius: 8,
-            border: 'none',
-            background: 'var(--accent)',
-            color: 'white',
-            fontWeight: 600,
-            cursor: loading ? 'wait' : 'pointer',
-            fontSize: 13,
-          }}
+          className="z-btn-primary z-button"
+          style={{ alignSelf: 'flex-start', cursor: loading ? 'wait' : 'pointer' }}
         >
           {loading ? t('pairPhone.generating') : t('pairPhone.generate')}
         </button>
       )}
 
       {code && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 16,
+        <div className="z-card-sm" style={{
+          display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
           padding: 12,
-          borderRadius: 8,
-          background: 'var(--bg-1)',
-          border: '1px solid var(--line)',
         }}>
+          {/* QR modules are scanner-facing, not UI chrome: they stay pure
+              black-on-white regardless of palette so phones can read them. */}
           <canvas
             ref={qrRef}
             width={160} height={160}
             style={{
-              borderRadius: 6, background: 'white',
+              borderRadius: 'var(--r-chip)', background: '#ffffff',
               flexShrink: 0,
             }}
           />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-            <code style={{
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-              fontSize: 22, letterSpacing: 4, fontWeight: 700,
+            <code className="z-code" style={{
+              fontSize: 22, lineHeight: '28px', letterSpacing: '0.2em', fontWeight: 700,
               color: 'var(--ink)',
             }}>
               {code}
             </code>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('pairPhone.expiresIn')}</div>
-              <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>
+              <div className="z-footnote">{t('pairPhone.expiresIn')}</div>
+              <div className="z-mono" style={{ fontSize: 17, lineHeight: '22px', color: 'var(--ink)', fontWeight: 600 }}>
                 {Math.floor(expiresIn / 60)}:{String(expiresIn % 60).padStart(2, '0')}
               </div>
             </div>
-            <button
-              onClick={generate}
-              style={{
-                marginTop: 4,
-                padding: '6px 12px',
-                borderRadius: 6,
-                border: '1px solid var(--line)',
-                background: 'transparent',
-                color: 'var(--ink-faint)',
-                cursor: 'pointer',
-                fontSize: 12,
-                alignSelf: 'flex-start',
-              }}
-            >
+            <Button variant="secondary" size="sm" onClick={generate} style={{ marginTop: 4, alignSelf: 'flex-start' }}>
               {t('pairPhone.newCode')}
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {error && (
-        <div style={{ fontSize: 12, color: 'var(--danger, #c00)' }}>{error}</div>
+        <div role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>
       )}
     </section>
   )

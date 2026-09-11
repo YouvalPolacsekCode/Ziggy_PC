@@ -1,39 +1,38 @@
 /* Floating chat bubble (phones) — see ChatBubble.jsx.
+   A 56px FAB: ink fill, the sparkle in the page colour, the app's FAB shadow.
    Press feedback and the open/closed swap live here because they need
    :active / media queries, which inline styles cannot express. Only
-   transform, opacity and box-shadow ever animate. */
+   transform, opacity and box-shadow ever animate, on the shared motion
+   tokens. */
 
 .z-chat-bubble {
   position: fixed;
   inset-inline-end: 16px;
-  /* Same floor as the bottom nav's gesture-bar band, plus a 14px breath. */
-  inset-block-end: calc(var(--nav-h) + max(var(--safe-bottom), 8px) + 14px);
-  width: 52px;
-  height: 52px;
+  /* Same floor as the bottom nav's gesture-bar band, plus a 16px breath. */
+  inset-block-end: calc(var(--nav-h) + max(var(--safe-bottom), 8px) + 16px);
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   border: none;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--ink);
+  color: var(--bg);
   cursor: pointer;
   /* Above page content and the nav bar (z-30); below the More menu (z-40),
      modals (z-40/50), the chat sheet (z-40) and toasts (z-60). */
   z-index: 35;
-  box-shadow:
-    0 1px 0 rgba(0, 0, 0, 0.05),
-    0 10px 24px -10px color-mix(in srgb, var(--accent) 60%, transparent),
-    var(--shadow-md);
+  box-shadow: var(--shadow-fab);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
   transition:
-    transform 140ms cubic-bezier(0.23, 1, 0.32, 1),
-    box-shadow 140ms ease,
-    opacity 160ms ease;
+    transform var(--dur-press) var(--ease-standard),
+    box-shadow var(--dur-press) var(--ease-standard),
+    opacity var(--dur-state) var(--ease-standard);
 }
 
 /* Between the `md` sidebar breakpoint and the chat-dock breakpoint there is
@@ -48,17 +47,12 @@
 .z-chat-bubble:active {
   /* 1px settle + a hair smaller: the button is heard. */
   transform: translateY(1px) scale(0.96);
-  box-shadow:
-    0 1px 0 rgba(0, 0, 0, 0.05),
-    0 4px 12px -6px color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: var(--shadow-md);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .z-chat-bubble:hover {
-    box-shadow:
-      0 1px 0 rgba(0, 0, 0, 0.05),
-      0 14px 28px -10px color-mix(in srgb, var(--accent) 65%, transparent),
-      var(--shadow-md);
+    background: color-mix(in srgb, var(--ink) 86%, var(--bg));
   }
 }
 
@@ -71,19 +65,23 @@
   pointer-events: none;
 }
 
+/* Unread count: a light pill on the dark FAB, ringed in the page colour so it
+   never merges with whatever the bubble floats over. Caption role: 11/500. */
 .z-chat-bubble-badge {
   position: absolute;
-  top: -3px;
-  inset-inline-end: -3px;
+  top: -4px;
+  inset-inline-end: -4px;
+  box-sizing: border-box;
   min-width: 20px;
   height: 20px;
-  padding: 0 6px;
+  padding: 0 8px;
   border-radius: 999px;
-  background: var(--ink);
-  color: var(--bg);
+  background: var(--surface);
+  color: var(--ink);
+  border: 0.5px solid var(--line);
   font-size: 11px;
-  font-weight: 700;
-  line-height: 20px;
+  font-weight: 500;
+  line-height: 19px;
   text-align: center;
   font-variant-numeric: tabular-nums;
   box-shadow: 0 0 0 2px var(--bg);
@@ -92,7 +90,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .z-chat-bubble {
-    transition: opacity 160ms ease;
+    transition: opacity var(--dur-state) var(--ease-standard);
   }
   .z-chat-bubble:active,
   .z-chat-bubble[data-open] {

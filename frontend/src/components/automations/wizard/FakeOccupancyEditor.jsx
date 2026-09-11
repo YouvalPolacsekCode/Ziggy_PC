@@ -5,6 +5,7 @@ import { useT } from '../../../lib/i18n'
 import { useDeviceStore } from '../../../stores/deviceStore'
 import { getIrDevices } from '../../../lib/api'
 import { FieldHint } from './Atoms'
+import { chipStyle, fieldLabelStyle, noteBox } from '../../../lib/automations/styles'
 
 // ── FakeOccupancyEditor ───────────────────────────────────────────────────────
 // Editor for the `fake_occupancy_start` step. Lets the user pick which rooms
@@ -58,12 +59,8 @@ function FakeOccupancyEditor({ action, onChange }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{
-        padding: '10px 12px', borderRadius: 10,
-        background: `color-mix(in srgb, var(--info) 6%, var(--surface))`,
-        border: `0.5px solid color-mix(in srgb, var(--info) 25%, var(--line))`,
-      }}>
-        <p style={{ fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+      <div style={noteBox}>
+        <p className="z-subhead" style={{ margin: 0, color: 'var(--ink-2)' }}>
           {t('automations.fakeOccupancy.intro')}
         </p>
       </div>
@@ -83,26 +80,20 @@ function FakeOccupancyEditor({ action, onChange }) {
         />
       </div>
 
-      <div>
-        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <p style={{ ...fieldLabelStyle, marginBottom: 0 }}>
           {t('automations.fakeOccupancy.roomsLabel')}
         </p>
         {candidates.length === 0 ? (
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+          <p className="z-subhead" style={{ margin: 0 }}>
             {t('automations.fakeOccupancy.noRooms')}
           </p>
         ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {candidates.map(c => {
               const sel = selectedRoomIds.has(c.id)
               return (
-                <button key={c.id} type="button" onClick={() => toggleRoom(c)} style={{
-                  padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
-                  background: sel ? 'var(--ink)' : 'var(--surface)',
-                  color: sel ? 'var(--bg)' : 'var(--ink-mute)',
-                  border: sel ? 'none' : '0.5px solid var(--line)',
-                  cursor: 'pointer', fontFamily: 'inherit',
-                }}>{c.name}</button>
+                <button key={c.id} type="button" onClick={() => toggleRoom(c)} aria-pressed={sel} style={chipStyle(sel)}>{c.name}</button>
               )
             })}
           </div>
@@ -128,14 +119,14 @@ function FakeOccupancyEditor({ action, onChange }) {
         onChange={e => onChange({ ...action, brightness_pct: Math.max(10, Math.min(100, parseInt(e.target.value || '70'))) })}
       />
 
-      <div>
-        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <p style={{ ...fieldLabelStyle, marginBottom: 0 }}>
           {t('automations.fakeOccupancy.tvLabel')}
         </p>
         {loadingIr ? (
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('irDeviceSelect.loading')}</p>
+          <p className="z-subhead" style={{ margin: 0 }}>{t('irDeviceSelect.loading')}</p>
         ) : irDevices.length === 0 ? (
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+          <p className="z-subhead" style={{ margin: 0 }}>
             {t('automations.fakeOccupancy.noTV')}
           </p>
         ) : (

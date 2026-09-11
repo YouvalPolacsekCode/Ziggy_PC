@@ -2,13 +2,14 @@
    text|card row, pointer-only hover, tokens that flip with the palette, and
    the reduced-motion guard.
 
-   Logical properties only (RTL-safe). Tokens are the app's CSS variables.
+   Logical properties only (RTL-safe). Tokens are the app's CSS variables;
+   durations and curves come from the --dur-* / --ease-* tokens.
 
    The row is decided by a CONTAINER query on the message wrapper, not by the
    viewport: the same AIChat renders on the /chat page (wide) and in the
    AppShell dock (a ~400px column on a wide viewport). A viewport query would
    split the dock into two unusable slivers; a container query gives the row
-   only where it has room. On the /chat page (18px gutters) the 720px threshold
+   only where it has room. On the /chat page (20px gutters) the 720px threshold
    is crossed at a 768px viewport. */
 
 .zc-msg {
@@ -23,7 +24,7 @@
   align-items: stretch;
   align-self: stretch;   /* the message wrapper aligns children to the start */
   width: 100%;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -43,15 +44,15 @@
   .zc-row {
     flex-direction: row;
     align-items: flex-start;
-    gap: 14px;
+    gap: 16px;
   }
   .zc-row-text {
     flex: 0 1 38%;
     max-width: 420px;
   }
   /* The bubble's first line sits level with the card's eyebrow: both boxes
-     start at 12px of padding, the eyebrow line (10px × 1.5) is centred 1px
-     above the bubble's first line (14px × 1.5) — close enough to read as one
+     start at 12px of padding, the eyebrow line (13px / 18) is centred 2px
+     above the bubble's first line (17px / 1.45) — close enough to read as one
      row without a second measurement. */
   .zc-row-text > .zc-bubble { padding-block-start: 12px; }
   .zc-row-card {
@@ -69,7 +70,6 @@
      page's second background in dark (mixing ink into a dark surface only
      makes it greyer, not deeper). */
   --zc-tile: color-mix(in srgb, var(--ink) 3%, var(--surface));
-  --zc-chip-on: color-mix(in srgb, var(--accent) 14%, var(--surface));
   --zc-chip-line: color-mix(in srgb, var(--line) 70%, transparent);
   -webkit-touch-callout: none;   /* long-press opens the device page, not the OS menu */
 }
@@ -82,14 +82,14 @@
 .zc-rooms {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
 .zc-room {
   background: var(--zc-tile);
-  border-radius: 16px;
-  padding: 12px 14px;
+  border-radius: var(--r-card);
+  padding: 12px 16px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -98,25 +98,28 @@
 
 .zc-room-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
+  min-height: 44px;   /* the title is the way into the room: a real target */
 }
 
+/* The room's name: 17/600, the name of a thing. */
 .zc-room-title {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
+  min-height: 44px;
   margin: 0;
   padding: 0;
   background: none;
   border: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 17px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 22px;
   color: var(--ink);
   text-align: start;
 }
@@ -125,8 +128,9 @@ button.zc-room-title { cursor: pointer; }
 
 .zc-room-on {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
+  line-height: 18px;
   color: var(--ink-mute);
   font-variant-numeric: tabular-nums;
 }
@@ -136,30 +140,35 @@ button.zc-room-title { cursor: pointer; }
 .zc-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
+/* The chip IS the switch, so it is a 44px target. Off = a quiet pill on the
+   surface; on = inverted (ink fill, page-colour text), the one treatment the
+   system reserves for "on" tiles. No accent anywhere on a card. */
 .zc-chip {
   position: relative;
   display: inline-flex;
   align-items: center;
-  height: 34px;
+  height: 44px;
   max-width: 100%;
   border-radius: 999px;
   background: var(--surface);
   border: 0.5px solid var(--zc-chip-line);
-  color: var(--ink-mute);
+  color: var(--ink-2);
   box-sizing: border-box;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease,
-              transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: background-color var(--dur-state) var(--ease-standard),
+              border-color var(--dur-state) var(--ease-standard),
+              color var(--dur-state) var(--ease-standard),
+              transform var(--dur-press) var(--ease-standard);
   user-select: none;
   -webkit-user-select: none;
 }
 .zc-chip--on {
-  background: var(--zc-chip-on);
-  border-color: transparent;
-  color: var(--ink);
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
 }
 .zc-chip--ghost {
   background: transparent;
@@ -172,17 +181,17 @@ button.zc-room-title { cursor: pointer; }
 .zc-chip-main {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   height: 100%;
   margin: 0;
   padding: 0;
-  padding-inline: 10px 12px;
+  padding-inline: 12px 12px;
   background: none;
   border: none;
   border-radius: inherit;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 15px;
   font-weight: 500;
   line-height: 1;
   color: inherit;
@@ -197,14 +206,13 @@ button.zc-room-title { cursor: pointer; }
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   color: var(--ink-faint);
-  opacity: 0.7;
-  transition: color 120ms ease, opacity 120ms ease;
+  transition: color var(--dur-state) var(--ease-standard);
 }
-.zc-chip--on .zc-chip-ico,
-.zc-chip--lit .zc-chip-ico { color: var(--accent); opacity: 1; }
+.zc-chip--on .zc-chip-ico { color: var(--bg); }
+.zc-chip--lit .zc-chip-ico { color: var(--ink); }
 
 .zc-chip-name {
   min-width: 0;
@@ -215,23 +223,25 @@ button.zc-room-title { cursor: pointer; }
 
 .zc-chip-suffix {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--ink-mute);
   font-variant-numeric: tabular-nums;
-  transition: color 120ms ease;
+  transition: color var(--dur-state) var(--ease-standard);
 }
-.zc-chip-suffix--err { color: var(--err); }
+.zc-chip--on .zc-chip-suffix { color: var(--bg-3); }
+.zc-chip-suffix--err { color: var(--err-text); }
 
 /* Deep link: a chevron at the chip's trailing edge. On a pointer device the
    slot is reserved (so nothing shifts) and the glyph fades in on hover /
-   focus; on touch the slot is gone and a long-press opens the page. */
+   focus; on touch the slot is gone and a long-press opens the page. The
+   slot is pointer-only, so it is 36px wide rather than a 44px thumb target. */
 .zc-chip-go {
   display: none;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 22px;
+  width: 36px;
   height: 100%;
   margin: 0;
   margin-inline-start: -8px;
@@ -243,17 +253,20 @@ button.zc-room-title { cursor: pointer; }
   color: var(--ink-faint);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 120ms ease, color 120ms ease;
+  transition: opacity var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard);
 }
+.zc-chip--on .zc-chip-go { color: var(--bg-3); }
 .zc-chip-go:focus-visible { opacity: 1; outline: none; color: var(--ink); }
+.zc-chip--on .zc-chip-go:focus-visible { color: var(--bg); }
 
 @media (hover: hover) and (pointer: fine) {
   .zc-chip-go { display: inline-flex; }
   .zc-chip:hover .zc-chip-go,
   .zc-chip:focus-within .zc-chip-go { opacity: 1; }
   .zc-chip-go:hover { color: var(--ink); }
+  .zc-chip--on .zc-chip-go:hover { color: var(--bg); }
   .zc-chip:hover { border-color: color-mix(in srgb, var(--ink) 18%, var(--zc-chip-line)); }
-  .zc-chip--on:hover { border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+  .zc-chip--on:hover { background: color-mix(in srgb, var(--ink) 86%, var(--bg)); border-color: transparent; }
 }
 
 /* ── Name-as-link (why_not verdict, down_devices, camera title) ─────────── */
@@ -261,9 +274,10 @@ button.zc-room-title { cursor: pointer; }
 .zc-link {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
   max-width: 100%;
+  min-height: 44px;
   margin: 0;
   padding: 0;
   background: none;
@@ -277,8 +291,7 @@ button.zc-room-title { cursor: pointer; }
 .zc-room-go {
   flex-shrink: 0;
   color: var(--ink-faint);
-  opacity: 0.6;
-  transition: opacity 120ms ease;
+  transition: opacity var(--dur-press) var(--ease-standard);
 }
 @media (hover: hover) and (pointer: fine) {
   .zc-link-go, .zc-room-go { opacity: 0; }
@@ -288,16 +301,14 @@ button.zc-room-title { cursor: pointer; }
   .zc-room-title:focus-visible .zc-room-go { opacity: 1; }
 }
 
-/* One device, a size up: the same pill, more room to land a thumb on. */
-.zc-chip--lg { height: 44px; }
+/* One device, a size up: the same pill, the name at body size. */
 .zc-chip--lg .zc-chip-main {
   gap: 8px;
-  padding-inline: 12px 14px;
-  font-size: 14px;
+  padding-inline: 12px 16px;
+  font-size: 17px;
 }
 .zc-chip--lg .zc-chip-ico { width: 22px; height: 22px; }
-.zc-chip--lg .zc-chip-suffix { font-size: 12px; }
-.zc-chip--lg .zc-chip-go { width: 26px; }
+.zc-chip--lg .zc-chip-go { width: 40px; }
 
 /* The device card row: the chip, then the quiet way into its page. */
 .zc-one {
@@ -314,22 +325,22 @@ button.zc-room-title { cursor: pointer; }
 .zc-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
 .zc-pill {
   display: inline-flex;
   align-items: baseline;
-  gap: 5px;
+  gap: 4px;
   max-width: 100%;
-  min-height: 30px;
-  padding: 5px 11px;
+  min-height: 32px;
+  padding: 4px 12px;
   box-sizing: border-box;
   border-radius: 999px;
   background: var(--zc-tile);
   color: var(--ink-mute);
-  font-size: 12.5px;
+  font-size: 15px;
   line-height: 1.3;
 }
 .zc-pill-value {
@@ -338,7 +349,7 @@ button.zc-room-title { cursor: pointer; }
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.zc-pill-sep { opacity: 0.6; }
+.zc-pill-sep { color: var(--ink-faint); }
 .zc-pill-where {
   min-width: 0;
   overflow: hidden;
@@ -351,7 +362,7 @@ button.zc-room-title { cursor: pointer; }
 .zc-nav {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 .zc-nav-ico { flex-shrink: 0; color: var(--ink-faint); }
@@ -363,7 +374,7 @@ button.zc-room-title { cursor: pointer; }
   white-space: nowrap;
   color: var(--ink-mute);
 }
-.zc-nav .zc-showall { margin-inline-end: -8px; }
+.zc-nav .zc-showall { margin-inline-end: -12px; }
 [dir="rtl"] .zc-nav-ico { transform: scaleX(-1); }
 
 /* Chevrons point into the reading direction. */
@@ -375,9 +386,9 @@ button.zc-room-title { cursor: pointer; }
 
 .zc-cell {
   /* Only what changes on hover/press — never `all`. */
-  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
-              border-color 160ms ease,
-              background-color 160ms ease;
+  transition: transform var(--dur-press) var(--ease-standard),
+              border-color var(--dur-state) var(--ease-standard),
+              background-color var(--dur-state) var(--ease-standard);
 }
 
 /* The head is the tap target: the whole top row of the tile, a real button
@@ -385,11 +396,11 @@ button.zc-room-title { cursor: pointer; }
 .zc-cell-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  min-height: 48px;
+  min-height: 56px;
   margin: 0;
-  padding: 6px 10px;
+  padding: 8px 12px;
   box-sizing: border-box;
   background: none;
   border: none;
@@ -401,7 +412,7 @@ button.zc-room-title { cursor: pointer; }
   min-width: 0;
 }
 .zc-cell-head:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 .zc-cell-text {
@@ -410,7 +421,7 @@ button.zc-room-title { cursor: pointer; }
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 1px;
+  gap: 2px;
 }
 
 /* Open: the body under the head — full text, known gaps, the two quiet
@@ -420,12 +431,12 @@ button.zc-room-title { cursor: pointer; }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 0 10px 8px;
+  padding: 0 12px 8px;
   min-width: 0;
 }
 .zc-cell-what {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 15px;
   line-height: 1.45;
   color: var(--ink);
   overflow-wrap: anywhere;
@@ -433,17 +444,17 @@ button.zc-room-title { cursor: pointer; }
 .zc-cell--soon .zc-cell-what { color: var(--ink-mute); }
 .zc-cell-gaps-title {
   margin: 0 0 2px;
-  font-size: 10.5px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 .zc-cell-gaps {
   margin: 0;
-  padding-inline-start: 14px;
+  padding-inline-start: 16px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  font-size: 11.5px;
+  gap: 2px;
+  font-size: 13px;
   line-height: 1.4;
   color: var(--ink-mute);
 }
@@ -452,12 +463,12 @@ button.zc-room-title { cursor: pointer; }
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 2px 6px;
-  margin-inline-start: -8px;   /* the text buttons carry their own 8px pad */
+  gap: 2px 8px;
+  margin-inline-start: -12px;   /* the text buttons carry their own 12px pad */
 }
-.zc-cell-actions > span { margin-inline-start: 8px; }   /* the Soon tag has none */
+.zc-cell-actions > span { margin-inline-start: 12px; }   /* the Soon tag has none */
 
-/* Not yet live: sits flat and quiet next to the tinted live tiles. */
+/* Not yet live: sits flat and quiet next to the live tiles. */
 .zc-cell--soon { color: var(--ink-mute); }
 
 @media (hover: hover) and (pointer: fine) {
@@ -465,26 +476,22 @@ button.zc-room-title { cursor: pointer; }
     transform: translateY(-1px);
     border-color: color-mix(in srgb, var(--ink) 28%, var(--line));
   }
-  .zc-cell--on:not(.zc-cell--open):hover {
-    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-  }
   .zc-cell--open {
     border-color: color-mix(in srgb, var(--ink) 18%, var(--line));
   }
-  .zc-cell--on.zc-cell--open {
-    border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
-  }
 }
 
-/* Quiet text button (Show all / Less) */
+/* Quiet text button (Show all / Less / Open page) */
 .zc-showall {
-  transition: color 120ms ease, background-color 120ms ease, transform 120ms ease-out;
+  transition: color var(--dur-press) var(--ease-standard),
+              background-color var(--dur-press) var(--ease-standard),
+              transform var(--dur-press) var(--ease-standard);
 }
 .zc-showall:active { transform: scale(0.97); }
 @media (hover: hover) and (pointer: fine) {
   .zc-showall:hover {
     color: var(--ink);
-    background: color-mix(in srgb, var(--ink) 6%, transparent);
+    background: var(--surface-2);
   }
 }
 

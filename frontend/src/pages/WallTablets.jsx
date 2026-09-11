@@ -8,12 +8,15 @@
 // and reachable by children and visitors. So this page is deliberately blunt:
 // a row of switches, and a PIN that gates the dangerous ones.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   listWallTablets, mintWallPairCode, patchWallTablet, removeWallTablet,
   putWallPolicy, setWallPin,
 } from '../lib/api'
 import { useT } from '../lib/i18n'
+import { Toggle } from '../components/ui/Toggle'
+import { Input } from '../components/ui/Input'
+import { Button } from '../components/ui/Button'
 
 const CAPS = [
   { key: 'lights',      label: 'Lights',           hint: 'Turn lights on/off and dim them' },
@@ -39,31 +42,20 @@ function relTime(ts) {
 
 const card = {
   background: 'var(--surface)', border: '0.5px solid var(--line)',
-  borderRadius: 14, padding: 16, marginBottom: 12,
+  borderRadius: 'var(--r-card)', padding: 16, marginBottom: 12,
 }
 
-function Switch({ on, onChange, disabled }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      disabled={disabled}
-      onClick={() => onChange(!on)}
-      style={{
-        width: 42, height: 26, borderRadius: 999, border: 'none', flex: 'none',
-        background: on ? 'var(--ok)' : 'var(--line-2)', position: 'relative',
-        cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1,
-        transition: 'background .2s ease',
-      }}
-    >
-      <span style={{
-        position: 'absolute', top: 3, insetInlineStart: on ? 19 : 3,
-        width: 20, height: 20, borderRadius: '50%', background: '#fff',
-        transition: 'inset-inline-start .2s ease', boxShadow: '0 1px 3px rgba(0,0,0,.25)',
-      }} />
-    </button>
-  )
+// Active-filter chip: surface-2 fill + ink + hairline. Never inverted, never
+// accent — the PIN gate is a state, not the screen's primary action.
+function chipStyle(on) {
+  return {
+    minHeight: 44, padding: '0 16px', borderRadius: 999,
+    background: on ? 'var(--surface-2)' : 'transparent',
+    color: on ? 'var(--ink)' : 'var(--ink-mute)',
+    border: '0.5px solid var(--line)',
+    fontSize: 15, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0,
+    transition: 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard)',
+  }
 }
 
 function TabletCard({ tablet, onChanged }) {
@@ -115,73 +107,59 @@ function TabletCard({ tablet, onChanged }) {
 
   return (
     <div style={card}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>{tablet.display_name}</div>
-          <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+          <div style={{ fontWeight: 600, fontSize: 17, color: 'var(--ink)' }}>{tablet.display_name}</div>
+          <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>
             {tablet.room ? `${tablet.room} · ` : ''}last seen {relTime(tablet.last_seen)}
           </div>
         </div>
-        <button
-          onClick={unpair}
-          style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 999,
-                   padding: '6px 14px', fontSize: 12, color: 'var(--err)', cursor: 'pointer' }}
-        >Un-pair</button>
+        <Button variant="danger" onClick={unpair}>Un-pair</Button>
       </div>
 
-      <div style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase',
-                    color: 'var(--ink-faint)', fontWeight: 600, marginBottom: 8 }}>
-        What this tablet may do
-      </div>
+      <p className="z-eyebrow" style={{ marginBottom: 8 }}>What this tablet may do</p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
         {CAPS.map((c) => {
           const on = policy?.capabilities?.[c.key] !== false
           const pinned = policy?.pin_required?.includes(c.key)
           return (
-            <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0',
+            <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 0',
                                       borderBottom: '0.5px solid var(--line)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 600 }}>{c.label}</div>
-                <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{c.hint}</div>
+                <div style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{c.label}</div>
+                <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>{c.hint}</div>
               </div>
               {on && (
                 <button
                   type="button"
                   onClick={() => togglePinReq(c.key, !pinned)}
                   title="Require the PIN for this"
-                  style={{
-                    background: pinned ? 'var(--accent)' : 'transparent',
-                    color: pinned ? 'var(--on-accent)' : 'var(--ink-faint)',
-                    border: '0.5px solid var(--line)', borderRadius: 999,
-                    padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 600,
-                  }}
+                  aria-pressed={!!pinned}
+                  style={chipStyle(pinned)}
                 >PIN</button>
               )}
-              <Switch on={on} disabled={saving} onChange={(v) => toggleCap(c.key, v)} />
+              <Toggle checked={on} disabled={saving} onCheckedChange={(v) => toggleCap(c.key, v)} aria-label={c.label} />
             </div>
           )
         })}
       </div>
 
-      <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <input
-          value={pin}
-          inputMode="numeric"
-          maxLength={8}
-          placeholder={policy?.has_pin ? 'Change PIN (4–8 digits)' : 'Set a PIN (4–8 digits)'}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-          style={{ padding: '9px 12px', borderRadius: 10, border: '0.5px solid var(--line)',
-                   background: 'var(--bg)', color: 'var(--ink)', fontSize: 13, flex: 1, minWidth: 180 }}
-        />
-        <button
-          onClick={savePin}
-          style={{ background: 'var(--accent)', color: 'var(--on-accent)', border: 'none',
-                   borderRadius: 999, padding: '9px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-        >{pin ? 'Save PIN' : 'Clear PIN'}</button>
-        {policy?.has_pin && <span style={{ fontSize: 11.5, color: 'var(--ok)' }}>PIN is set</span>}
+      <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <Input
+            value={pin}
+            inputMode="numeric"
+            maxLength={8}
+            dir="ltr"
+            placeholder={policy?.has_pin ? 'Change PIN (4–8 digits)' : 'Set a PIN (4–8 digits)'}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+          />
+        </div>
+        <button onClick={savePin} className="z-btn-secondary">{pin ? 'Save PIN' : 'Clear PIN'}</button>
+        {policy?.has_pin && <span style={{ fontSize: 15, color: 'var(--ok-text)' }}>PIN is set</span>}
       </div>
-      {msg && <div style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 8 }}>{msg}</div>}
+      {msg && <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 8 }}>{msg}</div>}
     </div>
   )
 }
@@ -226,41 +204,43 @@ export default function WallTablets() {
   }, [])
 
   return (
-    <div style={{ padding: '18px 16px 60px', maxWidth: 720, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 21, fontWeight: 700, margin: '0 0 4px' }}>Wall tablets</h1>
-      <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', margin: '0 0 18px' }}>
-        Tablets that show the wall dashboard at <code>/wall</code>. Each one keeps its own
-        layout and its own set of permissions.
-      </p>
+    <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
+      <div className="z-page-head">
+        <div>
+          <h1 className="z-display" style={{ margin: 0 }}>Wall tablets</h1>
+          <p className="z-subhead" style={{ marginTop: 4 }}>
+            Tablets that show the wall dashboard at <span className="z-code">/wall</span>. Each one keeps its own
+            layout and its own set of permissions.
+          </p>
+        </div>
+      </div>
 
       <div style={card}>
-        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>Pair a new tablet</div>
-        <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: '0 0 12px' }}>
-          Open <code>/wall</code> on the tablet, tap “Pair tablet”, and enter this code.
+        <div style={{ fontWeight: 600, fontSize: 17, color: 'var(--ink)', marginBottom: 4 }}>Pair a new tablet</div>
+        <p style={{ fontSize: 15, color: 'var(--ink-mute)', margin: '0 0 12px' }}>
+          Open <span className="z-code">/wall</span> on the tablet, tap “Pair tablet”, and enter this code.
         </p>
         {code ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: 8,
-                          fontFamily: "'IBM Plex Mono', monospace" }}>{code.code}</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <div className="z-code" style={{ fontSize: 34, fontWeight: 700, lineHeight: '41px', color: 'var(--ink)' }}>{code.code}</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
               expires in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
             </div>
           </div>
         ) : (
-          <button
-            onClick={mint}
-            style={{ background: 'var(--accent)', color: 'var(--on-accent)', border: 'none',
-                     borderRadius: 999, padding: '10px 20px', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}
-          >Generate a code</button>
+          <button onClick={mint} className="z-btn-primary">Generate a code</button>
         )}
       </div>
 
-      {error && <div style={{ color: 'var(--err)', fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+      {error && <div style={{ color: 'var(--err-text)', fontSize: 15, marginBottom: 12 }}>{error}</div>}
 
       {loading ? (
-        <p style={{ fontSize: 13, color: 'var(--ink-faint)' }}>Loading…</p>
+        <p style={{ fontSize: 15, color: 'var(--ink-mute)' }}>Loading…</p>
       ) : tablets.length === 0 ? (
-        <p style={{ fontSize: 13, color: 'var(--ink-faint)' }}>No tablets paired yet.</p>
+        <div style={{ textAlign: 'center', padding: 32 }}>
+          <p style={{ fontSize: 17, color: 'var(--ink)' }}>No tablets paired yet.</p>
+          <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 4 }}>Generate a code above and enter it on the tablet.</p>
+        </div>
       ) : (
         tablets.map((tb) => <TabletCard key={tb.id} tablet={tb} onChanged={load} />)
       )}

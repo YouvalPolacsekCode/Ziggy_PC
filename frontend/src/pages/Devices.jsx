@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, forwardRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, MoreVertical, EyeOff, Eye, Home, ChevronDown, ChevronUp, Plus, Tv2, Thermometer, Wind, Volume2, Zap, Trash2, MonitorPlay, Pencil, ChevronRight, Radio, Sparkles } from 'lucide-react'
+import { Search, MoreVertical, EyeOff, Eye, Home, ChevronDown, ChevronUp, Plus, Tv2, Thermometer, Wind, Volume2, Zap, Trash2, MonitorPlay, Pencil, ChevronRight, Radio, Sparkles, Check, X, Link2, Unlink, Inbox, WifiOff, Power, Volume1, VolumeX, Snowflake, Flame } from 'lucide-react'
+import { T_ENTER, T_STATE } from '../lib/motion'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
 import { Button } from '../components/ui/Button'
@@ -50,12 +51,32 @@ const IR_DEVICE_TYPES = ['tv', 'ac', 'fan', 'soundbar', 'receiver', 'projector',
 // flipping this back to true restores the tag with no other changes.
 const SHOW_UNKNOWN_IR_TAG = false
 
+// One menu-row recipe for every popover on this page: 44px tall, 17px, full
+// width, surface-2 on hover. Colour comes from the caller.
+const MENU_ITEM_CLS = 'w-full flex items-center gap-2 px-4 min-h-[44px] text-body text-start hover:bg-surface-2 transition-colors'
+// Fixed-position card menus: wide enough for 17px labels + a trailing check.
+const MENU_W = 224
+// Filter / view-mode chips: 40px tall (the touch/desktop compromise), 15px,
+// capsule. Active = surface-2 fill + ink text + line-2 hairline — never
+// inverted; count badges sit in surface-3 / ink-mute.
+const CHIP_BTN_STYLE = { minHeight: 40, padding: '8px 12px', fontSize: 15, lineHeight: '20px', gap: 6, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }
+const CHIP_ACTIVE_STYLE = { background: 'var(--surface-2)', color: 'var(--ink)', borderColor: 'var(--line-2)' }
+const CHIP_COUNT_STYLE = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 999, background: 'var(--surface-3)', color: 'var(--ink-mute)', fontSize: 11, fontWeight: 500, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }
+// In-card icon target (chevron-to-detail, kebab): a full 44×44 hit area with a
+// quiet 18px glyph — no border, so three of them in a card header don't read
+// as a toolbar.
+const CARD_ICON_BTN_STYLE = {
+  width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-mute)', padding: 0,
+}
+
 // Assumed-state chip + picker popover. Splits out of DeviceCard so the
 // popover can render with `position: fixed` (anchored via getBoundingClientRect
 // off the chip), escaping any ancestor with overflow constraints. The
 // previous `absolute top-full` version got clipped on narrow cards because
 // the chip's parent flex row didn't always reserve enough vertical space.
-function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, ageHours, irStateOptions, onIrStateChange, acFacts = [] }) {
+function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, ageHours, irStateOptions, onIrStateChange, acFacts = [], suffix = null }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   const [pos, setPos]   = useState({ top: 0, left: 0 })
@@ -88,16 +109,16 @@ function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, age
     }
   }, [open])
 
-  const chipClass = cn(
-    'flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors whitespace-nowrap',
-    isStale
-      ? 'bg-warn-soft border-warn-soft text-warn'
-      : assumedState === 'on' || (assumedState && assumedState !== 'off')
-      ? 'bg-ok-soft border-ok-soft text-ok'
-      : assumedState === 'off'
-      ? 'bg-surface-2 border-line text-ink-mute'
-      : 'bg-surface-2/50 border-dashed border-line text-ink-mute',
-  )
+  // Chip tone: -text tokens for the words, a 12% tint for the fill. Stale
+  // reads as warn, an assumed "on" as ok, "off"/unknown as plain chip.
+  const isOnish = !isStale && (assumedState === 'on' || (assumedState && assumedState !== 'off'))
+  const chipStyle = isStale
+    ? { background: 'color-mix(in srgb, var(--warn) 12%, var(--surface))', borderColor: 'color-mix(in srgb, var(--warn) 30%, var(--line))', color: 'var(--warn-text)' }
+    : isOnish
+    ? { background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', borderColor: 'color-mix(in srgb, var(--ok) 30%, var(--line))', color: 'var(--ok-text)' }
+    : assumedState === 'off'
+    ? { color: 'var(--ink-mute)' }
+    : { color: 'var(--ink-mute)', borderStyle: 'dashed' }
 
   return (
     <div style={{ flexShrink: 0 }}>
@@ -107,36 +128,39 @@ function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, age
         title={isStale
           ? t('devices.irAssumedTooltipStale', { hours: Math.round(ageHours) })
           : t('devices.irAssumedTooltipNormal', { confidence: irConfidence })}
-        className={chipClass}
+        className="z-chip capitalize"
+        style={{ ...chipStyle, gap: 4, minHeight: 36, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
       >
         <span>{assumedState ?? t('common.unknown')}</span>
         {acFacts.length > 0 && (
-          <span className="opacity-80">· {acFacts.join(' · ')}</span>
+          <span>· {acFacts.join(' · ')}</span>
         )}
-        <span className="text-[9px] opacity-60 ml-0.5">▾</span>
+        {suffix && <span>· {suffix}</span>}
+        <ChevronDown size={14} strokeWidth={1.75} style={{ flexShrink: 0 }} />
       </button>
       <AnimatePresence>
         {open && (
           <motion.div
             ref={menuRef}
-            initial={{ opacity: 0, scale: 0.95, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -4 }} transition={{ duration: 0.1 }}
-            style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999, minWidth: 130 }}
-            className="bg-surface rounded-xl shadow-xl border border-line overflow-hidden"
+            initial={{ opacity: 0, scale: 0.97, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: -4 }} transition={T_ENTER}
+            style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999, minWidth: 180 }}
+            className="bg-surface rounded-[16px] shadow-xl border border-line overflow-hidden"
           >
-            <p className="px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-wider text-ink-mute">{t('devices.setAssumedState')}</p>
+            <p className="z-eyebrow" style={{ padding: '12px 16px 4px' }}>{t('devices.setAssumedState')}</p>
             {irStateOptions.map((s) => (
               <button key={s}
                 onClick={() => { onIrStateChange(irDevice.id, s); setOpen(false) }}
-                className={cn('w-full text-left px-3 py-2 text-xs capitalize hover:bg-surface-2', assumedState === s ? 'text-accent font-semibold' : 'text-ink-2')}
+                className={cn(MENU_ITEM_CLS, 'capitalize', assumedState === s ? 'text-ink font-semibold' : 'text-ink-2')}
               >
-                {assumedState === s && <span className="text-accent mr-1 text-[10px]">✓</span>}{s}
+                <span className="flex-1">{s}</span>
+                {assumedState === s && <Check size={16} strokeWidth={2} className="text-ink shrink-0" />}
               </button>
             ))}
             <div className="border-t border-line mt-1">
               <button
                 onClick={() => { onIrStateChange(irDevice.id, 'unknown'); setOpen(false) }}
-                className="w-full text-left px-3 py-2 text-xs text-ink-mute hover:bg-surface-2"
+                className={cn(MENU_ITEM_CLS, 'text-ink-mute')}
               >{t('devices.clearAssumption')}</button>
             </div>
           </motion.div>
@@ -171,35 +195,29 @@ function CompactAcStepper({ entity }) {
         aria-label={label}
         title={enabled ? label : t('devices.commandNotLearned', { label })}
         style={{
-          width: 22, height: 22,
+          width: 36, height: 36,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          // Solid info-blue button with a white chevron when learned —
-          // earlier the 12%-tinted background made the icon nearly
-          // invisible in dark mode. Disabled stays neutral grey.
-          background: enabled ? 'var(--info)' : 'var(--surface-2)',
-          color: enabled ? '#fff' : 'var(--ink-ghost)',
-          border: `0.5px solid ${enabled ? 'var(--info)' : 'var(--line)'}`,
-          borderRadius: 6, cursor: enabled ? 'pointer' : 'not-allowed',
-          opacity: enabled ? 1 : 0.45,
+          // Quiet secondary control: surface-2 plate, ink glyph. A disabled
+          // (unlearned) arrow keeps the plate and goes ink-faint — no opacity
+          // on the glyph, the token carries the dimming.
+          background: 'var(--surface-2)',
+          color: enabled ? 'var(--ink)' : 'var(--ink-faint)',
+          border: '0.5px solid var(--line)',
+          borderRadius: 'var(--r-ctl)', cursor: enabled ? 'pointer' : 'not-allowed',
           flexShrink: 0,
           padding: 0,
-          boxShadow: enabled ? '0 1px 2px rgba(0,0,0,0.12)' : 'none',
         }}
       >
-        {/* Explicit white stroke + thick line — previously relying on
-            `currentColor` inheritance could fall through to the parent's
-            ink color depending on theme. Forcing color="#fff" guarantees
-            the chevron's two strokes render as white on the info-blue. */}
-        <Icon size={14} strokeWidth={3.2} color={enabled ? '#fff' : undefined} stroke={enabled ? '#fff' : undefined} />
+        <Icon size={18} strokeWidth={2} />
       </button>
     )
   }
   return (
     <div onClick={(e) => e.stopPropagation()}
-      style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+      style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
       {arrow(downOk, 'down', () => fire('temp_down'), t('devices.cooler'))}
       <span className="z-mono" style={{
-        fontSize: 10.5, color: 'var(--ink)', minWidth: 22, textAlign: 'center', fontWeight: 600,
+        fontSize: 15, color: 'var(--ink)', minWidth: 36, textAlign: 'center', fontWeight: 600,
       }}>
         {memTemp != null ? `${Math.round(memTemp)}°` : '—'}
       </span>
@@ -208,7 +226,7 @@ function CompactAcStepper({ entity }) {
   )
 }
 
-const INPUT_CLS = 'w-full h-10 px-3 rounded-xl text-sm border border-line bg-surface-2 text-ink focus:outline-none focus:ring-2 focus:ring-accent'
+const INPUT_CLS = 'z-input'
 
 function CommandRow({ cmd, learned, deviceId, onLearned, onRemove, recentSignal }) {
   const t = useT()
@@ -254,28 +272,32 @@ function CommandRow({ cmd, learned, deviceId, onLearned, onRemove, recentSignal 
     : status === 'learning' ? 'bg-warn animate-pulse'
     : 'bg-line'
 
+  // Text-only row actions (bind / learn / test): 44px tall targets, 15px,
+  // ink for the affordance — the accent is not spent on list rows.
+  const rowBtn = 'min-h-[44px] px-2 text-subhead font-medium whitespace-nowrap transition-colors'
+
   return (
-    <div className="flex items-center gap-2 py-1">
+    <div className="flex items-center gap-2 min-h-[44px]">
       <div className={cn('w-2 h-2 rounded-full shrink-0', dot)} />
-      <span className="flex-1 min-w-0 text-xs text-ink-2">
-        <span className="font-medium">{cmd.label}</span>
+      <span className="flex-1 min-w-0 text-subhead text-ink-2 truncate">
+        <span className="font-medium text-ink">{cmd.label}</span>
         {cmd.id !== cmd.label.toLowerCase().replace(/[^a-z0-9]+/g, '_') && (
-          <span className="text-[10px] text-ink-mute ml-1 font-mono truncate">· {cmd.id}</span>
+          <span className="z-code text-ink-mute ms-1" style={{ fontSize: 13 }}>· {cmd.id}</span>
         )}
       </span>
       {recentSignal && status !== 'learned' && status !== 'learning' && (
-        <button onClick={bindRecent} className="text-[10px] text-accent hover:text-accent whitespace-nowrap" title={t('devices.irEdit.bindRecent')}>
+        <button onClick={bindRecent} className={cn(rowBtn, 'text-ink hover:text-ink-2')} title={t('devices.irEdit.bindRecent')}>
           {t('devices.irEdit.bind')}
         </button>
       )}
       {status === 'learning'
-        ? <span className="text-xs text-warn w-10 text-right font-mono">{countdown}s</span>
-        : <button onClick={startLearn} className="text-xs text-accent hover:text-accent w-12 text-right">{status === 'learned' ? t('devices.irEdit.relearn') : t('devices.irEdit.learn')}</button>
+        ? <span className="z-mono text-subhead text-warn-text w-10 text-end">{countdown}s</span>
+        : <button onClick={startLearn} className={cn(rowBtn, 'text-ink hover:text-ink-2')}>{status === 'learned' ? t('devices.irEdit.relearn') : t('devices.irEdit.learn')}</button>
       }
-      <button onClick={test} disabled={status !== 'learned'} className="text-xs text-ink-mute hover:text-ink-2 w-8 text-right disabled:opacity-30">{t('devices.irEdit.test')}</button>
+      <button onClick={test} disabled={status !== 'learned'} className={cn(rowBtn, 'text-ink-mute hover:text-ink disabled:text-ink-faint')}>{t('devices.irEdit.test')}</button>
       {onRemove && (
-        <button onClick={onRemove} className="text-ink-faint hover:text-err transition-colors" title={t('devices.irEdit.removeCustomTitle')}>
-          <Trash2 className="w-3.5 h-3.5" />
+        <button onClick={onRemove} style={{ ...CARD_ICON_BTN_STYLE, color: 'var(--err-text)' }} title={t('devices.irEdit.removeCustomTitle')} aria-label={t('devices.irEdit.removeCustomTitle')}>
+          <Trash2 size={16} strokeWidth={1.75} />
         </button>
       )}
     </div>
@@ -291,10 +313,10 @@ function CommandGroup({ group, learnedSet, deviceId, recentSignal, onLearned, on
   return (
     <div className="mb-3">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] uppercase tracking-wider text-ink-mute font-semibold">{group.label}</span>
+        <span className="z-eyebrow">{group.label}</span>
         {hasExtras && (
           <button onClick={onToggleShowOptional}
-            className="text-[10px] text-accent hover:text-accent">
+            className="min-h-[44px] px-2 text-footnote font-medium text-ink-mute hover:text-ink transition-colors">
             {showOptional
               ? t('devices.irEdit.hideOptional', { n: extraCmds.length })
               : learnedExtras.length
@@ -328,18 +350,18 @@ function UnassignedSignalsBanner({ signals, deviceId, onAssigned, onDismissed })
   const t = useT()
   if (!signals?.length) return null
   return (
-    <div className="mb-3 p-2 rounded-lg bg-warn-soft border border-warn-soft">
-      <p className="text-[10px] uppercase tracking-wider text-warn font-semibold mb-1">
+    <div className="mb-3 p-3 rounded-[10px]" style={{ background: 'color-mix(in srgb, var(--warn) 8%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))' }}>
+      <p className="text-subhead font-semibold text-ink mb-1">
         {signals.length === 1 ? t('devices.irEdit.recentOne') : t('devices.irEdit.recentMany', { n: signals.length })}
       </p>
-      <p className="text-[11px] text-warn mb-1.5">
+      <p className="text-footnote text-warn-text mb-2">
         {t('devices.irEdit.bindHint')}
       </p>
-      <div className="flex gap-1 flex-wrap">
+      <div className="flex gap-2 flex-wrap">
         {signals.slice(0, 3).map((s) => (
           <button key={s.id} onClick={() => onDismissed(s.id)}
-            className="text-[10px] px-2 py-0.5 rounded bg-warn-soft text-warn hover:bg-warn-soft">
-            ✕ {s.id.slice(0, 8)}
+            className="z-chip z-code" style={{ gap: 4, minHeight: 36, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <X size={14} strokeWidth={1.75} /> {s.id.slice(0, 8)}
           </button>
         ))}
       </div>
@@ -357,18 +379,18 @@ function SequenceRow({ seq, deviceId, allCommands, onDeleted }) {
     finally { setRunning(false) }
   }
   return (
-    <div className="flex items-center gap-2 py-1">
-      <span className="flex-1 min-w-0 text-xs text-ink-2">
-        <span className="font-medium capitalize">{seq.name.replace(/_/g, ' ')}</span>
-        <span className="text-[10px] text-ink-mute ml-1">· {t('devices.irEdit.stepsLabel', { n: seq.steps.length })}</span>
+    <div className="flex items-center gap-2 min-h-[44px]">
+      <span className="flex-1 min-w-0 text-subhead text-ink-2 truncate">
+        <span className="font-medium text-ink capitalize">{seq.name.replace(/_/g, ' ')}</span>
+        <span className="text-footnote text-ink-mute ms-1">· {t('devices.irEdit.stepsLabel', { n: seq.steps.length })}</span>
       </span>
       <button onClick={run} disabled={running}
-        className="text-xs text-accent hover:text-accent w-12 text-right disabled:opacity-50">
+        className="min-h-[44px] px-2 text-subhead font-medium text-ink hover:text-ink-2 disabled:text-ink-faint transition-colors">
         {running ? '…' : t('devices.irEdit.run')}
       </button>
-      <button onClick={() => onDeleted(seq.name)}
-        className="text-ink-faint hover:text-err transition-colors">
-        <Trash2 className="w-3.5 h-3.5" />
+      <button onClick={() => onDeleted(seq.name)} aria-label={t('devices.irEdit.deleteMacroConfirm', { name: seq.name })}
+        style={{ ...CARD_ICON_BTN_STYLE, color: 'var(--err-text)' }}>
+        <Trash2 size={16} strokeWidth={1.75} />
       </button>
     </div>
   )
@@ -390,45 +412,46 @@ function SequenceBuilder({ deviceId, allCommands, onSaved, onCancel }) {
     onSaved()
   }
   return (
-    <div className="mb-3 p-2 rounded-lg border border-accent-soft bg-accent-soft/40 space-y-2">
+    <div className="mb-3 p-3 rounded-[10px] border border-line bg-surface-2 space-y-2">
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('devices.irEdit.macroNamePlaceholder')} dir="auto"
-        className="w-full h-7 px-2 rounded-md text-xs border border-line bg-surface" />
+        className="z-input" />
       <div className="space-y-1">
         {steps.map((s, i) => (
-          <div key={i} className="flex items-center gap-2 text-xs">
-            <span className="font-mono flex-1 text-ink-2 truncate">{i + 1}. {s.command}</span>
+          <div key={i} className="flex items-center gap-2 text-subhead min-h-[44px]">
+            <span className="z-code flex-1 text-ink-2 truncate" style={{ fontSize: 13 }}>{i + 1}. {s.command}</span>
             <input type="number" value={s.delay_after_ms} min={0} max={10000} step={100}
               onChange={(e) => setSteps((arr) => arr.map((x, j) => j === i ? { ...x, delay_after_ms: Number(e.target.value) || 0 } : x))}
-              className="w-16 h-6 px-1 rounded text-[10px] border border-line bg-surface text-right" />
-            <span className="text-[10px] text-ink-mute">ms</span>
+              className="z-input text-end" style={{ width: 88, padding: '8px 12px' }} />
+            <span className="text-footnote text-ink-mute">ms</span>
             <button onClick={() => setSteps((arr) => arr.filter((_, j) => j !== i))}
-              className="text-ink-faint hover:text-err">
-              <Trash2 className="w-3 h-3" />
+              style={{ ...CARD_ICON_BTN_STYLE, color: 'var(--err-text)' }} aria-label={t('common.remove')}>
+              <Trash2 size={16} strokeWidth={1.75} />
             </button>
           </div>
         ))}
       </div>
       <div className="relative">
         <button onClick={() => setPicker((v) => !v)}
-          className="w-full h-7 rounded-md text-xs text-accent border border-dashed border-accent-soft hover:bg-accent-soft">
+          className="z-btn-secondary w-full" style={{ borderStyle: 'dashed' }}>
           {t('devices.irEdit.addStep')}
         </button>
         {picker && (
-          <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-40 overflow-y-auto rounded-md border border-line bg-surface shadow-lg">
-            {allCommands.length === 0 && <p className="px-2 py-1 text-[11px] text-ink-mute">{t('devices.irEdit.learnSomeFirst')}</p>}
+          <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-[10px] border border-line bg-surface shadow-lg">
+            {allCommands.length === 0 && <p className="px-4 py-3 text-subhead text-ink-mute">{t('devices.irEdit.learnSomeFirst')}</p>}
             {allCommands.map((c) => (
               <button key={c.id} onClick={() => addStep(c.id)}
-                className="block w-full px-2 py-1 text-left text-xs text-ink-2 hover:bg-surface-2">
-                {c.label} <span className="text-[10px] text-ink-mute font-mono">{c.id}</span>
+                className={cn(MENU_ITEM_CLS, 'text-ink-2')}>
+                <span className="flex-1 truncate">{c.label}</span>
+                <span className="z-code text-ink-mute" style={{ fontSize: 13 }}>{c.id}</span>
               </button>
             ))}
           </div>
         )}
       </div>
-      <div className="flex justify-end gap-1">
-        <button onClick={onCancel} className="px-2 h-7 text-[11px] text-ink-mute">{t('devices.irEdit.cancel')}</button>
+      <div className="flex justify-end gap-2">
+        <button onClick={onCancel} className="z-btn-secondary">{t('devices.irEdit.cancel')}</button>
         <button onClick={save} disabled={!name.trim() || !steps.length}
-          className="px-3 h-7 text-[11px] rounded-md bg-accent text-on-accent disabled:opacity-40">
+          className="z-btn-primary disabled:opacity-40">
           {t('devices.irEdit.saveMacro')}
         </button>
       </div>
@@ -579,26 +602,26 @@ function IREditModal({ device, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40 backdrop-blur-sm">
-      <div className="w-full max-w-md bg-surface rounded-2xl shadow-2xl border border-line flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-md bg-surface rounded-[16px] shadow-2xl border border-line flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
-          <div>
-            <h2 dir="auto" className="text-base font-semibold text-ink">{device.name}</h2>
-            <p className="text-[10px] text-ink-mute">{t('devices.commandsLearned', { n: learnedSet.size })}</p>
+        <div className="flex items-start justify-between gap-2 px-5 pt-5 pb-3 shrink-0">
+          <div className="min-w-0">
+            <h2 dir="auto" className="z-title3 truncate">{device.name}</h2>
+            <p className="z-subhead">{t('devices.commandsLearned', { n: learnedSet.size })}</p>
           </div>
-          <button onClick={onClose} className="text-ink-mute hover:text-ink-2 text-lg leading-none" aria-label={t('common.close')}>✕</button>
+          <button onClick={onClose} className="z-icon-btn" aria-label={t('common.close')}><X size={18} strokeWidth={1.75} /></button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 px-5 pb-3 shrink-0">
+        {/* Tabs — active = surface-2 fill + ink + line-2, never inverted */}
+        <div className="flex gap-2 px-5 pb-3 shrink-0">
           {[
             { id: 'details', label: t('devices.irEdit.tabDetails') },
             { id: 'commands', label: t('devices.irEdit.tabCommands') },
             { id: 'macros', label: t('devices.irEdit.tabMacros') },
           ].map((tabDef) => (
             <button key={tabDef.id} onClick={() => setTab(tabDef.id)}
-              className={cn('px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                tab === tabDef.id ? 'bg-ink text-bg' : 'text-ink-mute hover:bg-surface-2'
+              className={cn('px-3 min-h-[40px] rounded-[10px] text-subhead font-medium transition-colors border',
+                tab === tabDef.id ? 'bg-surface-2 text-ink border-line-2' : 'text-ink-mute border-transparent hover:bg-surface-2'
               )}
             >{tabDef.label}{tabDef.id === 'macros' && sequences.length > 0 ? ` (${sequences.length})` : ''}</button>
           ))}
@@ -609,30 +632,32 @@ function IREditModal({ device, onClose, onSaved }) {
           {tab === 'details' && (
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-ink-mute mb-1">{t('devices.irEdit.name')}</label>
+                <label className="block text-footnote text-ink-mute mb-1">{t('devices.irEdit.name')}</label>
                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} dir="auto" className={INPUT_CLS} />
               </div>
               <div>
-                <label className="block text-xs text-ink-mute mb-1">{t('devices.irEdit.type')}</label>
-                <div className="flex flex-wrap gap-1.5">
+                <label className="block text-footnote text-ink-mute mb-1">{t('devices.irEdit.type')}</label>
+                <div className="flex flex-wrap gap-2">
                   {IR_DEVICE_TYPES.map((dt) => (
                     <button key={dt} onClick={() => setForm({ ...form, device_type: dt })}
-                      className={cn('px-3 py-1 rounded-lg text-xs border transition-all capitalize',
-                        form.device_type === dt ? 'border-accent bg-accent/15 text-accent' : 'border-line text-ink-mute hover:bg-line'
-                      )}
+                      className={cn('z-chip capitalize transition-colors', form.device_type === dt ? 'font-semibold' : 'hover:bg-surface-3')}
+                      style={{
+                        minHeight: 36, cursor: 'pointer', fontFamily: 'inherit',
+                        ...(form.device_type === dt ? { background: 'var(--surface-3)', color: 'var(--ink)', borderColor: 'var(--line-2)' } : { color: 'var(--ink-mute)' }),
+                      }}
                     >{dt}</button>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-ink-mute mb-1">{t('devices.irEdit.room')}</label>
+                <label className="block text-footnote text-ink-mute mb-1">{t('devices.irEdit.room')}</label>
                 <select value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} className={INPUT_CLS}>
                   <option value="">{t('devices.irEdit.noRoom')}</option>
                   {rooms.map((r) => <option key={r.id ?? r.name} value={r.id ?? r.area_id ?? r.name}>{r.name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-ink-mute mb-1">{t('devices.irEdit.brand')}</label>
+                <label className="block text-footnote text-ink-mute mb-1">{t('devices.irEdit.brand')}</label>
                 <input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder={t('devices.irEdit.brandPlaceholder')} dir="auto" className={INPUT_CLS + ' placeholder:text-ink-mute'} />
               </div>
             </div>
@@ -644,10 +669,10 @@ function IREditModal({ device, onClose, onSaved }) {
                 signals={unassignedSignals} deviceId={device.id}
                 onDismissed={handleSignalDismissed}
               />
-              <p className="text-[11px] text-ink-mute mb-2">
+              <p className="z-subhead mb-3">
                 {t('devices.irEdit.commandsHelp')}
               </p>
-              {groups.length === 0 && <p className="text-xs text-ink-mute py-4">{t('devices.irEdit.loadingCatalog')}</p>}
+              {groups.length === 0 && <p className="z-subhead py-4">{t('devices.irEdit.loadingCatalog')}</p>}
               {groups.map((g) => (
                 <CommandGroup
                   key={g.id} group={g} learnedSet={learnedSet} deviceId={device.id}
@@ -658,7 +683,7 @@ function IREditModal({ device, onClose, onSaved }) {
                 />
               ))}
               <button onClick={handleAddCustom}
-                className="w-full mt-2 h-8 rounded-lg text-xs text-accent border border-dashed border-accent-soft hover:bg-accent-soft">
+                className="z-btn-secondary w-full mt-2" style={{ borderStyle: 'dashed' }}>
                 {t('devices.irEdit.addCustom')}
               </button>
             </div>
@@ -666,11 +691,11 @@ function IREditModal({ device, onClose, onSaved }) {
 
           {tab === 'macros' && (
             <div>
-              <p className="text-[11px] text-ink-mute mb-2">
+              <p className="z-subhead mb-3">
                 {t('devices.irEdit.macrosHelp')}
               </p>
               {sequences.length === 0 && !buildingSeq && (
-                <p className="text-xs text-ink-mute py-2">{t('devices.irEdit.noMacros')}</p>
+                <p className="z-subhead py-2">{t('devices.irEdit.noMacros')}</p>
               )}
               {sequences.map((s) => (
                 <SequenceRow key={s.name} seq={s} deviceId={device.id}
@@ -681,7 +706,7 @@ function IREditModal({ device, onClose, onSaved }) {
                   onSaved={handleSequenceSaved} onCancel={() => setBuildingSeq(false)} />
               ) : (
                 <button onClick={() => setBuildingSeq(true)}
-                  className="w-full mt-2 h-8 rounded-lg text-xs text-accent border border-dashed border-accent-soft hover:bg-accent-soft">
+                  className="z-btn-secondary w-full mt-2" style={{ borderStyle: 'dashed' }}>
                   {t('devices.irEdit.newMacro')}
                 </button>
               )}
@@ -689,12 +714,12 @@ function IREditModal({ device, onClose, onSaved }) {
           )}
         </div>
 
-        {error && <p className="px-5 pb-1 text-xs text-err">{error}</p>}
+        {error && <p className="px-5 pb-1 text-subhead text-err-text">{error}</p>}
 
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-line shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-ink-mute hover:text-ink-2 transition-colors">{t('common.close')}</button>
+          <button onClick={onClose} className="z-btn-secondary">{t('common.close')}</button>
           <button onClick={handleSave} disabled={saving || !form.name.trim()}
-            className="px-4 py-2 text-sm font-medium rounded-xl bg-ink text-bg disabled:opacity-50 transition-opacity"
+            className="z-btn-primary disabled:opacity-50"
           >
             {saving ? t('common.saving') : t('devices.irEdit.saveDetails')}
           </button>
@@ -714,37 +739,38 @@ const IR_STATE_OPTIONS = {
 }
 
 // Quick-fire button definitions per device type.
-// Each entry: { cmd, icon, label }  — only shown when command is learned.
+// Each entry: { cmd, icon, label } — icon is a Lucide component (16px);
+// only shown when the command is learned.
 const IR_QUICK_BUTTONS = {
   tv: [
-    { cmd: 'power',       icon: '⏻', label: 'Power' },
-    { cmd: 'volume_up',   icon: '🔊', label: 'Vol+' },
-    { cmd: 'volume_down', icon: '🔉', label: 'Vol−' },
-    { cmd: 'mute',        icon: '🔇', label: 'Mute' },
+    { cmd: 'power',       icon: Power,    label: 'Power' },
+    { cmd: 'volume_up',   icon: Volume2,  label: 'Vol+' },
+    { cmd: 'volume_down', icon: Volume1,  label: 'Vol−' },
+    { cmd: 'mute',        icon: VolumeX,  label: 'Mute' },
   ],
   soundbar: [
-    { cmd: 'power',       icon: '⏻', label: 'Power' },
-    { cmd: 'volume_up',   icon: '🔊', label: 'Vol+' },
-    { cmd: 'volume_down', icon: '🔉', label: 'Vol−' },
-    { cmd: 'mute',        icon: '🔇', label: 'Mute' },
+    { cmd: 'power',       icon: Power,    label: 'Power' },
+    { cmd: 'volume_up',   icon: Volume2,  label: 'Vol+' },
+    { cmd: 'volume_down', icon: Volume1,  label: 'Vol−' },
+    { cmd: 'mute',        icon: VolumeX,  label: 'Mute' },
   ],
   projector: [
-    { cmd: 'power',       icon: '⏻', label: 'Power' },
+    { cmd: 'power',       icon: Power,    label: 'Power' },
   ],
   fan: [
-    { cmd: 'power',        icon: '⏻', label: 'Power' },
-    { cmd: 'speed_low',    icon: '〜', label: 'Low' },
-    { cmd: 'speed_medium', icon: '≈', label: 'Med' },
-    { cmd: 'speed_high',   icon: '≋', label: 'High' },
+    { cmd: 'power',        icon: Power,   label: 'Power' },
+    { cmd: 'speed_low',    icon: Wind,    label: 'Low' },
+    { cmd: 'speed_medium', icon: Wind,    label: 'Med' },
+    { cmd: 'speed_high',   icon: Wind,    label: 'High' },
   ],
   ac: [
-    { cmd: 'power',     icon: '⏻', label: 'Power' },
-    { cmd: 'mode_cool', icon: '❄', label: 'Cool' },
-    { cmd: 'mode_heat', icon: '🔥', label: 'Heat' },
-    { cmd: 'mode_fan',  icon: '💨', label: 'Fan' },
+    { cmd: 'power',     icon: Power,      label: 'Power' },
+    { cmd: 'mode_cool', icon: Snowflake,  label: 'Cool' },
+    { cmd: 'mode_heat', icon: Flame,      label: 'Heat' },
+    { cmd: 'mode_fan',  icon: Wind,       label: 'Fan' },
   ],
 }
-const IR_DEFAULT_QUICK = [{ cmd: 'power', icon: '⏻', label: 'Power' }]
+const IR_DEFAULT_QUICK = [{ cmd: 'power', icon: Power, label: 'Power' }]
 
 function IRQuickControls({ device, onCommand }) {
   const t = useT()
@@ -775,18 +801,19 @@ function IRQuickControls({ device, onCommand }) {
   if (buttons.length === 0) return null
 
   return (
-    <div className="mt-2.5 pt-2.5 border-t border-line flex gap-1.5 flex-wrap">
-      {buttons.map(({ cmd, icon, label }) => {
+    <div className="mt-3 pt-3 border-t border-line flex gap-2 flex-wrap">
+      {buttons.map(({ cmd, icon: Icon, label }) => {
         const localized = labelKey(label)
         return (
           <button
             key={cmd}
             onClick={() => onCommand(device.id, cmd)}
             title={localized}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-2 text-ink-2 hover:bg-line transition-colors text-xs font-medium"
+            className="z-chip hover:bg-surface-3 transition-colors"
+            style={{ minHeight: 36, gap: 6, cursor: 'pointer', fontFamily: 'inherit' }}
           >
-            <span className="text-[11px]">{icon}</span>
-            <span className="text-[10px]">{localized}</span>
+            <Icon size={16} strokeWidth={1.75} />
+            <span>{localized}</span>
           </button>
         )
       })}
@@ -849,23 +876,23 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
   if (stateValues.channel != null && (device.device_type === 'stb' || stateRec.template === 'stb')) {
     stateFacts.push(`ch ${stateValues.channel}`)
   }
-  if (stateValues.playing === true) stateFacts.push('▶')
+  if (stateValues.playing === true) stateFacts.push(t('entitySelect.action.media_play').toLowerCase())
   // Keep AC's legacy chip-suffix alias name so the rest of the component
   // (which still reads acFacts) doesn't change shape.
   const acFacts = stateFacts
 
   return (
     <Card className="p-4">
-      <div className="flex items-start justify-between gap-3">
-      <div className="flex items-start gap-3">
-        <div className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center shrink-0">
-          <Icon className="w-4 h-4 text-accent" />
+      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start gap-3 min-w-0">
+        <div style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon size={22} strokeWidth={1.75} />
         </div>
-        <div>
-          <p dir="auto" className="text-sm font-medium text-ink leading-tight">{device.name}</p>
-          {room && <p dir="auto" className="text-xs text-ink-mute mt-0.5 capitalize">{room}</p>}
+        <div className="min-w-0">
+          <p dir="auto" className="z-headline truncate">{device.name}</p>
+          {room && <p dir="auto" className="z-subhead capitalize">{room}</p>}
           <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <span className="text-xs text-ink-mute">{t('devices.commandsCount', { learned: learnedCount, total: totalCount })}</span>
+            <span className="z-footnote">{t('devices.commandsCount', { learned: learnedCount, total: totalCount })}</span>
             {/* Interactive assumed-state chip — surfaces decoded values
                 from physical-remote packets (AC: temp/mode/fan; TV: volume,
                 muted; streamer: playing; STB: channel) plus a confidence
@@ -878,66 +905,66 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
               <button
                 onClick={() => setShowStatePicker((v) => !v)}
                 title={t('devices.irAssumedTooltipPlain')}
-                className={cn(
-                  'flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors',
-                  assumedState === 'on' || (assumedState && assumedState !== 'off')
-                    ? 'bg-ok-soft border-ok-soft text-ok'
+                className="z-chip capitalize"
+                style={{
+                  gap: 6, minHeight: 36, padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit',
+                  ...(assumedState === 'on' || (assumedState && assumedState !== 'off')
+                    ? { background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', borderColor: 'color-mix(in srgb, var(--ok) 30%, var(--line))', color: 'var(--ok-text)' }
                     : assumedState === 'off'
-                    ? 'bg-surface-2 border-line text-ink-mute'
-                    : 'bg-surface-2/50 border-dashed border-line text-ink-mute'
-                )}
+                    ? { color: 'var(--ink-mute)' }
+                    : { color: 'var(--ink-mute)', borderStyle: 'dashed' }),
+                }}
               >
+                {/* Confidence dot: 8px; live pulses (the one meaningful loop). */}
                 {confidence === 'live' && (
                   <span
                     title="Live: physical-remote press confirmed in the last 30s"
-                    className="inline-block w-1.5 h-1.5 rounded-full bg-ok animate-pulse"
+                    className="inline-block w-2 h-2 rounded-full bg-ok animate-pulse"
                   />
                 )}
                 {confidence === 'estimated' && (
                   <span
                     title="Estimated: from Ziggy's last command (no recent RX)"
-                    className="inline-block w-1.5 h-1.5 rounded-full bg-warn-soft border border-warn"
+                    className="inline-block w-2 h-2 rounded-full bg-warn"
                   />
                 )}
                 {confidence === 'stale' && (
                   <span
                     title="Stale: no observation for hours"
-                    className="inline-block w-1.5 h-1.5 rounded-full bg-ink-mute opacity-40"
+                    className="inline-block w-2 h-2 rounded-full bg-ink-faint"
                   />
                 )}
                 <span>{assumedState ?? t('common.unknown')}</span>
                 {acFacts.length > 0 && (
-                  <span className="opacity-80">· {acFacts.join(' · ')}</span>
+                  <span>· {acFacts.join(' · ')}</span>
                 )}
-                <span className="text-[9px] opacity-60 ml-0.5">{t('devices.assumedSuffix')} ▾</span>
+                <span>{t('devices.assumedSuffix')}</span>
+                <ChevronDown size={14} strokeWidth={1.75} style={{ flexShrink: 0 }} />
               </button>
               <AnimatePresence>
                 {showStatePicker && (
                   <motion.div
-                    initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                    initial={{ opacity: 0, scale: 0.97, y: -4 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: -4 }}
-                    transition={{ duration: 0.1 }}
-                    className="absolute bottom-full left-0 mb-1 z-50 bg-surface rounded-xl shadow-xl border border-line overflow-hidden min-w-[100px]"
+                    exit={{ opacity: 0, scale: 0.97, y: -4 }}
+                    transition={T_ENTER}
+                    className="absolute bottom-full left-0 mb-1 z-50 bg-surface rounded-[16px] shadow-xl border border-line overflow-hidden min-w-[180px]"
                   >
-                    <p className="px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-wider text-ink-mute">{t('devices.setAssumedState')}</p>
+                    <p className="z-eyebrow" style={{ padding: '12px 16px 4px' }}>{t('devices.setAssumedState')}</p>
                     {stateOptions.map((s) => (
                       <button
                         key={s}
                         onClick={() => { onStateChange(device.id, s); setShowStatePicker(false) }}
-                        className={cn(
-                          'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors capitalize',
-                          assumedState === s ? 'text-accent font-semibold' : 'text-ink-2'
-                        )}
+                        className={cn(MENU_ITEM_CLS, 'capitalize', assumedState === s ? 'text-ink font-semibold' : 'text-ink-2')}
                       >
-                        {assumedState === s && <span className="text-accent text-[10px]">✓</span>}
-                        {s}
+                        <span className="flex-1">{s}</span>
+                        {assumedState === s && <Check size={16} strokeWidth={2} className="text-ink shrink-0" />}
                       </button>
                     ))}
                     <div className="border-t border-line mt-1 pt-1 pb-1">
                       <button
                         onClick={() => { onStateChange(device.id, 'unknown'); setShowStatePicker(false) }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-mute hover:bg-surface-2 transition-colors"
+                        className={cn(MENU_ITEM_CLS, 'text-ink-mute')}
                       >
                         {t('devices.clearAssumption')}
                       </button>
@@ -949,20 +976,24 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-2 shrink-0 mt-0.5">
+      <div className="flex items-center shrink-0">
         <button
           onClick={() => onEdit(device)}
-          className="text-ink-faint hover:text-accent transition-colors"
+          style={CARD_ICON_BTN_STYLE}
+          className="hover:bg-surface-2 transition-colors"
           title={t('devices.editIrDevice')}
+          aria-label={t('devices.editIrDevice')}
         >
-          <Pencil className="w-4 h-4" />
+          <Pencil size={18} strokeWidth={1.75} />
         </button>
         <button
           onClick={() => onDelete(device.id)}
-          className="text-ink-faint hover:text-err transition-colors"
+          style={{ ...CARD_ICON_BTN_STYLE, color: 'var(--err-text)' }}
+          className="hover:bg-surface-2 transition-colors"
           title={t('devices.removeIrDevice')}
+          aria-label={t('devices.removeIrDevice')}
         >
-          <Trash2 className="w-4 h-4" />
+          <Trash2 size={18} strokeWidth={1.75} />
         </button>
       </div>
       </div>
@@ -973,17 +1004,18 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
 
 // Status-based filter chips — always visible regardless of device inventory.
 // Labels are resolved at render time via useT() in the page component so
-// they react to the active language. The icons stay outside translation.
+// they react to the active language. Icons are Lucide components (16px),
+// rendered by the chip row — never emoji.
 function buildStatusFilters(t) {
   return [
     { id: 'all',           label: t('devices.filterAll') },
-    { id: 'unassigned',    label: `📦 ${t('devices.filterUnassigned')}` },
-    { id: 'noroom',        label: `🏠 ${t('devices.filterNoRoom')}` },
-    { id: 'offline',       label: `🔴 ${t('devices.filterOffline')}` },
-    { id: 'active',        label: `🟢 ${t('devices.filterActive')}` },
-    { id: 'connected',     label: `🔗 ${t('devices.filterConnected')}` },
-    { id: 'ir',            label: `📡 ${t('devices.filterIr')}` },
-    { id: 'smart_sensors', label: `✨ ${t('devices.filterSmartSensors')}` },
+    { id: 'unassigned',    label: t('devices.filterUnassigned'),   icon: Inbox },
+    { id: 'noroom',        label: t('devices.filterNoRoom'),       icon: Home },
+    { id: 'offline',       label: t('devices.filterOffline'),      icon: WifiOff },
+    { id: 'active',        label: t('devices.filterActive'),       icon: Power },
+    { id: 'connected',     label: t('devices.filterConnected'),    icon: Link2 },
+    { id: 'ir',            label: t('devices.filterIr'),           icon: Radio },
+    { id: 'smart_sensors', label: t('devices.filterSmartSensors'), icon: Sparkles },
   ]
 }
 
@@ -1072,48 +1104,45 @@ function SmartSensorCard({ entity, lang }) {
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
-      transition={{ duration: 0.15 }}
+      transition={T_ENTER}
     >
-      <Card
-        className="p-4 transition-all duration-200"
-        style={{
-          background: `color-mix(in srgb, var(--accent) 5%, var(--surface))`,
-          border: `0.5px solid color-mix(in srgb, var(--accent) 22%, var(--line))`,
-        }}
-      >
-        <div className="flex items-start justify-between mb-2">
+      {/* Plain card — the Sparkles plate is what says "Ziggy made this";
+          the card no longer wears an accent tint. */}
+      <Card className="p-4">
+        <div className="flex items-start justify-between gap-2 mb-3">
           <div style={{
-            width: 40, height: 40, borderRadius: 12,
+            width: 44, height: 44, borderRadius: 'var(--r-ctl)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: `color-mix(in srgb, var(--accent) 18%, var(--surface))`,
-            color: 'var(--accent)',
+            background: 'var(--surface-2)',
+            color: 'var(--ink-2)',
             flexShrink: 0,
           }}>
-            <Sparkles size={18} strokeWidth={2.2} />
+            <Sparkles size={22} strokeWidth={1.75} />
           </div>
           <div className="relative" ref={menuRef}>
             <button
               onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
-              className="p-1 rounded-lg text-ink-mute hover:text-ink-2 hover:bg-line transition-colors"
+              style={CARD_ICON_BTN_STYLE}
+              className="hover:bg-surface-2 transition-colors"
               aria-label={t('common.more')}
             >
-              <MoreVertical size={14} />
+              <MoreVertical size={18} strokeWidth={1.75} />
             </button>
             <AnimatePresence>
               {menuOpen && (
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                  initial={{ opacity: 0, scale: 0.97, y: -4 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: -4 }}
-                  transition={{ duration: 0.12 }}
-                  style={{ position: 'absolute', top: '100%', insetInlineEnd: 0, marginTop: 4, zIndex: 50, minWidth: 200 }}
-                  className="bg-surface rounded-xl shadow-2xl border border-line overflow-hidden"
+                  exit={{ opacity: 0, scale: 0.97, y: -4 }}
+                  transition={T_ENTER}
+                  style={{ position: 'absolute', top: '100%', insetInlineEnd: 0, marginTop: 4, zIndex: 50, minWidth: 224 }}
+                  className="bg-surface rounded-[16px] shadow-2xl border border-line overflow-hidden py-1"
                 >
                   <button
                     onClick={() => { setSourcesOpen(true); setMenuOpen(false) }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-2 hover:bg-surface-2 text-start"
+                    className={cn(MENU_ITEM_CLS, 'text-ink-2')}
                   >
-                    <Eye size={12} /> {t('devices.smartSensor.viewSources')}
+                    <Eye size={16} strokeWidth={1.75} /> {t('devices.smartSensor.viewSources')}
                   </button>
                   {/* Delete — removes the fused HA template helper AND clears
                       Ziggy's KV record so it doesn't reappear on reload. Only
@@ -1122,9 +1151,9 @@ function SmartSensorCard({ entity, lang }) {
                   {entryId && (
                     <button
                       onClick={() => { setConfirmOpen(true); setMenuOpen(false) }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-err hover:bg-surface-2 text-start"
+                      className={cn(MENU_ITEM_CLS, 'text-err-text')}
                     >
-                      <Trash2 size={12} /> {t('devices.smartSensor.delete')}
+                      <Trash2 size={16} strokeWidth={1.75} /> {t('devices.smartSensor.delete')}
                     </button>
                   )}
                 </motion.div>
@@ -1133,35 +1162,32 @@ function SmartSensorCard({ entity, lang }) {
           </div>
         </div>
 
-        <p dir="auto" className="text-sm font-medium text-ink leading-tight mb-0.5 truncate">
+        <p dir="auto" className="z-headline truncate">
           {entityDisplayName(entity)}
         </p>
 
-        <p dir="auto" className="text-[10.5px] text-ink-mute mb-2 leading-snug">
+        <p dir="auto" className="z-subhead mb-2">
           {t('devices.smartSensor.subtitle', { n: sources.length })}
           {roomLabel && (
             <> · <span className="capitalize">{roomLabel}</span></>
           )}
         </p>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '3px 9px', borderRadius: 999, fontSize: 10.5, fontWeight: 600,
-            background: isUnavailable
-              ? 'var(--surface-2)'
-              : isOccupied
-                ? `color-mix(in srgb, var(--ok) 16%, var(--surface))`
-                : 'var(--surface-2)',
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="z-chip" style={{
+            gap: 8, fontWeight: 600,
+            background: isOccupied && !isUnavailable
+              ? 'color-mix(in srgb, var(--ok) 12%, var(--surface))'
+              : 'var(--surface-2)',
             color: isUnavailable
               ? 'var(--ink-faint)'
-              : isOccupied ? 'var(--ok)' : 'var(--ink-mute)',
-            border: `0.5px solid ${isOccupied && !isUnavailable
-              ? `color-mix(in srgb, var(--ok) 35%, var(--line))`
-              : 'var(--line)'}`,
+              : isOccupied ? 'var(--ok-text)' : 'var(--ink-mute)',
+            borderColor: isOccupied && !isUnavailable
+              ? 'color-mix(in srgb, var(--ok) 30%, var(--line))'
+              : 'var(--line)',
           }}>
             <span style={{
-              width: 6, height: 6, borderRadius: '50%',
+              width: 8, height: 8, borderRadius: '50%',
               background: isUnavailable ? 'var(--ink-faint)' : isOccupied ? 'var(--ok)' : 'var(--ink-mute)',
             }} />
             {isOccupied
@@ -1179,30 +1205,30 @@ function SmartSensorCard({ entity, lang }) {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.18 }}
+              transition={T_STATE}
               style={{ overflow: 'hidden' }}
             >
               <div style={{
-                marginTop: 10, paddingTop: 10,
+                marginTop: 12, paddingTop: 12,
                 borderTop: '0.5px solid var(--line)',
               }}>
-                <p className="text-[9.5px] uppercase tracking-wider text-ink-mute font-semibold mb-1.5">
+                <p className="z-eyebrow mb-2">
                   {t('devices.smartSensor.sourcesTitle')}
                 </p>
                 {sourceLabels.length > 0 ? (
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {sourceLabels.map((label, i) => (
                       <li key={i} dir="auto" style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        fontSize: 11, color: 'var(--ink-2)',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        fontSize: 15, lineHeight: '20px', color: 'var(--ink-2)',
                       }}>
-                        <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--ink-faint)', flexShrink: 0 }} />
                         <span className="truncate">{label}</span>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-[11px] text-ink-faint">
+                  <p className="z-subhead">
                     {t('devices.smartSensor.subtitle', { n: sources.length })}
                   </p>
                 )}
@@ -1220,7 +1246,7 @@ function SmartSensorCard({ entity, lang }) {
         title={t('devices.smartSensor.deleteTitle')}
         maxWidth={420}
       >
-        <p dir="auto" className="text-sm text-ink-2 leading-relaxed mb-4">
+        <p dir="auto" className="text-subhead text-ink-2 leading-relaxed mb-4">
           {t('devices.smartSensor.deleteBody', { name: displayName })}
         </p>
         <div className="flex items-center justify-end gap-2">
@@ -1253,33 +1279,41 @@ function CollapsibleGroup({ label, count, open, onToggle, children, action, room
   const photo = room ? getRoomPhoto(room) : null
   return (
     <div style={{ marginBottom: 20 }}>
-      {/* Room header — matches design's RoomBlock header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px 10px' }}>
-        {photo && (
-          <div style={{ width: 32, height: 32, borderRadius: 9, overflow: 'hidden', background: 'var(--surface-2)', flexShrink: 0 }}>
-            <img src={photo} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          </div>
+      {/* Section header: 32px room tile (photo, or a plain surface-2 square
+          with a line Home glyph when no photo was chosen), 17/600 label,
+          13px count, 18px chevron. The whole label row is the toggle target. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 4px 8px', minHeight: 52 }}>
+        {room && (
+          photo ? (
+            <div style={{ width: 32, height: 32, borderRadius: 'var(--r-ctl)', overflow: 'hidden', background: 'var(--surface-2)', flexShrink: 0 }}>
+              <img src={photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
+          ) : (
+            <div className="z-room-plain" style={{ width: 32, height: 32, borderRadius: 'var(--r-ctl)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-2)', flexShrink: 0 }}>
+              <Home size={18} strokeWidth={1.75} />
+            </div>
+          )
         )}
-        <button onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'start' }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <span dir="auto" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.005em' }}>{label}</span>
-            {count != null && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginInlineStart: 6 }}>{count === 1 ? t('devices.deviceCountOne') : t('devices.deviceCountMany', { n: count })}</span>}
+        <button onClick={onToggle} aria-expanded={open} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, minHeight: 44, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'start', fontFamily: 'inherit' }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+            <span dir="auto" style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{label}</span>
+            {count != null && <span className="z-mono" style={{ fontSize: 13, lineHeight: '18px', color: 'var(--ink-mute)' }}>{count === 1 ? t('devices.deviceCountOne') : t('devices.deviceCountMany', { n: count })}</span>}
           </div>
-          <span style={{ color: 'var(--ink-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          <span style={{ color: 'var(--ink-mute)', display: 'inline-flex', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)', flexShrink: 0 }}>
+            <ChevronDown size={18} strokeWidth={1.75} />
           </span>
         </button>
         {onRoomClick && (
-          <button onClick={onRoomClick} style={{ padding: '5px 10px', borderRadius: 8, background: 'transparent', border: '0.5px solid var(--line)', fontSize: 10, fontWeight: 500, color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit' }}>
+          <button onClick={onRoomClick} style={{ minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-ctl)', background: 'transparent', border: 'none', fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)', display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit' }}>
             {t('devices.openRoom')}
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            <ChevronRight size={16} strokeWidth={1.75} className="icon-flip-rtl" />
           </button>
         )}
         {action && <div style={{ flexShrink: 0 }}>{action}</div>}
       </div>
       <AnimatePresence initial={false}>
         {open && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} style={{ overflow: 'hidden' }}>
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={T_STATE} style={{ overflow: 'hidden' }}>
             {children}
           </motion.div>
         )}
@@ -1303,36 +1337,35 @@ function AssignRoomDropdown({ entityId, rooms, onAssign }) {
 
   return (
     <div ref={ref} className="relative mt-3">
+      {/* Secondary button, full width — the card's toggle stays the only
+          strong control. */}
       <button
         onClick={e => { e.stopPropagation(); setOpen(v => !v) }}
-        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '6px 10px', borderRadius: 8, fontSize: 11.5, fontWeight: 500, cursor: 'pointer', background: `color-mix(in srgb, var(--info) 10%, var(--surface))`, color: 'var(--info)', border: `0.5px solid color-mix(in srgb, var(--info) 30%, var(--line))`, fontFamily: 'inherit' }}
+        aria-expanded={open}
+        className="z-btn-secondary"
+        style={{ width: '100%', justifyContent: 'space-between', fontSize: 15, fontWeight: 500 }}
       >
         <span>{t('devices.assignToRoom')}</span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.12s' }}><path d="M6 9l6 6 6-6"/></svg>
+        <ChevronDown size={16} strokeWidth={1.75} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)' }} />
       </button>
 
       <AnimatePresence>
         {open && (
-          <motion.div initial={{ opacity: 0, y: -4, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.97 }} transition={{ duration: 0.12 }}
-            style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, marginBottom: 4, zIndex: 50, background: 'var(--surface)', borderRadius: 11, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', border: '0.5px solid var(--line)', overflow: 'hidden' }}
+          <motion.div initial={{ opacity: 0, y: -4, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.97 }} transition={T_ENTER}
+            style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, marginBottom: 4, zIndex: 50, background: 'var(--surface)', borderRadius: 'var(--r-card)', boxShadow: '0 8px 32px rgba(0,0,0,0.18)', border: '0.5px solid var(--line)', overflow: 'hidden' }}
           >
-            <div style={{ padding: '4px 0', maxHeight: 192, overflowY: 'auto' }}>
+            <div style={{ padding: '4px 0', maxHeight: 264, overflowY: 'auto' }}>
               <button onClick={() => { onAssign(entityId, null); setOpen(false) }}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'none', border: 'none', borderBottom: '0.5px solid var(--line)', cursor: 'pointer', textAlign: 'start', fontSize: 12, color: 'var(--ink-faint)', fontFamily: 'inherit' }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                className={cn(MENU_ITEM_CLS, 'text-ink-mute border-b border-line')}
               >
-                <Home size={11} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+                <Home size={16} strokeWidth={1.75} style={{ flexShrink: 0 }} />
                 {t('devices.noRoom')}
               </button>
               {rooms.map(r => (
                 <button key={r.id} onClick={() => { onAssign(entityId, r.id); setOpen(false) }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'start', fontSize: 12, color: 'var(--ink-2)', fontFamily: 'inherit' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                  className={cn(MENU_ITEM_CLS, 'text-ink-2')}
                 >
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--info)', flexShrink: 0 }} />
-                  <span dir="auto">{r.name}</span>
+                  <span dir="auto" className="truncate">{r.name}</span>
                 </button>
               ))}
             </div>
@@ -1359,7 +1392,7 @@ function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extra
     e.stopPropagation()
     if (!open && btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect()
-      const menuW = 192  // w-48
+      const menuW = MENU_W
       // Subtract navbar height so menu never hides behind it
       const spaceBelow = window.innerHeight - rect.bottom - NAV_HEIGHT
       const wouldClipLeft = rect.right - menuW < 0
@@ -1393,60 +1426,51 @@ function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extra
       <button
         ref={btnRef}
         onClick={handleOpen}
-        className="p-1 rounded-lg text-ink-mute hover:text-ink-2 hover:bg-line transition-colors"
+        style={CARD_ICON_BTN_STYLE}
+        className="hover:bg-surface-2 transition-colors"
+        aria-label={t('common.more')}
+        aria-expanded={open}
       >
-        <MoreVertical size={14} />
+        <MoreVertical size={18} strokeWidth={1.75} />
       </button>
 
       <AnimatePresence>
         {open && (
           <motion.div
             ref={menuRef}
-            style={{ position: 'fixed', top: menuPos.top, bottom: menuPos.bottom, left: menuPos.left, right: menuPos.right, zIndex: 9999 }}
-            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            style={{ position: 'fixed', top: menuPos.top, bottom: menuPos.bottom, left: menuPos.left, right: menuPos.right, zIndex: 9999, width: MENU_W }}
+            initial={{ opacity: 0, scale: 0.97, y: -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -4 }}
-            transition={{ duration: 0.12 }}
-            className="w-48 bg-surface rounded-xl shadow-2xl border border-line overflow-hidden"
+            exit={{ opacity: 0, scale: 0.97, y: -4 }}
+            transition={T_ENTER}
+            className="bg-surface rounded-[16px] shadow-2xl border border-line overflow-hidden"
           >
             <div className="py-1">
               {currentRoom && (
-                <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
+                <div className="px-4 pt-3 pb-1 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-ok shrink-0" />
-                  <span className="text-[11px] text-ink-mute" dir="auto">
-                    <span className="font-semibold text-ink-2">{currentRoom.name}</span>
-                  </span>
+                  <span className="text-subhead text-ink-2 font-medium truncate" dir="auto">{currentRoom.name}</span>
                 </div>
               )}
-              <p className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-mute">
+              <p className="z-eyebrow px-4 pt-2 pb-1">
                 {t('devices.assignToRoom')}
               </p>
               <button
                 onClick={() => { onAssign(entity.entity_id, null); setOpen(false) }}
-                className={cn(
-                  'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors',
-                  !currentRoom ? 'text-accent font-medium' : 'text-ink-mute'
-                )}
+                className={cn(MENU_ITEM_CLS, !currentRoom ? 'text-ink font-semibold' : 'text-ink-mute')}
               >
-                <Home size={12} /> {t('devices.noRoom')}
+                <Home size={16} strokeWidth={1.75} className="shrink-0" />
+                <span className="flex-1">{t('devices.noRoom')}</span>
+                {!currentRoom && <Check size={16} strokeWidth={2} className="text-ink shrink-0" />}
               </button>
               {rooms.map((r) => (
                 <button
                   key={r.id}
                   onClick={() => { onAssign(entity.entity_id, r.id); setOpen(false) }}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors',
-                    currentRoom?.id === r.id
-                      ? 'text-accent font-semibold'
-                      : 'text-ink-2'
-                  )}
+                  className={cn(MENU_ITEM_CLS, currentRoom?.id === r.id ? 'text-ink font-semibold' : 'text-ink-2')}
                 >
-                  <span className={cn(
-                    'w-2 h-2 rounded-full shrink-0',
-                    currentRoom?.id === r.id ? 'bg-accent' : 'bg-line'
-                  )} />
-                  <span dir="auto">{r.name}</span>
-                  {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-accent">✓</span>}
+                  <span dir="auto" className="flex-1 truncate">{r.name}</span>
+                  {currentRoom?.id === r.id && <Check size={16} strokeWidth={2} className="text-ink shrink-0" />}
                 </button>
               ))}
               <div className="border-t border-line mt-1 pt-1">
@@ -1455,16 +1479,16 @@ function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extra
                     isHidden ? onUnhide(entity.entity_id) : onHide(entity.entity_id)
                     setOpen(false)
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-mute hover:bg-surface-2 transition-colors"
+                  className={cn(MENU_ITEM_CLS, 'text-ink-mute')}
                 >
                   {isHidden
-                    ? <><Eye size={12} /> {t('devices.showDevice')}</>
-                    : <><EyeOff size={12} /> {t('devices.hideDevice')}</>
+                    ? <><Eye size={16} strokeWidth={1.75} /> {t('devices.showDevice')}</>
+                    : <><EyeOff size={16} strokeWidth={1.75} /> {t('devices.hideDevice')}</>
                   }
                 </button>
                 {extraItems.map((item, i) => (
                   <button key={i} onClick={() => { item.onClick(); setOpen(false) }}
-                    className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors', item.className || 'text-ink-2')}
+                    className={cn(MENU_ITEM_CLS, item.className || 'text-ink-2')}
                   >
                     {item.icon} {item.label}
                   </button>
@@ -1492,7 +1516,7 @@ function LinkIrModal({ irDevice, open, onClose, onLink }) {
 
   return (
     <Modal open={open} onClose={() => { setEntityId(''); onClose() }} title={t('devices.linkModalTitle', { name: irDevice?.name || '' })}>
-      <p className="text-xs text-ink-mute mb-4 -mt-1 leading-relaxed">
+      <p className="text-footnote text-ink-mute mb-4 -mt-1 leading-relaxed">
         {t('devices.linkModalDescription')}
       </p>
       <EntitySelect
@@ -1548,7 +1572,7 @@ function IRCardMenu({ irDevice, rooms, onEdit, onDelete, onAssign, onLinkToWifi,
     e.stopPropagation()
     if (!open && btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect()
-      const menuW = 208 // w-52
+      const menuW = MENU_W
       const spaceBelow = window.innerHeight - rect.bottom - NAV_HEIGHT_IR
       const wouldClipLeft = rect.right - menuW < 0
       setMenuPos({
@@ -1583,67 +1607,69 @@ function IRCardMenu({ irDevice, rooms, onEdit, onDelete, onAssign, onLinkToWifi,
       <button
         ref={btnRef}
         onClick={handleOpen}
-        className="p-1 rounded-lg text-ink-mute hover:text-ink-2 hover:bg-line transition-colors"
+        style={CARD_ICON_BTN_STYLE}
+        className="hover:bg-surface-2 transition-colors"
+        aria-label={t('common.more')}
+        aria-expanded={open}
       >
-        <MoreVertical size={14} />
+        <MoreVertical size={18} strokeWidth={1.75} />
       </button>
 
       <AnimatePresence>
         {open && (
           <motion.div
             ref={menuRef}
-            style={{ position: 'fixed', top: menuPos.top, bottom: menuPos.bottom, left: menuPos.left, right: menuPos.right, zIndex: 9999 }}
-            initial={{ opacity: 0, scale: 0.95, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -4 }} transition={{ duration: 0.12 }}
-            className="w-52 bg-surface rounded-xl shadow-2xl border border-line overflow-hidden"
+            style={{ position: 'fixed', top: menuPos.top, bottom: menuPos.bottom, left: menuPos.left, right: menuPos.right, zIndex: 9999, width: MENU_W }}
+            initial={{ opacity: 0, scale: 0.97, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: -4 }} transition={T_ENTER}
+            className="bg-surface rounded-[16px] shadow-2xl border border-line overflow-hidden"
           >
             <div className="py-1">
               {currentRoom && (
-                <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
+                <div className="px-4 pt-3 pb-1 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-ok shrink-0" />
-                  <span className="text-[11px] text-ink-mute" dir="auto">
-                    <span className="font-semibold text-ink-2">{currentRoom.name}</span>
-                  </span>
+                  <span className="text-subhead text-ink-2 font-medium truncate" dir="auto">{currentRoom.name}</span>
                 </div>
               )}
-              <p className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-mute">{t('devices.assignToRoom')}</p>
+              <p className="z-eyebrow px-4 pt-2 pb-1">{t('devices.assignToRoom')}</p>
               <button onClick={() => { onAssign(null); setOpen(false) }}
-                className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2', !currentRoom ? 'text-accent font-medium' : 'text-ink-mute')}
+                className={cn(MENU_ITEM_CLS, !currentRoom ? 'text-ink font-semibold' : 'text-ink-mute')}
               >
-                <Home size={12} /> {t('devices.noRoom')}
+                <Home size={16} strokeWidth={1.75} className="shrink-0" />
+                <span className="flex-1">{t('devices.noRoom')}</span>
+                {!currentRoom && <Check size={16} strokeWidth={2} className="text-ink shrink-0" />}
               </button>
               {rooms.map((r) => (
                 <button key={r.id} onClick={() => { onAssign(r.id); setOpen(false) }}
-                  className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2', currentRoom?.id === r.id ? 'text-accent font-semibold' : 'text-ink-2')}
+                  className={cn(MENU_ITEM_CLS, currentRoom?.id === r.id ? 'text-ink font-semibold' : 'text-ink-2')}
                 >
-                  <span className={cn('w-2 h-2 rounded-full shrink-0', currentRoom?.id === r.id ? 'bg-accent' : 'bg-line')} />
-                  <span dir="auto">{r.name}</span>
-                  {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-accent">✓</span>}
+                  <span dir="auto" className="flex-1 truncate">{r.name}</span>
+                  {currentRoom?.id === r.id && <Check size={16} strokeWidth={2} className="text-ink shrink-0" />}
                 </button>
               ))}
               <div className="border-t border-line mt-1 pt-1">
                 <button onClick={() => { onEdit(); setOpen(false) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-2 hover:bg-surface-2"
+                  className={cn(MENU_ITEM_CLS, 'text-ink-2')}
                 >
-                  <Pencil size={12} /> {t('devices.editIrDevice')}
+                  <Pencil size={16} strokeWidth={1.75} /> {t('devices.editIrDevice')}
                 </button>
                 {irDevice?.ha_entity_id ? (
                   <button onClick={() => { onUnlinkFromWifi?.(); setOpen(false) }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-accent hover:bg-surface-2"
+                    className={cn(MENU_ITEM_CLS, 'text-ink-2')}
                   >
-                    ⬡ {t('devices.unlinkFromWifi')}
+                    <Unlink size={16} strokeWidth={1.75} /> {t('devices.unlinkFromWifi')}
                   </button>
                 ) : (
                   <button onClick={() => { onLinkToWifi?.(); setOpen(false) }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-accent hover:bg-surface-2"
+                    className={cn(MENU_ITEM_CLS, 'text-ink-2')}
                   >
-                    ⬡ {t('devices.linkToWifi')}
+                    <Link2 size={16} strokeWidth={1.75} /> {t('devices.linkToWifi')}
                   </button>
                 )}
                 <button onClick={() => { onDelete(); setOpen(false) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-err hover:bg-surface-2"
+                  className={cn(MENU_ITEM_CLS, 'text-err-text')}
                 >
-                  <Trash2 size={12} /> {t('common.remove')}
+                  <Trash2 size={16} strokeWidth={1.75} /> {t('common.remove')}
                 </button>
               </div>
             </div>
@@ -1702,37 +1728,42 @@ const DeviceCard = forwardRef(function DeviceCard({
     : (assumedState != null) ? 'estimated'
     : 'unknown'
 
+  // The card's kind decides whether a "Show controls" footer exists at all.
+  // IR: any controllable kind. HA: controllable, visible, and reachable.
+  const isControllableKind = kindMeta(getKind(entity)).controllable
+  const showsExpander = isIr
+    ? isControllableKind
+    : (!isHidden && isControllableKind && entity.state !== 'unavailable')
+  const irLabel = t('deviceCard.irBadge')
+
   return (
     <motion.div
       ref={ref} layout
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: isHidden ? 0.45 : 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
-      transition={{ duration: 0.15 }}
+      transition={T_ENTER}
     >
-      <Card className={cn('p-4 transition-all duration-200', isActive && !isHidden && 'shadow-card-hover')}>
-        {/* ── Card header ── */}
-        <div className="flex items-start justify-between mb-3">
+      <Card className="p-4">
+        {/* ── Card header: 44px icon plate, then chevron / toggle / kebab ── */}
+        <div className="flex items-start justify-between gap-2 mb-3">
           <div style={{
-            width: 40, height: 40, borderRadius: 12, fontSize: 21,
+            width: 44, height: 44, borderRadius: 'var(--r-ctl)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            position: 'relative',
+            position: 'relative', flexShrink: 0,
             background: isActive ? 'var(--ink)' : 'var(--surface-2)',
             color: isActive ? 'var(--bg)' : 'var(--ink)',
           }}>
-            {/* Always use the kind-derived emoji. The non-IR branch used to
+            {/* Always use the kind-derived icon. The non-IR branch used to
                 read `domainIcon(entity.domain, ...)` which only knew the raw
                 HA domain — a Switcher Touch boiler (`switch.switcher_touch_*`)
                 showed the generic switch icon, while the detail page showed
-                🔥 via getKind. Routing both through getKind+kindMeta keeps
-                vendor heuristics (Switcher boilers, future overrides) in
-                one place and the icon consistent across views. */}
-            <DeviceIcon kind={getKind(entity)} customIcon={entity.icon} size={21} fill />
-            {(isIr || linkedIr) && (
-              <span style={{ position: 'absolute', bottom: -3, right: -3, background: 'var(--accent)', color: '#fff', fontSize: 6, fontWeight: 700, padding: '1px 4px', borderRadius: 3, lineHeight: 1.2 }}>IR</span>
-            )}
+                the boiler via getKind. Routing both through getKind+kindMeta
+                keeps vendor heuristics (Switcher boilers, future overrides)
+                in one place and the icon consistent across views. */}
+            <DeviceIcon kind={getKind(entity)} customIcon={entity.icon} size={24} fill />
             {!isIr && !linkedIr && ziggyStatus && STATUS_DOT[ziggyStatus] && (
-              <span className={cn('absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2', STATUS_DOT[ziggyStatus])} style={{ borderColor: 'var(--surface)' }} />
+              <span className={cn('absolute -top-1 -right-1 w-2 h-2 rounded-full border-2', STATUS_DOT[ziggyStatus])} style={{ borderColor: 'var(--surface)' }} />
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -1740,10 +1771,12 @@ const DeviceCard = forwardRef(function DeviceCard({
                 DeviceDetail handles `ir.<id>` entity_ids via its isIrTarget branch. */}
             <button
               onClick={() => navigate(`/devices/${encodeURIComponent(entity.entity_id)}`)}
-              className="p-1 rounded-lg text-ink-faint hover:text-ink-mute hover:bg-surface-2 transition-colors"
+              style={CARD_ICON_BTN_STYLE}
+              className="hover:bg-surface-2 transition-colors"
               title={t('devices.deviceDetailsTooltip')}
+              aria-label={t('devices.deviceDetailsTooltip')}
             >
-              <ChevronRight size={14} className="icon-flip-rtl" />
+              <ChevronRight size={18} strokeWidth={1.75} className="icon-flip-rtl" />
             </button>
             {isToggleable && (
               <Toggle checked={isOn} onCheckedChange={(v) => onToggle(entity.entity_id, v)} />
@@ -1787,8 +1820,8 @@ const DeviceCard = forwardRef(function DeviceCard({
                 isHidden={isHidden}
                 onAssign={onAssign}
                 extraItems={[
-                  { label: t('devices.editIrRemote'), icon: <Pencil size={12} />, onClick: () => onEditIr(linkedIr) },
-                  { label: t('devices.unlinkIr'), icon: <span className="text-[11px]">⬡</span>, onClick: () => onUnlinkIr(linkedIr.id), className: 'text-accent' },
+                  { label: t('devices.editIrRemote'), icon: <Pencil size={16} strokeWidth={1.75} />, onClick: () => onEditIr(linkedIr) },
+                  { label: t('devices.unlinkIr'), icon: <Unlink size={16} strokeWidth={1.75} />, onClick: () => onUnlinkIr(linkedIr.id), className: 'text-ink-2' },
                 ]}
               />
             ) : (
@@ -1798,23 +1831,18 @@ const DeviceCard = forwardRef(function DeviceCard({
         </div>
 
         {/* ── Name ── */}
-        <p dir="auto" className="text-sm font-medium text-ink leading-tight mb-0.5 truncate">
+        <p dir="auto" className="z-headline truncate">
           {entityDisplayName(entity)}
         </p>
 
         {/* ── State ── */}
         {isIr ? (
-          // Standalone IR: assumed state chip with picker, plus a "Show controls"
-          // affordance for controllable kinds (AC, TV, fan, etc.) — same as the
-          // HA branch below.
-          // State row: chip on the left, AC temp stepper in the middle (for
-          // IR ACs), "Show controls" link on the right. `space-between`
-          // auto-spaces the three elements; `flex-wrap` lets the stepper
-          // drop to a second line on the narrowest cards rather than
-          // smushing the chip / show-controls. The dropdown popover is now
-          // fixed-positioned so it can never be clipped regardless of where
-          // the chip ends up on the row.
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap', rowGap: 4 }}>
+          // Standalone IR: assumed-state chip with picker, plus the AC temp
+          // stepper for IR ACs. `flex-wrap` lets the stepper drop to a second
+          // line on the narrowest cards. The chip carries " · IR" so the
+          // control path is stated in the state line, not as a badge on
+          // the icon. The popover is fixed-positioned so it never clips.
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', rowGap: 4, marginTop: 4 }}>
             <AssumedStatePicker
               irDevice={irDevice}
               assumedState={assumedState}
@@ -1823,6 +1851,7 @@ const DeviceCard = forwardRef(function DeviceCard({
               ageHours={ageHours}
               irStateOptions={irStateOptions}
               onIrStateChange={onIrStateChange}
+              suffix={irLabel}
               acFacts={(() => {
                 if (irDevice?.type !== 'ac') return []
                 const m = irDevice?.ac_memory || {}
@@ -1836,95 +1865,72 @@ const DeviceCard = forwardRef(function DeviceCard({
             {getKind(entity) === KIND.AC && (
               <CompactAcStepper entity={entity} />
             )}
-            {kindMeta(getKind(entity)).controllable && (
-              <button
-                onClick={() => setControlsExpanded(v => !v)}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 3,
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--accent)', fontSize: 10.5, fontWeight: 600,
-                  fontFamily: 'inherit', padding: '2px 4px', flexShrink: 0,
-                }}
-              >
-                {controlsExpanded ? t('devices.hideControls') : t('devices.showControls')}
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
-                  style={{ transform: controlsExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-                  <path d="M6 9l6 6 6-6"/>
-                </svg>
-              </button>
-            )}
           </div>
         ) : showStatusBadge ? (
-          <p className="text-xs font-medium text-err">{statusBadgeLabel}</p>
-        ) : (() => {
+          <p className="text-subhead font-medium text-err-text">{statusBadgeLabel}</p>
+        ) : (
           // Read-only kinds (sensors, motion, door, etc.) collapse primary +
           // secondary onto one line so the tile is just name + reading.
-          // Controllable kinds put the state and "Show controls" affordance
-          // on the same row so the tile is no taller than a sensor tile.
-          const isControllable = kindMeta(getKind(entity)).controllable
-          const showsExpander  = !isHidden && isControllable && entity.state !== 'unavailable'
-          const colorClass = cn(
-            'text-xs font-medium',
-            isHidden ? 'text-ink-faint' :
-            entity.state === 'unavailable' ? 'text-ink-faint' :
-            isActive ? 'text-ok' : 'text-ink-faint',
-          )
-          return (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <p className={cn(colorClass, 'truncate min-w-0 flex-1')}>
-                {stateLabel}
-                {!isControllable && stateSecondary && (
-                  <span className="text-ink-faint font-normal ml-1">· {stateSecondary}</span>
-                )}
-              </p>
-              {showsExpander && (
-                <button
-                  onClick={() => setControlsExpanded(v => !v)}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 3,
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--accent)', fontSize: 10.5, fontWeight: 600,
-                    fontFamily: 'inherit', padding: '2px 4px', flexShrink: 0,
-                  }}
-                >
-                  {controlsExpanded ? t('devices.hideControls') : t('devices.showControls')}
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
-                    style={{ transform: controlsExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-                    <path d="M6 9l6 6 6-6"/>
-                  </svg>
-                </button>
-              )}
-            </div>
-          )
-        })()}
-        {!isIr && stateSecondary && !isHidden && kindMeta(getKind(entity)).controllable && (
-          <p className="text-xs text-ink-faint mt-0.5">{stateSecondary}</p>
+          // 15px; ok-text when the device is doing something, ink-mute
+          // otherwise. A merged HA+IR card states " · IR" here.
+          <p className={cn('text-subhead font-medium truncate', (!isHidden && entity.state !== 'unavailable' && isActive) ? 'text-ok-text' : 'text-ink-mute')}>
+            {stateLabel}
+            {!isControllableKind && stateSecondary && (
+              <span className="text-ink-mute font-normal"> · {stateSecondary}</span>
+            )}
+            {linkedIr && <span className="text-ink-mute font-normal"> · {irLabel}</span>}
+          </p>
+        )}
+        {!isIr && stateSecondary && !isHidden && isControllableKind && (
+          <p className="z-footnote truncate">{stateSecondary}</p>
         )}
         {isIr && irDevice?.last_command_sent_at && (
-          <p className="text-[10px] text-ink-faint mt-0.5 truncate">
+          <p className="z-footnote truncate">
             {t('devices.last')}: {irDevice.last_command_sent?.replace(/_/g, ' ')} · {_fmtAgo(irDevice.last_command_sent_at)}
           </p>
         )}
 
         {/* IR Walk Wizard entry — only for IR ACs Ziggy hasn't learned yet
-            (no synthesized command set). Subtle text link under the card
-            controls; the wizard lives at /ir-walk/:deviceId. */}
+            (no synthesized command set). Ghost button, ink, 44px tall; the
+            wizard lives at /ir-walk/:deviceId. */}
         {isIr && getKind(entity) === KIND.AC && irDevice &&
           (irDevice.synth_commands || []).length === 0 && (
           <button
             onClick={(e) => { e.stopPropagation(); navigate(`/ir-walk/${irDevice.id}`) }}
-            className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] font-semibold text-accent hover:underline"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
+            className="mt-1 inline-flex items-center gap-2 hover:bg-surface-2 transition-colors"
+            style={{ minHeight: 44, padding: '0 8px', marginInlineStart: -8, borderRadius: 'var(--r-ctl)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, fontWeight: 600, color: 'var(--ink)', fontFamily: 'inherit' }}
           >
-            <Sparkles size={11} />
+            <Sparkles size={16} strokeWidth={1.75} />
             {t('devices.teachZiggyRemote')}
           </button>
         )}
 
+        {/* "Show controls" — a full-width 44px footer row inside the card,
+            quiet ink-mute text with a 16px chevron, separated by a hairline.
+            Same toggle behaviour as before; just no longer an accent link. */}
+        {showsExpander && (
+          <button
+            onClick={() => setControlsExpanded(v => !v)}
+            aria-expanded={controlsExpanded}
+            className="hover:text-ink transition-colors"
+            style={{
+              width: '100%', minHeight: 44, marginTop: 12,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+              background: 'none', border: 'none', borderTop: '0.5px solid var(--line)', cursor: 'pointer',
+              color: 'var(--ink-mute)', fontSize: 15, fontWeight: 500,
+              fontFamily: 'inherit', padding: '12px 0 0', textAlign: 'start',
+            }}
+          >
+            {controlsExpanded ? t('devices.hideControls') : t('devices.showControls')}
+            <ChevronDown size={16} strokeWidth={1.75}
+              style={{ flexShrink: 0, transform: controlsExpanded ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)' }} />
+          </button>
+        )}
+
         {/* Expanded control surface — animated height + fade so opening
-            and closing doesn't snap the list around. Hidden / sensor /
-            unavailable devices never reach this branch. */}
-        {!isHidden && kindMeta(getKind(entity)).controllable && entity.state !== 'unavailable' && (
+            and closing doesn't snap the list around. Sits directly under
+            the footer row (which already draws the hairline). */}
+        {showsExpander && (
           <AnimatePresence initial={false}>
             {controlsExpanded && (
               <motion.div
@@ -1932,10 +1938,10 @@ const DeviceCard = forwardRef(function DeviceCard({
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+                transition={T_STATE}
                 style={{ overflow: 'hidden' }}
               >
-                <div style={{ marginTop: 10, paddingTop: 12, borderTop: '0.5px solid var(--line)' }}>
+                <div style={{ paddingTop: 4 }}>
                   <UnifiedDeviceRemote entity={entity} />
                 </div>
               </motion.div>
@@ -2345,85 +2351,72 @@ export default function Devices() {
   })
 
   return (
-    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 24px' }}>
       {/* Header — wraps on narrow screens so the action buttons drop to a new
           row instead of overflowing horizontally (which used to shove the
           "pair device" button off the page edge when the show-hidden pill
           appeared). */}
-      <div style={{ marginBottom: 20 }}>
-        {/* Top row: title + the primary "pair device" action, which stays put
-            (flexShrink:0) and never gets pushed off-screen or onto its own
-            line. The secondary toggles live on a separate row below so
-            appearing/relabelling them can't disturb the pair button. */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ minWidth: 0 }}>
-            <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('devices.eyebrow')}</p>
-            <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('devices.title')}</h1>
-            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
-              {t('devices.subtitleActive', { active: activeCount, total: getTotalControllable(), totalEntities: entities.length })}
-              {hiddenCount > 0 && ` · ${t('devices.subtitleHidden', { n: hiddenCount })}`}
-              {unassigned.length > 0 && <span style={{ color: 'var(--warn)', marginInlineStart: 4 }}>· {t('devices.subtitleUnassigned', { n: unassigned.length })}</span>}
-              {noRoomEntities.length > 0 && <span style={{ color: 'var(--ink-faint)', marginInlineStart: 4 }}>· {t('devices.subtitleNoRoom', { n: noRoomEntities.length })}</span>}
-            </p>
-          </div>
-          <button onClick={() => setShowPairing(true)} className="z-btn-primary" style={{ flexShrink: 0, padding: '8px 14px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-            <Plus size={13} /> {t('devices.pairDevice')}
-          </button>
+      {/* Header: eyebrow → display title → one 44px icon action. The
+          device cards are this screen's primary; pairing is a quiet
+          icon button, not an inverted CTA. No count subtitle — the
+          counts already live on the filter chips and group headers. */}
+      <div className="z-page-head">
+        <div>
+          <p className="z-eyebrow">{t('devices.eyebrow')}</p>
+          <h1 className="z-display" style={{ margin: 0 }}>{t('devices.title')}</h1>
         </div>
-        {(hiddenCount > 0) && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 10 }}>
-            {hiddenCount > 0 && (
-              <button onClick={toggleShowHidden} style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '7px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
-                background: showHidden ? 'var(--ink)' : 'var(--surface)',
-                color: showHidden ? 'var(--bg)' : 'var(--ink-mute)',
-                border: showHidden ? 'none' : '0.5px solid var(--line)', cursor: 'pointer', fontFamily: 'inherit',
-              }}>
-                {showHidden ? <Eye size={12} /> : <EyeOff size={12} />}
-                {showHidden ? t('devices.showingHidden') : t('devices.showHidden')}
-              </button>
-            )}
-            {/* Unknown-IR-signals tag hidden for now (user request). The detection
-                + modal still exist; flip SHOW_UNKNOWN_IR_TAG to bring the pill back. */}
-            {SHOW_UNKNOWN_IR_TAG && unassignedSignalCount > 0 && (
-              <button
-                onClick={() => setShowUnassignedSignals(true)}
-                title={t('devices.unassignedSignalsTooltip')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '7px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
-                  background: `color-mix(in srgb, var(--accent) 12%, var(--surface))`,
-                  color: 'var(--accent)',
-                  border: `0.5px solid color-mix(in srgb, var(--accent) 30%, var(--line))`,
-                  cursor: 'pointer', fontFamily: 'inherit',
-                }}
-              >
-                <Radio size={12} />
-                {t('devices.unknownSignals', { n: unassignedSignalCount })}
-              </button>
-            )}
-          </div>
-        )}
+        <button onClick={() => setShowPairing(true)} className="z-icon-btn" aria-label={t('devices.pairDevice')} title={t('devices.pairDevice')}>
+          <Plus size={20} strokeWidth={1.75} />
+        </button>
       </div>
+      {(hiddenCount > 0 || (SHOW_UNKNOWN_IR_TAG && unassignedSignalCount > 0)) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: -8, marginBottom: 16 }}>
+          {hiddenCount > 0 && (
+            <button onClick={toggleShowHidden} aria-pressed={showHidden} className="z-chip" style={{
+              ...CHIP_BTN_STYLE,
+              ...(showHidden ? CHIP_ACTIVE_STYLE : { background: 'var(--surface)', color: 'var(--ink-mute)' }),
+            }}>
+              {showHidden ? <Eye size={16} strokeWidth={1.75} /> : <EyeOff size={16} strokeWidth={1.75} />}
+              {showHidden ? t('devices.showingHidden') : t('devices.showHidden')}
+              <span style={CHIP_COUNT_STYLE}>{hiddenCount}</span>
+            </button>
+          )}
+          {/* Unknown-IR-signals tag hidden for now (user request). The detection
+              + modal still exist; flip SHOW_UNKNOWN_IR_TAG to bring the pill back. */}
+          {SHOW_UNKNOWN_IR_TAG && unassignedSignalCount > 0 && (
+            <button
+              onClick={() => setShowUnassignedSignals(true)}
+              title={t('devices.unassignedSignalsTooltip')}
+              className="z-chip"
+              style={{ ...CHIP_BTN_STYLE, background: 'var(--surface)', color: 'var(--ink-mute)' }}
+            >
+              <Radio size={16} strokeWidth={1.75} />
+              {t('devices.unknownSignals', { n: unassignedSignalCount })}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Unassigned banner */}
       {unassigned.length > 0 && domain !== 'unassigned' && domain !== 'noroom' && (
-        <motion.button initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+        <motion.button initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={T_ENTER}
           onClick={() => setDomain('unassigned')}
           style={{
-            width: '100%', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '12px 14px', borderRadius: 11, textAlign: 'start', cursor: 'pointer', fontFamily: 'inherit',
+            width: '100%', marginBottom: 16, minHeight: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+            padding: '12px 16px', borderRadius: 'var(--r-card)', textAlign: 'start', cursor: 'pointer', fontFamily: 'inherit',
             background: `color-mix(in srgb, var(--warn) 8%, var(--surface))`, border: '0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))',
           }}
         >
-          <div>
-            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>
               {unassigned.length === 1 ? t('devices.unassignedBannerOne', { n: unassigned.length }) : t('devices.unassignedBannerMany', { n: unassigned.length })}
             </p>
-            <p style={{ fontSize: 11, color: 'var(--warn)', marginTop: 2 }}>{t('devices.unassignedBannerHint')}</p>
+            <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--warn-text)', marginTop: 2 }}>{t('devices.unassignedBannerHint')}</p>
           </div>
-          <span style={{ fontSize: 12, color: 'var(--warn)', fontWeight: 500 }}>{t('devices.review')} ›</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 15, color: 'var(--warn-text)', fontWeight: 500, flexShrink: 0 }}>
+            {t('devices.review')}
+            <ChevronRight size={16} strokeWidth={1.75} className="icon-flip-rtl" />
+          </span>
         </motion.button>
       )}
 
@@ -2431,14 +2424,15 @@ export default function Devices() {
           the device page (which has the ghost UI for full cleanup), or tap
           the trash icon for one-shot removal from Ziggy's registry. */}
       {attentionDevices.length > 0 && domain !== 'attention' && (
-        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          style={{ marginBottom: 14, borderRadius: 11, background: `color-mix(in srgb, var(--accent) 8%, var(--surface))`, border: '0.5px solid color-mix(in srgb, var(--accent) 30%, var(--line))', overflow: 'hidden' }}
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={T_ENTER}
+          className="z-card"
+          style={{ marginBottom: 16, borderColor: 'color-mix(in srgb, var(--warn) 30%, var(--line))', overflow: 'hidden' }}
         >
-          <div style={{ padding: '12px 14px', borderBottom: '0.5px solid var(--line)' }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--line)' }}>
+            <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>
               {attentionDevices.length === 1 ? t('devices.attentionTitleOne', { n: attentionDevices.length }) : t('devices.attentionTitleMany', { n: attentionDevices.length })}
             </p>
-            <p style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2 }}>{t('devices.attentionSubtitle')}</p>
+            <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)', marginTop: 2 }}>{t('devices.attentionSubtitle')}</p>
           </div>
           <div>
             {attentionDevices.map((d, i) => {
@@ -2466,29 +2460,27 @@ export default function Devices() {
                   tabIndex={eid ? 0 : undefined}
                   onKeyDown={(e) => { if (eid && e.key === 'Enter') navigate(`/devices/${encodeURIComponent(eid)}`) }}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '8px 14px', borderBottom: '0.5px solid var(--line)',
+                    display: 'flex', alignItems: 'center', gap: 12, minHeight: 44,
+                    padding: '8px 8px 8px 16px', borderBottom: '0.5px solid var(--line)',
                     cursor: eid ? 'pointer' : 'default',
                     opacity: busy ? 0.5 : 1,
                   }}
                 >
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: d.status === 'lost' ? 'var(--accent)' : 'var(--line-2)', flexShrink: 0 }} />
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: d.status === 'lost' ? 'var(--warn)' : 'var(--line-2)', flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p dir="auto" style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{translateNamePhrase(d.display_name || eid || d.device_type, lang)}</p>
-                    <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }} dir="auto">{d.roomName ? `${translateNamePhrase(d.roomName, lang)} · ` : ''}{getStatusLabel(t, d.status) || d.status}</p>
+                    <p dir="auto" style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{translateNamePhrase(d.display_name || eid || d.device_type, lang)}</p>
+                    <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)' }} dir="auto">{d.roomName ? `${translateNamePhrase(d.roomName, lang)} · ` : ''}{getStatusLabel(t, d.status) || d.status}</p>
                   </div>
                   {eid && (
                     <button
                       onClick={handleRemove}
                       disabled={busy}
                       title={t('devices.removeFromZiggy')}
-                      style={{
-                        padding: 6, borderRadius: 8, background: 'transparent', border: 'none',
-                        cursor: busy ? 'default' : 'pointer', color: 'var(--err)',
-                        display: 'flex', alignItems: 'center', flexShrink: 0,
-                      }}
+                      aria-label={t('devices.removeFromZiggy')}
+                      className="hover:bg-surface-2 transition-colors"
+                      style={{ ...CARD_ICON_BTN_STYLE, color: 'var(--err-text)', cursor: busy ? 'default' : 'pointer' }}
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={18} strokeWidth={1.75} />
                     </button>
                   )}
                 </div>
@@ -2500,48 +2492,39 @@ export default function Devices() {
 
       {/* Search */}
       {domain !== 'unassigned' && (
-        <div style={{ position: 'relative', marginBottom: 14 }}>
-          <span style={{ position: 'absolute', insetInlineStart: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <div style={{ position: 'relative', marginBottom: 16 }}>
+          <span style={{ position: 'absolute', insetInlineStart: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-mute)', display: 'inline-flex', pointerEvents: 'none' }}>
+            <Search size={18} strokeWidth={1.75} />
           </span>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('devices.searchPlaceholderShort')} dir="auto" className="z-input" style={{ paddingInlineStart: 34 }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('devices.searchPlaceholderShort')} dir="auto" className="z-input" style={{ paddingInlineStart: 44 }} />
         </div>
       )}
 
       {/* View mode + filter chips */}
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, marginBottom: 20 }} className="scrollbar-thin">
-        {/* View mode toggle */}
-        {[{ id: 'room', label: 'By room' }, { id: 'type', label: 'By type' }].map(v => (
-          <button key={v.id} onClick={() => setViewMode(v.id)} style={{
-            padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit',
-            background: viewMode === v.id ? 'var(--ink)' : 'var(--surface)',
-            color: viewMode === v.id ? 'var(--bg)' : 'var(--ink-mute)',
-            border: viewMode === v.id ? 'none' : '0.5px solid var(--line)',
+      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, marginBottom: 20 }} className="scrollbar-thin">
+        {/* View mode toggle — active = surface-2 + ink + line-2, never inverted */}
+        {[{ id: 'room', label: t('devices.byRoom') }, { id: 'type', label: t('devices.byType') }].map(v => (
+          <button key={v.id} onClick={() => setViewMode(v.id)} aria-pressed={viewMode === v.id} className="z-chip" style={{
+            ...CHIP_BTN_STYLE,
+            ...(viewMode === v.id ? CHIP_ACTIVE_STYLE : { background: 'var(--surface)', color: 'var(--ink-mute)' }),
           }}>{v.label}</button>
         ))}
         <div style={{ width: 1, background: 'var(--line)', flexShrink: 0, margin: '0 2px' }} />
-        {DOMAIN_FILTER.map(f => (
-          <button key={f.id} onClick={() => { setDomain(f.id); if (f.id !== 'all') setViewMode('type') }} style={{
-            padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit',
-            background: domain === f.id && viewMode === 'type'
-              ? (f.id === 'unassigned' ? 'var(--warn)' : 'var(--ink)')
-              : f.id === 'unassigned' && unassigned.length > 0
-              ? `color-mix(in srgb, var(--warn) 8%, var(--surface))`
-              : 'var(--surface)',
-            color: domain === f.id && viewMode === 'type'
-              ? (f.id === 'unassigned' ? '#fff' : 'var(--bg)')
-              : f.id === 'unassigned' && unassigned.length > 0 ? 'var(--warn)' : 'var(--ink-mute)',
-            border: (domain === f.id && viewMode === 'type') ? 'none' : f.id === 'unassigned' && unassigned.length > 0 ? `0.5px solid color-mix(in srgb, var(--warn) 40%, var(--line))` : '0.5px solid var(--line)',
-          }}>
-            {f.label}
-            {f.id === 'unassigned' && unassigned.length > 0 && (
-              <span style={{ marginInlineStart: 4, background: 'var(--warn)', color: '#fff', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontWeight: 700 }}>{unassigned.length}</span>
-            )}
-            {f.id === 'noroom' && noRoomEntities.length > 0 && (
-              <span style={{ marginInlineStart: 4, background: 'var(--ink-faint)', color: 'var(--bg)', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontWeight: 700 }}>{noRoomEntities.length}</span>
-            )}
-          </button>
-        ))}
+        {DOMAIN_FILTER.map(f => {
+          const active = domain === f.id && viewMode === 'type'
+          const Icon = f.icon
+          const count = f.id === 'unassigned' ? unassigned.length : f.id === 'noroom' ? noRoomEntities.length : 0
+          return (
+            <button key={f.id} onClick={() => { setDomain(f.id); if (f.id !== 'all') setViewMode('type') }} aria-pressed={active} className="z-chip" style={{
+              ...CHIP_BTN_STYLE,
+              ...(active ? CHIP_ACTIVE_STYLE : { background: 'var(--surface)', color: 'var(--ink-mute)' }),
+            }}>
+              {Icon && <Icon size={16} strokeWidth={1.75} style={{ flexShrink: 0 }} />}
+              {f.label}
+              {count > 0 && <span style={CHIP_COUNT_STYLE}>{count}</span>}
+            </button>
+          )
+        })}
       </div>
 
       {/* IR Blasters — collapsible status strip (infrastructure, not control
@@ -2554,22 +2537,22 @@ export default function Devices() {
           open={blastersOpen}
           onToggle={() => setBlastersOpen(v => !v)}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 4 }}>
             {blasters.map(b => {
               const host = b.ip || b.last_seen_ip || ''
               const color = b.status === 'online' ? 'var(--ok)' : b.status === 'stale' ? 'var(--warn)' : 'var(--err)'
               return (
                 <div
                   key={b.id}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 11,
-                    background: 'var(--surface)', border: '0.5px solid var(--line)' }}
+                  className="z-card-sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', minHeight: 56 }}
                 >
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p dir="auto" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</p>
-                    {host && <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{host}</p>}
+                    <p dir="auto" style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</p>
+                    {host && <p className="z-code" style={{ fontSize: 13, lineHeight: '18px', color: 'var(--ink-mute)' }}>{host}</p>}
                   </div>
-                  <Zap size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+                  <Zap size={18} strokeWidth={1.75} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
                 </div>
               )
             })}
@@ -2578,16 +2561,16 @@ export default function Devices() {
       )}
 
       {/* Unassigned section info */}
-      {domain === 'unassigned' && (
-        <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 11, background: `color-mix(in srgb, var(--warn) 8%, var(--surface))`, border: `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))` }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{t('devices.unassignedTitle')}</p>
-          <p style={{ fontSize: 11, color: 'var(--warn)' }}>{t('devices.unassignedHint')}</p>
+      {domain === 'unassigned' && filtered.length > 0 && (
+        <div style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 'var(--r-card)', background: `color-mix(in srgb, var(--warn) 8%, var(--surface))`, border: `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))` }}>
+          <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{t('devices.unassignedTitle')}</p>
+          <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--warn-text)' }}>{t('devices.unassignedHint')}</p>
         </div>
       )}
-      {domain === 'noroom' && (
-        <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 11, background: 'var(--surface)', border: '0.5px solid var(--line)' }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{t('devices.noRoomTitle')}</p>
-          <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{t('devices.noRoomHint')}</p>
+      {domain === 'noroom' && filtered.length > 0 && (
+        <div className="z-card" style={{ marginBottom: 16, padding: '12px 16px' }}>
+          <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{t('devices.noRoomTitle')}</p>
+          <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)' }}>{t('devices.noRoomHint')}</p>
         </div>
       )}
 
@@ -2596,24 +2579,40 @@ export default function Devices() {
           (stale-while-revalidate) so back-navigation never goes blank just
           because the TTL expired. */}
       {loading && entities.length === 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {[1,2,3,4,5,6].map(i => <div key={i} style={{ height: 60, borderRadius: 11, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {[1,2,3,4,5,6].map(i => <div key={i} style={{ height: 60, borderRadius: 10, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}
         </div>
       )}
 
       {/* Empty state — only when truly empty (not just refreshing).
           In `all` mode the Smart Sensors group lives outside `filtered`, so
           we skip the empty banner when at least one smart sensor exists. */}
-      {!loading && filtered.length === 0 && !(domain === 'all' && smartSensorEntries.length > 0) && (
-        <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--ink-faint)' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>
-            {domain === 'unassigned' ? 'All devices are assigned to rooms'
-              : domain === 'noroom' ? 'No devices without a room'
-              : domain === 'smart_sensors' ? t('devices.smartSensor.empty')
-              : 'No devices found'}
-          </p>
-        </div>
-      )}
+      {!loading && filtered.length === 0 && !(domain === 'all' && smartSensorEntries.length > 0) && (() => {
+        // One 17px line, one 15px line, one secondary action. When a filter
+        // or search narrowed the list to nothing, the action clears it;
+        // when the home genuinely has no devices, it opens pairing.
+        const narrowed = domain !== 'all' || search.trim() !== ''
+        const title = domain === 'unassigned' ? t('devices.emptyAllAssigned')
+          : domain === 'noroom' ? t('devices.emptyNoNoRoom')
+          : domain === 'smart_sensors' ? t('devices.groupSmartSensors')
+          : t('devices.emptyNoDevices')
+        const hint = domain === 'smart_sensors' ? t('devices.smartSensor.empty') : t('devices.emptyHint')
+        return (
+          <div style={{ textAlign: 'center', padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{title}</p>
+            <p className="z-subhead" style={{ maxWidth: 'var(--page-max-w-narrow)' }}>{hint}</p>
+            {narrowed ? (
+              <button className="z-btn-secondary" style={{ marginTop: 12 }} onClick={() => { setDomain('all'); setSearch(''); setViewMode('room'); setSearchParams({}) }}>
+                {t('devices.emptyShowAll')}
+              </button>
+            ) : (
+              <button className="z-btn-secondary" style={{ marginTop: 12 }} onClick={() => setShowPairing(true)}>
+                <Plus size={16} strokeWidth={1.75} /> {t('devices.pairDevice')}
+              </button>
+            )}
+          </div>
+        )
+      })()}
 
       {/* ── By-room view (default) ── */}
       {viewMode === 'room' && domain === 'all' && (filtered.length > 0 || smartSensorEntries.length > 0) && (() => {
@@ -2715,7 +2714,7 @@ export default function Devices() {
               </CollapsibleGroup>
             )}
             {noRoomItems.length > 0 && (
-              <CollapsibleGroup label="No Room" count={noRoomItems.length} open={!collapsedGroups.has('__noroom__')} onToggle={() => toggleGroup('__noroom__')}>
+              <CollapsibleGroup label={t('devices.filterNoRoom')} count={noRoomItems.length} open={!collapsedGroups.has('__noroom__')} onToggle={() => toggleGroup('__noroom__')}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {noRoomItems.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
@@ -2724,7 +2723,7 @@ export default function Devices() {
               </CollapsibleGroup>
             )}
             {unroomedItems.length > 0 && (
-              <CollapsibleGroup label="Unassigned" count={unroomedItems.length} open={!collapsedGroups.has('__unassigned__')} onToggle={() => toggleGroup('__unassigned__')}>
+              <CollapsibleGroup label={t('devices.filterUnassigned')} count={unroomedItems.length} open={!collapsedGroups.has('__unassigned__')} onToggle={() => toggleGroup('__unassigned__')}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {unroomedItems.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity, true)} />)}

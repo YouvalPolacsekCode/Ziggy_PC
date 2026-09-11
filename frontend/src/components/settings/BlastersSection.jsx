@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Radio, Pencil, Trash2, RefreshCw, Wifi, WifiOff, Check, X } from 'lucide-react'
+import { Radio, Pencil, Trash2, RefreshCw, Check, X } from 'lucide-react'
 import {
   listIrBlasters, patchIrBlaster, deleteIrBlaster, discoverIrBlasters,
 } from '../../lib/api'
 import { useUIStore } from '../../stores/uiStore'
-import { cn } from '../../lib/utils'
+import { Input } from '../ui/Input'
+import { Button } from '../ui/Button'
 
 // ─── Status chip ─────────────────────────────────────────────────────────────
 // Derived field from the registry: online (< 60s since last contact), stale
@@ -12,26 +13,27 @@ import { cn } from '../../lib/utils'
 // so the user can scan a list of blasters and immediately spot the dead one.
 
 const STATUS_META = {
-  online:      { label: 'Online',      tint: 'var(--ok)',   Icon: Wifi    },
-  stale:       { label: 'Stale',       tint: 'var(--warn)', Icon: Wifi    },
-  unreachable: { label: 'Unreachable', tint: 'var(--err)',  Icon: WifiOff },
+  online:      { label: 'Online',      text: 'var(--ok-text)',   dot: 'z-dot-ok'   },
+  stale:       { label: 'Stale',       text: 'var(--warn-text)', dot: 'z-dot-warn' },
+  unreachable: { label: 'Unreachable', text: 'var(--err-text)',  dot: 'z-dot-err'  },
 }
 
 function StatusChip({ status }) {
   const meta = STATUS_META[status] || STATUS_META.unreachable
-  const Icon = meta.Icon
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 4,
-      fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
-      textTransform: 'uppercase', color: meta.tint,
-      padding: '2px 7px', borderRadius: 999,
-      background: `color-mix(in srgb, ${meta.tint} 14%, transparent)`,
-    }}>
-      <Icon size={9} />
+    <span className="z-chip" style={{ color: meta.text }}>
+      <span className={`z-dot ${meta.dot}`} />
       {meta.label}
     </span>
   )
+}
+
+// Borderless 44×44 target for a row-level icon action.
+const ghostIcon = {
+  width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'transparent',
+  border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center',
+  justifyContent: 'center', flexShrink: 0, padding: 0,
+  transition: 'background var(--dur-press) var(--ease-standard)',
 }
 
 // ─── Inline rename input ─────────────────────────────────────────────────────
@@ -44,32 +46,24 @@ function InlineRename({ value, onSave, onCancel }) {
     onSave(trimmed)
   }
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-      <input
-        autoFocus
-        value={val}
-        onChange={(e) => setVal(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') handleSave()
-          else if (e.key === 'Escape') onCancel()
-        }}
-        dir="auto"
-        style={{
-          flex: 1, minWidth: 0,
-          height: 28, padding: '0 8px', borderRadius: 8, fontSize: 13,
-          background: 'var(--surface-2)', border: '0.5px solid var(--accent)',
-          color: 'var(--ink)', fontFamily: 'inherit', outline: 'none',
-        }}
-      />
-      <button onClick={handleSave} title="Save"
-        style={{ padding: 4, borderRadius: 6, background: 'var(--accent)', color: 'var(--on-accent)',
-                 border: 'none', cursor: 'pointer', display: 'flex' }}>
-        <Check size={12} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Input
+          autoFocus
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSave()
+            else if (e.key === 'Escape') onCancel()
+          }}
+          dir="auto"
+        />
+      </div>
+      <button onClick={handleSave} title="Save" aria-label="Save" className="z-icon-btn">
+        <Check size={18} />
       </button>
-      <button onClick={onCancel} title="Cancel"
-        style={{ padding: 4, borderRadius: 6, background: 'transparent', color: 'var(--ink-mute)',
-                 border: '0.5px solid var(--line)', cursor: 'pointer', display: 'flex' }}>
-        <X size={12} />
+      <button onClick={onCancel} title="Cancel" aria-label="Cancel" className="z-icon-btn">
+        <X size={18} />
       </button>
     </div>
   )
@@ -83,42 +77,38 @@ function DeleteConfirm({ blaster, onConfirm, onCancel }) {
   const deviceCount = blaster.device_count || 0
   return (
     <div style={{
-      marginTop: 8, padding: 12, borderRadius: 10,
+      marginTop: 8, padding: 16, borderRadius: 'var(--r-ctl)',
       background: 'color-mix(in srgb, var(--err) 8%, var(--surface-2))',
       border: '0.5px solid color-mix(in srgb, var(--err) 30%, var(--line))',
     }}>
-      <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
+      <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
         Delete "{blaster.name}"?
       </p>
-      <p style={{ fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.5, marginBottom: 10 }}>
+      <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.5, marginBottom: 12 }}>
         {deviceCount > 0
           ? `${deviceCount} IR device${deviceCount === 1 ? '' : 's'} currently route through this blaster.`
           : 'No IR devices are attached.'}
       </p>
       {deviceCount > 0 && (
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 10,
-                        fontSize: 11.5, color: 'var(--ink-2)', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12, minHeight: 44,
+                        fontSize: 15, color: 'var(--ink-2)', cursor: 'pointer' }}>
           <input type="checkbox" checked={cascade} onChange={(e) => setCascade(e.target.checked)}
-                 style={{ marginTop: 2 }} />
+                 style={{ marginTop: 2, width: 20, height: 20, flexShrink: 0 }} />
           <span>
             Also delete the {deviceCount} attached IR device{deviceCount === 1 ? '' : 's'}.
-            {' '}<span style={{ color: 'var(--ink-faint)' }}>Otherwise they'll be orphaned — visible but unable to send.</span>
+            {' '}<span style={{ color: 'var(--ink-mute)' }}>Otherwise they'll be orphaned — visible but unable to send.</span>
           </span>
         </label>
       )}
-      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-        <button onClick={onCancel} disabled={deleting}
-          style={{ padding: '6px 12px', borderRadius: 8, background: 'transparent',
-                   color: 'var(--ink-2)', border: '0.5px solid var(--line)',
-                   fontSize: 12, fontFamily: 'inherit', cursor: 'pointer' }}>Cancel</button>
-        <button
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button onClick={onCancel} disabled={deleting} className="z-btn-secondary">Cancel</button>
+        <Button
+          variant="danger"
           onClick={async () => { setDeleting(true); try { await onConfirm(cascade) } finally { setDeleting(false) } }}
           disabled={deleting}
-          style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--err)',
-                   color: '#fff', border: 'none', fontSize: 12, fontWeight: 600,
-                   fontFamily: 'inherit', cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}>
+        >
           {deleting ? 'Deleting…' : 'Delete'}
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -131,15 +121,14 @@ function BlasterRow({ blaster, onRename, onDelete }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const macShort = (blaster.mac || '').slice(-4).toUpperCase()
   return (
-    <div style={{ padding: '12px 14px', borderBottom: '0.5px solid var(--line)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--line)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56 }}>
         <div style={{
-          width: 32, height: 32, borderRadius: 9,
-          background: 'color-mix(in srgb, var(--accent) 14%, var(--surface-2))',
-          color: 'var(--accent)',
+          width: 40, height: 40, borderRadius: 'var(--r-ctl)',
+          background: 'var(--surface-2)', color: 'var(--ink-mute)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         }}>
-          <Radio size={15} />
+          <Radio size={20} strokeWidth={1.75} />
         </div>
 
         {editing ? (
@@ -151,16 +140,15 @@ function BlasterRow({ blaster, onRename, onDelete }) {
         ) : (
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <p dir="auto" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)',
+              <p dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)',
                                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                      minWidth: 0 }}>
                 {blaster.name}
               </p>
               <StatusChip status={blaster.status} />
             </div>
-            <p className="z-mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2,
-                                            letterSpacing: '0.04em', overflow: 'hidden',
-                                            textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <p className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2,
+                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {[
                 blaster.model,
                 blaster.ip,
@@ -174,15 +162,13 @@ function BlasterRow({ blaster, onRename, onDelete }) {
 
         {!editing && !confirmingDelete && (
           <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-            <button onClick={() => setEditing(true)} title="Rename"
-              style={{ padding: 6, borderRadius: 7, background: 'transparent',
-                       color: 'var(--ink-mute)', border: 'none', cursor: 'pointer', display: 'flex' }}>
-              <Pencil size={13} />
+            <button onClick={() => setEditing(true)} title="Rename" aria-label="Rename"
+              style={{ ...ghostIcon, color: 'var(--ink-mute)' }}>
+              <Pencil size={18} />
             </button>
-            <button onClick={() => setConfirmingDelete(true)} title="Delete"
-              style={{ padding: 6, borderRadius: 7, background: 'transparent',
-                       color: 'var(--err)', border: 'none', cursor: 'pointer', display: 'flex' }}>
-              <Trash2 size={13} />
+            <button onClick={() => setConfirmingDelete(true)} title="Delete" aria-label="Delete"
+              style={{ ...ghostIcon, color: 'var(--err-text)' }}>
+              <Trash2 size={18} />
             </button>
           </div>
         )}
@@ -268,17 +254,17 @@ export default function BlastersSection() {
   return (
     <div>
       <div style={{
-        background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 14,
+        background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)',
         overflow: 'hidden',
       }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '12px 14px', borderBottom: '0.5px solid var(--line)' }}>
-          <div>
-            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                      padding: '12px 16px', borderBottom: '0.5px solid var(--line)' }}>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>
               {blasters.length === 0 ? 'No blasters' : `${blasters.length} blaster${blasters.length === 1 ? '' : 's'}`}
             </p>
-            <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>
+            <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>
               IR-blaster hardware paired to Ziggy. Status refreshes every 30s.
             </p>
           </div>
@@ -286,29 +272,25 @@ export default function BlastersSection() {
             onClick={handleRediscover}
             disabled={discovering}
             title="Scan LAN for new blasters"
-            className={cn(discovering && 'animate-spin')}
-            style={{
-              padding: 7, borderRadius: 9, background: 'var(--surface-2)',
-              color: 'var(--ink-mute)', border: '0.5px solid var(--line)',
-              cursor: discovering ? 'default' : 'pointer', display: 'flex',
-              flexShrink: 0,
-            }}
+            aria-label="Scan LAN for new blasters"
+            className="z-icon-btn"
+            style={{ cursor: discovering ? 'default' : 'pointer' }}
           >
-            <RefreshCw size={13} />
+            <RefreshCw size={18} className={discovering ? 'z-spin' : undefined} />
           </button>
         </div>
 
         {/* List */}
         {loading ? (
-          <div style={{ padding: 20, textAlign: 'center', fontSize: 12, color: 'var(--ink-faint)' }}>
+          <div style={{ padding: 32, textAlign: 'center', fontSize: 15, color: 'var(--ink-mute)' }}>
             Loading…
           </div>
         ) : blasters.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center' }}>
-            <p style={{ fontSize: 12.5, color: 'var(--ink-mute)', marginBottom: 6 }}>
+          <div style={{ padding: 32, textAlign: 'center' }}>
+            <p style={{ fontSize: 17, color: 'var(--ink)', marginBottom: 4 }}>
               No blasters paired yet.
             </p>
-            <p style={{ fontSize: 11, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
+            <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
               Pair a Broadlink RM4 (or compatible) via the IR Wizard on the Devices page.
               Once paired, it'll show up here.
             </p>

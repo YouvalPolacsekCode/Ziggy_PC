@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Radio, CheckCircle2, XCircle, RefreshCw, ChevronDown, ChevronRight,
+  Radio, CheckCircle2, XCircle, RefreshCw, ChevronDown, ChevronRight, Check,
   Waves, Wifi, Tv2, Sparkles, ExternalLink, RotateCcw, Zap, Home, QrCode,
 } from 'lucide-react'
 import { Modal } from './ui/Modal'
@@ -31,6 +31,12 @@ import { useDeviceStore } from '../stores/deviceStore'
 import { cn } from '../lib/utils'
 import { useT } from '../lib/i18n'
 import logger from '../lib/logger'
+import { T_ENTER, T_STATE } from '../lib/motion'
+
+// Step-swap motion: every step enters/leaves with the same 240ms fade-up.
+const STEP_MOTION = {
+  initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -4 }, transition: T_ENTER,
+}
 
 // 3 min. 60s was too short for stubborn battery sensors (Aqara motion/contact
 // especially) that need several reset attempts to enter pairing — they'd join
@@ -77,23 +83,23 @@ function StepDots({ current }) {
         return (
           <div key={id} className="flex items-center gap-2">
             <div className={cn(
-              'flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-semibold transition-all duration-300',
-              done   ? 'bg-ok text-on-accent' :
-              active ? 'bg-ink text-bg' :
-                       'bg-surface-2 text-ink-mute'
+              'flex items-center justify-center w-6 h-6 rounded-full text-footnote font-semibold z-mono transition-colors duration-200',
+              done   ? 'bg-ink text-bg' :
+              active ? 'bg-surface-2 text-ink border border-ink' :
+                       'bg-surface text-ink-mute border border-line'
             )}>
-              {done ? <CheckCircle2 size={12} /> : i + 1}
+              {done ? <Check size={14} strokeWidth={2.5} aria-hidden /> : i + 1}
             </div>
             <span className={cn(
-              'text-xs font-medium',
-              active ? 'text-ink' : 'text-ink-faint'
+              'text-footnote font-medium',
+              active ? 'text-ink' : 'text-ink-mute'
             )}>
               {labels[id]}
             </span>
             {i < STEP_IDS.length - 1 && (
               <div className={cn(
-                'w-8 h-px transition-colors duration-300',
-                done ? 'bg-ok' : 'bg-line'
+                'w-8 h-px transition-colors duration-200',
+                done ? 'bg-ink' : 'bg-line'
               )} />
             )}
           </div>
@@ -110,9 +116,9 @@ function CountdownRing({ value, max }) {
   return (
     <svg width="128" height="128" viewBox="0 0 128 128" className="rotate-[-90deg]">
       <circle cx="64" cy="64" r={r} fill="none" stroke="currentColor"
-        strokeWidth="6" className="text-ink" />
+        strokeWidth="6" className="text-line" />
       <circle cx="64" cy="64" r={r} fill="none" stroke="currentColor"
-        strokeWidth="6" strokeLinecap="round" className="text-accent transition-all duration-1000"
+        strokeWidth="6" strokeLinecap="round" className="text-accent transition-all duration-200"
         strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)} />
     </svg>
   )
@@ -136,45 +142,52 @@ function RoomPicker({ rooms, value, onChange }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         className={cn(
-          'w-full h-10 rounded-xl px-3 text-sm text-left flex items-center justify-between',
-          'bg-surface-2 border border-line',
-          'text-ink transition-colors focus:outline-none focus:ring-2 focus:ring-accent'
+          'w-full h-11 rounded-ctl px-4 text-body text-start flex items-center justify-between',
+          'bg-surface border border-line',
+          'text-ink transition-colors duration-press focus:outline-none focus:border-ink-mute'
         )}
       >
         <span className={selected || value === null ? 'text-ink' : 'text-ink-mute'}>
           {value === null ? t('wizard.pairing.noRoom') : selected ? selected.name : t('wizard.pairing.selectRoom')}
         </span>
-        <ChevronDown size={14} className={cn('text-ink-mute transition-transform', open && 'rotate-180')} />
+        <ChevronDown size={20} strokeWidth={1.75} aria-hidden className={cn('text-ink-mute transition-transform duration-state', open && 'rotate-180')} />
       </button>
 
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.97 }}
-            transition={{ duration: 0.12 }}
-            className="absolute top-full left-0 right-0 mt-1 z-50 bg-surface rounded-xl shadow-2xl border border-line overflow-hidden max-h-44 overflow-y-auto"
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={T_ENTER}
+            role="listbox"
+            className="absolute top-full inset-x-0 mt-1 z-50 bg-surface rounded-card shadow-lg border border-line overflow-hidden max-h-56 overflow-y-auto"
           >
             <button
+              role="option"
+              aria-selected={value === null}
               onClick={() => { onChange(null); setOpen(false) }}
               className={cn(
-                'w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left transition-colors border-b border-line',
+                'w-full flex items-center gap-3 px-4 min-h-[44px] py-2 text-body text-start transition-colors duration-press border-b border-line',
                 'hover:bg-surface-2',
-                value === null && 'bg-accent-soft text-accent'
+                value === null && 'bg-surface-2 text-ink font-semibold'
               )}
             >
-              <Home size={13} className="shrink-0 text-ink-mute" /> {t('wizard.pairing.noRoom')}
+              <Home size={20} strokeWidth={1.75} className="shrink-0 text-ink-mute" aria-hidden /> {t('wizard.pairing.noRoom')}
             </button>
             {rooms.map((r) => (
               <button
                 key={r.id}
+                role="option"
+                aria-selected={value === r.id}
                 onClick={() => { onChange(r.id); setOpen(false) }}
                 className={cn(
-                  'w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left transition-colors',
+                  'w-full flex items-center gap-3 px-4 min-h-[44px] py-2 text-body text-start transition-colors duration-press',
                   'hover:bg-surface-2',
-                  value === r.id && 'bg-accent-soft text-accent'
+                  value === r.id && 'bg-surface-2 text-ink font-semibold'
                 )}
               >
                 {r.name}
@@ -563,11 +576,10 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
         {step === 'select' && (
           <motion.div
             key="select"
-            initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }}
-            transition={{ duration: 0.18 }}
+            {...STEP_MOTION}
             className="flex flex-col gap-2"
           >
-            <p className="text-xs text-ink-mute mb-1">
+            <p className="text-subhead text-ink-mute mb-1">
               {t('wizard.pairing.questionType')}
             </p>
             {PROTOCOLS.map(({ id, Icon }) => {
@@ -577,19 +589,20 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                   key={id}
                   onClick={() => { setProtocol(id); setStep('idle') }}
                   className={cn(
-                    'w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all',
-                    'border border-line',
-                    'hover:border-accent-soft hover:bg-accent-soft',
-                    'focus:outline-none focus:ring-2 focus:ring-accent'
+                    'w-full flex items-center gap-3 px-4 py-3 min-h-[64px] rounded-card text-start transition-colors duration-press',
+                    'border border-line bg-surface',
+                    'hover:bg-surface-2',
+                    'focus:outline-none focus:border-ink-mute'
                   )}
                 >
-                  <div className="w-9 h-9 rounded-xl bg-surface-2 flex items-center justify-center shrink-0">
-                    <Icon size={18} className="text-accent" />
+                  <div className="w-11 h-11 rounded-ctl bg-surface-2 border border-line flex items-center justify-center shrink-0">
+                    <Icon size={24} strokeWidth={1.75} className="text-ink-2" aria-hidden />
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-ink">{meta.label}</p>
-                    <p className="text-xs text-ink-faint truncate">{meta.description}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-body font-semibold text-ink">{meta.label}</p>
+                    <p className="text-subhead text-ink-mute truncate">{meta.description}</p>
                   </div>
+                  <ChevronRight size={20} strokeWidth={1.75} className="icon-flip-rtl text-ink-faint shrink-0" aria-hidden />
                 </button>
               )
             })}
@@ -600,19 +613,18 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
         {step === 'idle' && currentProto && (
           <motion.div
             key="idle"
-            initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }}
-            transition={{ duration: 0.18 }}
+            {...STEP_MOTION}
             className="flex flex-col items-center text-center gap-4"
           >
-            <div className="w-16 h-16 rounded-2xl bg-accent-soft flex items-center justify-center">
-              <currentProto.Icon size={28} className="text-accent" />
+            <div className="w-16 h-16 rounded-card bg-surface-2 border border-line flex items-center justify-center" aria-hidden>
+              <currentProto.Icon size={28} strokeWidth={1.75} className="text-ink-2" />
             </div>
 
             <div>
-              <p className="text-sm font-semibold text-ink mb-1">
+              <p className="z-title mb-1">
                 {t('wizard.pairing.readyTitle', { label: currentMeta?.label || '' })}
               </p>
-              <p className="text-xs text-ink-mute leading-relaxed">
+              <p className="text-body text-ink-mute">
                 {protocol === 'zigbee'    && t('wizard.pairing.zigbeeDesc')}
                 {protocol === 'zwave'     && t('wizard.pairing.zwaveDesc')}
                 {protocol === 'matter'    && t('wizard.pairing.matterDesc')}
@@ -635,9 +647,9 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                       disabled={starting}
                       className="w-full flex items-center justify-center gap-2"
                     >
-                      <QrCode size={16} /> {t('wizard.pairing.matterScanBtn')}
+                      <QrCode size={20} strokeWidth={1.75} aria-hidden /> {t('wizard.pairing.matterScanBtn')}
                     </Button>
-                    <div className="flex items-center gap-3 text-xs text-ink-mute">
+                    <div className="flex items-center gap-3 text-subhead text-ink-mute">
                       <div className="h-px flex-1 bg-surface-3" />
                       {t('wizard.pairing.matterOr')}
                       <div className="h-px flex-1 bg-surface-3" />
@@ -656,36 +668,36 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
 
             {/* Instructions for non-Matter protocols */}
             {protocol !== 'matter' && (
-              <div className="w-full bg-surface-2 rounded-xl p-4 text-left space-y-2">
+              <div className="w-full bg-surface-2 rounded-card p-4 text-start space-y-2">
                 {protocol === 'zigbee' && [
                   t('wizard.pairing.zigbeeStep1'),
                   t('wizard.pairing.zigbeeStep2'),
                   t('wizard.pairing.zigbeeStep3'),
-                ].map((line) => <p key={line} className="text-xs text-ink-mute">{line}</p>)}
+                ].map((line) => <p key={line} className="text-subhead text-ink-mute">{line}</p>)}
 
                 {protocol === 'zwave' && [
                   t('wizard.pairing.zwaveStep1'),
                   t('wizard.pairing.zwaveStep2'),
                   t('wizard.pairing.zwaveStep3'),
-                ].map((line) => <p key={line} className="text-xs text-ink-mute">{line}</p>)}
+                ].map((line) => <p key={line} className="text-subhead text-ink-mute">{line}</p>)}
 
                 {protocol === 'ir_device' && [
                   t('wizard.pairing.irStep1'),
                   t('wizard.pairing.irStep2'),
                   t('wizard.pairing.irStep3'),
-                ].map((line) => <p key={line} className="text-xs text-ink-mute">{line}</p>)}
+                ].map((line) => <p key={line} className="text-subhead text-ink-mute">{line}</p>)}
 
                 {protocol === 'broadlink' && [
                   t('wizard.pairing.broadlinkStep1'),
                   t('wizard.pairing.broadlinkStep2'),
                   t('wizard.pairing.broadlinkStep3'),
-                ].map((line) => <p key={line} className="text-xs text-ink-mute">{line}</p>)}
+                ].map((line) => <p key={line} className="text-subhead text-ink-mute">{line}</p>)}
 
                 {protocol === 'wifi' && [
                   t('wizard.pairing.wifiStep1'),
                   t('wizard.pairing.wifiStep2'),
                   t('wizard.pairing.wifiStep3'),
-                ].map((line) => <p key={line} className="text-xs text-ink-mute">{line}</p>)}
+                ].map((line) => <p key={line} className="text-subhead text-ink-mute">{line}</p>)}
               </div>
             )}
 
@@ -705,7 +717,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
               </Button>
             </div>
 
-            <p className="text-[10px] text-ink-mute">
+            <p className="text-footnote text-ink-mute">
               {currentMeta?.integration}
             </p>
           </motion.div>
@@ -715,11 +727,11 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
         {step === 'pairing' && (
           <motion.div
             key="pairing"
-            initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }}
-            transition={{ duration: 0.18 }}
+            {...STEP_MOTION}
             className="flex flex-col items-center text-center gap-5"
           >
-            {/* Zigbee / Z-Wave: countdown ring */}
+            {/* Zigbee / Z-Wave: countdown ring. The breathing halo is the ONE
+                ambient loop on this screen — it means "the network is open". */}
             {(protocol === 'zigbee' || protocol === 'zwave') && (
               <div className="relative flex items-center justify-center w-32 h-32">
                 <motion.div
@@ -729,23 +741,19 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                 />
                 <CountdownRing value={countdown} max={pairDuration} />
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-2xl font-bold text-ink tabular-nums">
+                  <span className="text-title2 text-ink tabular-nums">
                     {countdown}
                   </span>
-                  <span className="text-[10px] text-ink-mute">{t('wizard.pairing.sec')}</span>
+                  <span className="text-footnote text-ink-mute">{t('wizard.pairing.sec')}</span>
                 </div>
               </div>
             )}
 
-            {/* Matter: spinner */}
+            {/* Matter: spinner — 1s linear, the one loop on this screen */}
             {protocol === 'matter' && (
               <div className="relative flex items-center justify-center w-24 h-24">
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
-                  className="w-16 h-16 rounded-full border-4 border-line border-t-violet-500"
-                />
-                <Sparkles size={20} className="absolute text-accent" />
+                <div className="z-spin w-16 h-16 rounded-full border-4 border-line border-t-accent" aria-hidden />
+                <Sparkles size={24} strokeWidth={1.75} className="absolute text-ink-2" aria-hidden />
               </div>
             )}
 
@@ -754,11 +762,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
               <div className="w-full">
                 {flowsLoading ? (
                   <div className="flex items-center justify-center py-6">
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                      className="w-8 h-8 rounded-full border-2 border-line border-t-violet-500"
-                    />
+                    <div className="z-spin w-8 h-8 rounded-full border-2 border-line border-t-ink-mute" aria-hidden />
                   </div>
                 ) : configuringFlow ? (
                   <ConfigFlowRunner
@@ -779,8 +783,8 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                     }}
                   />
                 ) : configFlows.length > 0 ? (
-                  <div className="space-y-2 text-left">
-                    <p className="text-xs font-medium text-ink-2 mb-2">
+                  <div className="space-y-2 text-start">
+                    <p className="text-subhead text-ink-mute mb-2">
                       {configFlows.length === 1
                         ? t('wizard.pairing.discoveredHaOne', { n: configFlows.length })
                         : t('wizard.pairing.discoveredHa', { n: configFlows.length })}
@@ -789,31 +793,31 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                       <button
                         key={flow.flow_id}
                         onClick={() => setConfiguringFlow(flow)}
-                        className="w-full flex items-center justify-between gap-2 p-3 rounded-xl bg-surface-2 border border-line hover:bg-line text-left"
+                        className="w-full flex items-center justify-between gap-2 min-h-[64px] px-4 py-3 rounded-card bg-surface border border-line hover:bg-surface-2 transition-colors duration-press text-start"
                       >
-                        <div>
-                          <p className="text-sm font-medium text-ink">{flow.title}</p>
-                          <p className="text-xs text-ink-mute capitalize">{flow.handler}</p>
+                        <div className="min-w-0">
+                          <p className="text-body font-semibold text-ink">{flow.title}</p>
+                          <p className="text-subhead text-ink-mute capitalize">{flow.handler}</p>
                         </div>
-                        <span className="flex items-center gap-1 text-xs text-accent shrink-0">
-                          {t('wizard.pairing.configure')} <ChevronRight size={12} className="icon-flip-rtl" />
+                        <span className="flex items-center gap-1 text-subhead font-medium text-ink-mute shrink-0">
+                          {t('wizard.pairing.configure')} <ChevronRight size={20} strokeWidth={1.75} className="icon-flip-rtl" aria-hidden />
                         </span>
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div className="w-full bg-surface-2 rounded-xl p-4 text-left space-y-2">
-                    <p className="text-sm font-medium text-ink-2">
+                  <div className="w-full bg-surface-2 rounded-card p-4 text-start space-y-2">
+                    <p className="text-body font-semibold text-ink">
                       {t('wizard.pairing.noneDiscovered')}
                     </p>
-                    <p className="text-xs text-ink-mute">
+                    <p className="text-subhead text-ink-mute">
                       {t('wizard.pairing.noneDiscoveredHint')}
                     </p>
                     <button
                       onClick={handleRefreshFlows}
-                      className="flex items-center gap-1.5 text-xs text-accent hover:text-accent mt-1"
+                      className="z-btn-secondary z-button mt-1"
                     >
-                      <RotateCcw size={12} /> {t('wizard.refresh')}
+                      <RotateCcw size={18} strokeWidth={1.75} aria-hidden /> {t('wizard.refresh')}
                     </button>
                   </div>
                 )}
@@ -821,42 +825,35 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
             )}
 
             <div>
-              <p className="text-sm font-semibold text-ink mb-1">
+              <p className="text-body font-semibold text-ink mb-1">
                 {protocol === 'matter'                          ? t('wizard.pairing.commissioning')      :
                  protocol === 'broadlink' || protocol === 'wifi'? t('wizard.pairing.waitingForDevice')  :
                  t('wizard.pairing.pairingActive')}
               </p>
               {(protocol === 'zigbee' || protocol === 'zwave') && (
-                <p className="text-xs text-ink-mute">
+                <p className="text-subhead text-ink-mute">
                   {protocol === 'zigbee'
                     ? t('wizard.pairing.zigbeeSubtext')
                     : t('wizard.pairing.zwaveSubtext')}
                 </p>
               )}
               {protocol === 'matter' && (
-                <p className="text-xs text-ink-mute">
+                <p className="text-subhead text-ink-mute">
                   {t('wizard.pairing.matterSubtext')}
                 </p>
               )}
             </div>
 
             {(protocol === 'zigbee' || protocol === 'zwave') && (
-              <div className="flex items-center gap-2 text-xs text-ink-mute">
-                <motion.div
-                  animate={{ opacity: [1, 0.3, 1] }}
-                  transition={{ duration: 1.2, repeat: Infinity }}
-                  className="w-2 h-2 rounded-full bg-accent"
-                />
+              <div className="flex items-center gap-2 text-subhead text-ink-mute">
+                <span className="z-dot bg-ink-mute" aria-hidden />
                 {t('wizard.pairing.scanningForDevices')}
               </div>
             )}
 
-            <button
-              onClick={handleCancel}
-              className="text-xs text-ink-mute hover:text-ink-2 transition-colors"
-            >
+            <Button variant="secondary" onClick={handleCancel}>
               {t('wizard.cancel')}
-            </button>
+            </Button>
           </motion.div>
         )}
 
@@ -864,16 +861,15 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
         {step === 'found' && foundDevice && (
           <motion.div
             key="found"
-            initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }}
-            transition={{ duration: 0.18 }}
+            {...STEP_MOTION}
             className="flex flex-col gap-4"
           >
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-ok-soft border border-ok-soft">
-              <CheckCircle2 size={18} className="text-ok shrink-0" />
+            <div className="flex items-center gap-3 p-4 rounded-card bg-ok-soft border border-ok-soft">
+              <CheckCircle2 size={24} strokeWidth={1.75} className="text-ok shrink-0" aria-hidden />
               <div className="min-w-0">
-                <p className="text-sm font-medium text-ok">{t('wizard.pairing.deviceFound')}</p>
+                <p className="text-body font-semibold text-ok-text">{t('wizard.pairing.deviceFound')}</p>
                 {(foundDevice.manufacturer || foundDevice.model) && (
-                  <p className="text-xs text-ok truncate">
+                  <p className="text-subhead text-ok-text truncate">
                     {[foundDevice.manufacturer, foundDevice.model].filter(Boolean).join(' · ')}
                   </p>
                 )}
@@ -887,14 +883,14 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
               placeholder={t('wizard.pairing.deviceNamePh')}
             />
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-ink-2">
+            <div className="flex flex-col gap-2">
+              <label className="text-subhead font-semibold text-ink">
                 {t('wizard.pairing.assignToRoomOpt')} <span className="text-ink-mute font-normal">{t('wizard.pairing.optional')}</span>
               </label>
               <RoomPicker rooms={allRooms} value={roomId} onChange={setRoomId} />
             </div>
 
-            {errorMsg && <p className="text-xs text-err">{errorMsg}</p>}
+            {errorMsg && <p role="alert" className="text-subhead text-err-text">{errorMsg}</p>}
 
             <Button onClick={handleSave} disabled={saving} className="w-full">
               {saving ? t('wizard.pairing.saving') : t('wizard.pairing.saveDevice')}
@@ -907,19 +903,20 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
           <motion.div
             key="timeout"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={T_STATE}
             className="flex flex-col items-center text-center gap-4"
           >
-            <div className="w-16 h-16 rounded-2xl bg-warn-soft flex items-center justify-center">
-              <RefreshCw size={26} className="text-warn" />
+            <div className="w-16 h-16 rounded-card bg-warn-soft flex items-center justify-center" aria-hidden>
+              <RefreshCw size={28} strokeWidth={1.75} className="text-warn" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-ink mb-1">{t('wizard.pairing.noDeviceDetected')}</p>
-              <p className="text-xs text-ink-mute leading-relaxed">
+              <p className="z-title mb-1">{t('wizard.pairing.noDeviceDetected')}</p>
+              <p className="text-body text-ink-mute">
                 {t('wizard.pairing.expiredHint')}
               </p>
             </div>
-            <div className="w-full bg-surface-2 rounded-xl p-3 text-left space-y-1.5">
-              <p className="text-xs font-medium text-ink-2">{t('wizard.pairing.tips')}</p>
+            <div className="w-full bg-surface-2 rounded-card p-4 text-start space-y-2">
+              <p className="text-subhead font-semibold text-ink">{t('wizard.pairing.tips')}</p>
               {(protocol === 'matter' ? [
                 t('wizard.pairing.tipMatter1'),
                 t('wizard.pairing.tipMatter2'),
@@ -933,7 +930,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                 t('wizard.pairing.tipDefault2'),
                 t('wizard.pairing.tipDefault3'),
               ]).map((line) => (
-                <p key={line} className="text-xs text-ink-mute">· {line}</p>
+                <p key={line} className="text-subhead text-ink-mute">· {line}</p>
               ))}
             </div>
             <div className="flex gap-2 w-full">
@@ -948,19 +945,20 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
           <motion.div
             key="error"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={T_STATE}
             className="flex flex-col items-center text-center gap-4"
           >
-            <div className="w-16 h-16 rounded-2xl bg-err-soft flex items-center justify-center">
-              <XCircle size={26} className="text-err" />
+            <div className="w-16 h-16 rounded-card bg-err-soft flex items-center justify-center" aria-hidden>
+              <XCircle size={28} strokeWidth={1.75} className="text-err" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-ink mb-1">
+              <p className="z-title mb-1">
                 {t('wizard.pairing.couldNotStart')}
               </p>
-              <p className="text-xs text-ink-mute leading-relaxed">{errorMsg}</p>
+              <p role="alert" className="text-body text-ink-mute">{errorMsg}</p>
             </div>
-            <div className="w-full bg-surface-2 rounded-xl p-3 text-left">
-              <p className="text-xs text-ink-mute">
+            <div className="w-full bg-surface-2 rounded-card p-4 text-start">
+              <p className="text-subhead text-ink-mute">
                 {t('wizard.pairing.errorHelp', {
                   name: protocol === 'zigbee'    ? 'ZHA' :
                         protocol === 'zwave'     ? 'Z-Wave JS' :
@@ -981,6 +979,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
           <motion.div
             key="switcher_flow"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={T_STATE}
           >
             <SwitcherPairingFlow
               onDone={async () => {
