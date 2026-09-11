@@ -894,7 +894,9 @@ function VirtualDeviceRow({ device, onTrigger, triggering }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px', minHeight: 48, borderBottom: '0.5px solid var(--line)' }}
       className="last:border-b-0">
       <div style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--info)', background: 'color-mix(in srgb, var(--info) 10%, var(--surface))', flexShrink: 0 }}>
-        <Zap size={20} strokeWidth={1.75} aria-hidden />
+        {device.icon
+          ? <span style={{ fontSize: 20, lineHeight: 1 }}>{device.icon}</span>
+          : <Zap size={20} strokeWidth={1.75} aria-hidden />}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p dir="auto" style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.name}</p>
@@ -1506,7 +1508,9 @@ export function RoomDetail() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 8px 16px', minHeight: 48 }}>
                     <button onClick={() => navigate('/actions')} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, minHeight: 40, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', padding: 0, color: 'inherit' }}>
                       <div style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: a.enabled ? 'var(--info)' : 'var(--ink-faint)', background: a.enabled ? 'color-mix(in srgb, var(--info) 12%, var(--surface))' : 'var(--surface-2)' }}>
-                        <Zap size={20} strokeWidth={1.75} aria-hidden />
+                        {a.icon
+                          ? <span style={{ fontSize: 20, lineHeight: 1 }}>{a.icon}</span>
+                          : <Zap size={20} strokeWidth={1.75} aria-hidden />}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p dir="auto" style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</p>

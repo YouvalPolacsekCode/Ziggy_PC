@@ -4,6 +4,7 @@ import { Toggle } from '../ui/Toggle'
 import { useT, useTranslatedName } from '../../lib/i18n'
 import { getTriggerTypes } from '../../lib/automations/types'
 import { behaviorSummary } from '../../lib/automations/summaries'
+import { libraryEmoji } from '../../lib/automations/libraryIdentity'
 import { T_ENTER } from '../../lib/motion'
 
 // ── AutomationCard ────────────────────────────────────────────────────────────
@@ -33,6 +34,7 @@ const AutomationCard = React.memo(function AutomationCard({
   // the automation actually does — never leave it as a bare "N steps".
   const rawSummary = automation.description || behaviorSummary(automation)
   const automationDesc = useTranslatedName(rawSummary)
+  const emoji = libraryEmoji(automation)
   const triggerLabel = getTriggerTypes().find(tt => tt.value === automation.trigger?.type)?.label
 
   // Check if any action entity is currently unavailable. offlineEntityIds is
@@ -83,9 +85,13 @@ const AutomationCard = React.memo(function AutomationCard({
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: 'var(--surface-2)', color: automation.enabled ? 'var(--ink-2)' : 'var(--ink-faint)',
         }}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-            {iconMap[triggerType] || iconMap.state}
-          </svg>
+          {emoji ? (
+            <span style={{ fontSize: 20, lineHeight: 1 }}>{emoji}</span>
+          ) : (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              {iconMap[triggerType] || iconMap.state}
+            </svg>
+          )}
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>

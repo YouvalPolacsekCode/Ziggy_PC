@@ -26,11 +26,13 @@ export const useUIStore = create(
   persist(
     (set) => ({
       theme: 'light',
-      // Device icon style: 'line' (default since the HIG pass — one weight-
-      // matched vector set that renders the same on every OS), 'emoji' (the
-      // original), or '3d' (skeuomorphic PNG set). Purely presentational;
-      // Settings → Display switches it live. See lib/deviceIcons.jsx.
-      iconStyle: 'line',
+      // Device icon style: 'emoji' (default), 'line' (flat SVG set) or '3d'
+      // (skeuomorphic PNG set). Purely presentational; Settings → Display
+      // switches it live. Emoji is the default because a per-device custom
+      // icon is STORED as an emoji — in line/3d mode it is mapped to a kind
+      // and drawn from the asset set, which silently replaces the icon the
+      // person actually picked. See lib/deviceIcons.jsx.
+      iconStyle: 'emoji',
       setIconStyle: (iconStyle) => set({ iconStyle }),
       toasts: [],
       toggleTheme: () =>
@@ -88,13 +90,18 @@ export const useUIStore = create(
     {
       name: 'ziggy-ui',
       partialize: (s) => ({ theme: s.theme, iconStyle: s.iconStyle }),
-      // v2: the persisted default used to be 'emoji' (written on first load,
-      // so it looks like a choice even when nobody chose). Move everyone to
-      // the line set once; picking Emoji again in Settings sticks from then on.
-      version: 2,
+      // v3 undoes v2. v2 force-rewrote every stored 'emoji' to 'line', which
+      // replaced the icons people had actually picked — a per-device custom
+      // icon is stored as an emoji and gets mapped to a generic kind asset in
+      // line mode. Removing that migration is not enough on its own: it had
+      // already written 'line' into everyone's localStorage, so this puts
+      // them back. v2 shipped for about an hour and nobody chose line in that
+      // window, so reverting every 'line' at v2 is safe; a deliberate choice
+      // made from here on is stored at v3 and left alone.
+      version: 3,
       migrate: (persisted, version) => {
-        if (version < 2 && persisted && persisted.iconStyle === 'emoji') {
-          return { ...persisted, iconStyle: 'line' }
+        if (version === 2 && persisted && persisted.iconStyle === 'line') {
+          return { ...persisted, iconStyle: 'emoji' }
         }
         return persisted
       },
