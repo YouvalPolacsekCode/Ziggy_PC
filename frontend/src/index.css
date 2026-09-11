@@ -1,4 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap');
+/* Heebo carries the whole app. IBM Plex Mono is kept ONLY for the wall-tablet
+   dashboard (src/wall/), which was out of scope for the design pass and still
+   sets it explicitly in nine places — dropping the load would have silently
+   restyled a kiosk surface nobody reviewed. The app itself no longer uses it:
+   numbers are tabular Heebo via .z-mono, and real code uses .z-code's system
+   mono stack. Inter used to be loaded here too and was referenced nowhere. */
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
