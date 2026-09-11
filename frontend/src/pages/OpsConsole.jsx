@@ -36,8 +36,8 @@ export default function OpsConsole() {
   }
 
   return (
-    <div style={{ minHeight: '100dvh', background: 'var(--bg)', padding: '18px 20px 40px' }}>
-      <div style={{ maxWidth: 1480, margin: '0 auto' }}>
+    <div style={{ minHeight: '100dvh', background: 'var(--bg)', padding: '24px 20px 24px' }}>
+      <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto' }}>
         <FleetOps onExit={() => navigate('/ops')} />
       </div>
     </div>

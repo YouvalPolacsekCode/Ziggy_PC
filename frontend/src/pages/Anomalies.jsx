@@ -1,9 +1,14 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { RefreshCw, ChevronDown, CheckCircle2, X } from 'lucide-react'
 import { useUIStore } from '../stores/uiStore'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useWsMessages } from '../hooks/useWebSocket'
 import { useT } from '../lib/i18n'
+import { Toggle } from '../components/ui/Toggle'
+import { Input } from '../components/ui/Input'
+import { Select } from '../components/ui/Select'
+import { T_STATE, T_ENTER } from '../lib/motion'
 import {
   getActiveAnomalies, getAnomalyHistory,
   snoozeMapAnomaly, executeAnomalyAction,
@@ -41,7 +46,10 @@ function humanRoom(roomId, roomName) {
   return roomId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
+// Fill tokens (edge bar, icon tint, 8px dot) and their text-safe twins for
+// anything a person reads under 18px.
 const SEV_COLOR = { critical: 'var(--err)', warning: 'var(--warn)', info: 'var(--info)' }
+const SEV_TEXT  = { critical: 'var(--err-text)', warning: 'var(--warn-text)', info: 'var(--ink-2)' }
 const RULE_LABELS = {
   'ANOM-01': 'Away + lights on',
   'ANOM-02': 'Climate + empty room',
@@ -90,6 +98,14 @@ const SNOOZE_OPTIONS = [
   { label: 'All day',   minutes: 1440 },
 ]
 
+// Ghost text button: 44 tall, 15px, ink. The quiet sibling of the card's one
+// bordered action.
+const ghostBtn = {
+  minHeight: 40, padding: '0 12px', borderRadius: 'var(--r-ctl)', fontSize: 13, fontWeight: 500,
+  background: 'transparent', color: 'var(--ink-mute)', border: 'none', cursor: 'pointer',
+  fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4,
+}
+
 function SnoozeMenu({ roomId, ruleId, onSnoozed }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -114,19 +130,11 @@ function SnoozeMenu({ roomId, ruleId, onSnoozed }) {
       <button
         onClick={() => setOpen(v => !v)}
         disabled={busy}
-        style={{
-          padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 500,
-          background: 'var(--surface-2)', color: 'var(--ink-2)',
-          border: '0.5px solid var(--line)', cursor: 'pointer', fontFamily: 'inherit',
-          display: 'flex', alignItems: 'center', gap: 4,
-          opacity: busy ? 0.5 : 1,
-        }}
+        aria-expanded={open}
+        style={{ ...ghostBtn, opacity: busy ? 0.5 : 1 }}
       >
         Snooze
-        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-          style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
-          <path d="M6 9l6 6 6-6"/>
-        </svg>
+        <ChevronDown size={18} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)' }} />
       </button>
 
       <AnimatePresence>
@@ -135,25 +143,26 @@ function SnoozeMenu({ roomId, ruleId, onSnoozed }) {
             <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
             <motion.div
               initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.12 }}
+              transition={T_ENTER}
               style={{
-                position: 'absolute', top: '110%', right: 0, zIndex: 20,
+                position: 'absolute', top: '100%', insetInlineEnd: 0, zIndex: 20, marginTop: 4,
                 background: 'var(--surface)', border: '0.5px solid var(--line)',
-                borderRadius: 10, boxShadow: '0 6px 24px rgba(0,0,0,0.14)',
-                overflow: 'hidden', minWidth: 120,
+                borderRadius: 'var(--r-ctl)', boxShadow: 'var(--shadow-md)',
+                overflow: 'hidden', minWidth: 160,
               }}
             >
-              {SNOOZE_OPTIONS.map(opt => (
+              {SNOOZE_OPTIONS.map((opt, i) => (
                 <button
                   key={opt.minutes}
                   onClick={() => doSnooze(opt.minutes)}
                   style={{
-                    display: 'block', width: '100%', padding: '9px 14px', textAlign: 'start',
+                    display: 'block', width: '100%', minHeight: 40, padding: '0 16px', textAlign: 'start',
                     background: 'none', border: 'none', cursor: 'pointer',
-                    fontSize: 12, fontWeight: 500, color: 'var(--ink)', fontFamily: 'inherit',
-                    borderBottom: '0.5px solid var(--line)',
+                    fontSize: 15, fontWeight: 400, color: 'var(--ink)', fontFamily: 'inherit',
+                    borderBottom: i < SNOOZE_OPTIONS.length - 1 ? '0.5px solid var(--line)' : 'none',
+                    transition: 'background var(--dur-press) var(--ease-standard)',
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-2)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'none'}
                 >
                   {opt.label}
@@ -168,7 +177,9 @@ function SnoozeMenu({ roomId, ruleId, onSnoozed }) {
 }
 
 // ── Action button — executes the anomaly's suggested_action via the backend ──
-function ActionButton({ roomId, ruleId, action, color, onDone }) {
+// The card's one bordered control. Not inverted: inverted is reserved for the
+// screen's single primary action, and a list of alerts has many cards.
+function ActionButton({ roomId, ruleId, action, onDone }) {
   const [busy, setBusy] = useState(false)
   const { addToast } = useUIStore()
   const label = actionLabel(action)
@@ -192,16 +203,7 @@ function ActionButton({ roomId, ruleId, action, color, onDone }) {
   }
 
   return (
-    <button
-      onClick={run}
-      disabled={busy}
-      style={{
-        padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 600,
-        background: color, color: '#fff', border: 'none', cursor: 'pointer',
-        fontFamily: 'inherit', opacity: busy ? 0.55 : 1,
-        whiteSpace: 'nowrap',
-      }}
-    >
+    <button onClick={run} disabled={busy} className="z-btn-secondary" style={{ whiteSpace: 'nowrap', opacity: busy ? 0.55 : 1 }}>
       {busy ? '…' : label}
     </button>
   )
@@ -213,6 +215,7 @@ function ActionButton({ roomId, ruleId, action, color, onDone }) {
 function AnomalyCard({ anomaly, roomId, roomName, variant = 'active', onChange }) {
   const sev       = anomaly.severity || 'warning'
   const color     = SEV_COLOR[sev] || SEV_COLOR.warning
+  const textColor = SEV_TEXT[sev] || SEV_TEXT.warning
   const room      = humanRoom(roomId, roomName)
   const ruleId    = anomaly.rule_id
   const ruleLabel = RULE_LABELS[ruleId] || ''
@@ -223,7 +226,7 @@ function AnomalyCard({ anomaly, roomId, roomName, variant = 'active', onChange }
   const dur         = isHistory ? duration(anomaly.fired_at, anomaly.cleared_at) : null
   const showActions = !isHistory && !!anomaly.action_available
 
-  // Compose the small monospace meta line: "ANOM-06 · 2h ago · Living Room · Cleared after 12m"
+  // Compose the small meta line: "ANOM-06 · 2h ago · Living Room · Cleared after 12m"
   // Pieces are joined with " · " separators only when non-empty so we don't end
   // up with dangling dots on narrow rooms or unknown labels.
   const metaParts = []
@@ -243,24 +246,23 @@ function AnomalyCard({ anomaly, roomId, roomName, variant = 'active', onChange }
     <motion.div
       layout
       initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}
-      transition={{ duration: 0.16 }}
+      transition={T_ENTER}
       style={{
-        display: 'flex', gap: 12, padding: '12px 12px', borderRadius: 14,
+        display: 'flex', gap: 12, padding: 12, borderRadius: 'var(--r-card)', minHeight: 48,
         background: 'var(--surface)', border: '0.5px solid var(--line)',
-        borderLeft: `3px solid ${cleared ? 'var(--line-2)' : color}`,
-        opacity: cleared ? 0.72 : 1,
+        borderInlineStart: `3px solid ${cleared ? 'var(--line-2)' : color}`,
       }}
     >
       {/* Tinted icon box */}
       <div style={{
-        width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+        width: 36, height: 36, borderRadius: 'var(--r-ctl)', flexShrink: 0,
         background: cleared
           ? 'var(--surface-2)'
           : `color-mix(in srgb, ${color} 10%, var(--surface-2))`,
         color: cleared ? 'var(--ink-faint)' : color,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
           {anomalyIcon(anomaly.message, ruleId)}
         </svg>
       </div>
@@ -269,9 +271,10 @@ function AnomalyCard({ anomaly, roomId, roomName, variant = 'active', onChange }
           one line: (1) message, (2) meta strip (ANOM · time · room · cleared),
           (3) actions or status pill on their own row. */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        {/* 1. Message — full width, wraps freely */}
+        {/* 1. Message — full width, wraps freely. A cleared entry reads in
+            ink-mute instead of being dimmed through opacity. */}
         <div style={{
-          fontSize: 13, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.3,
+          fontSize: 15, fontWeight: 600, color: cleared ? 'var(--ink-mute)' : 'var(--ink)', lineHeight: 1.3,
           overflowWrap: 'anywhere',
         }}>
           {anomaly.message}
@@ -279,67 +282,49 @@ function AnomalyCard({ anomaly, roomId, roomName, variant = 'active', onChange }
 
         {/* Optional subtitle — non-meta context like "During quiet hours" */}
         {subtitle && (
-          <div style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 3, lineHeight: 1.4 }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 4, lineHeight: 1.4 }}>
             {subtitle}
           </div>
         )}
 
-        {/* 2. Meta strip — one mono row, wraps cleanly on narrow widths */}
+        {/* 2. Meta strip — one tabular row, wraps cleanly on narrow widths */}
         {metaParts.length > 0 && (
           <div className="z-mono" style={{
-            fontSize: 10, color: 'var(--ink-faint)', marginTop: 6,
-            display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6,
-            letterSpacing: '0.02em',
+            fontSize: 12, color: 'var(--ink-mute)', marginTop: 8,
+            display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
           }}>
             {metaParts.map((part, i) => (
-              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                {i > 0 && <span style={{ color: 'var(--ink-ghost)' }}>·</span>}
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                {i > 0 && <span style={{ color: 'var(--ink-faint)' }}>·</span>}
                 {i === 0 && ruleId === part ? (
-                  <span style={{
-                    fontWeight: 700,
-                    color: cleared ? 'var(--ink-faint)' : color,
-                    background: cleared
-                      ? 'var(--surface-2)'
-                      : `color-mix(in srgb, ${color} 12%, var(--surface))`,
-                    padding: '1px 5px', borderRadius: 4,
-                    letterSpacing: '0.04em',
-                  }}>{part}</span>
+                  <span className="z-chip" style={{ color: cleared ? 'var(--ink-mute)' : textColor }}>{part}</span>
                 ) : part}
               </span>
             ))}
           </div>
         )}
 
-        {/* 3. Actions / status — own row, right-aligned, with full horizontal
+        {/* 3. Actions / status — own row, end-aligned, with full horizontal
               width to themselves. Active card gets ActionButton + SnoozeMenu;
               history card gets the CLEARED/ACTIVE pill. */}
         <div style={{
-          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6,
-          marginTop: 10, justifyContent: 'flex-end',
+          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+          marginTop: 8, justifyContent: 'flex-end',
         }}>
+            {!isHistory && (
+              <SnoozeMenu roomId={roomId} ruleId={ruleId} onSnoozed={onChange} />
+            )}
             {showActions && (
               <ActionButton
                 roomId={roomId}
                 ruleId={ruleId}
                 action={anomaly.suggested_action}
-                color={color}
                 onDone={onChange}
               />
             )}
-            {!isHistory && (
-              <SnoozeMenu roomId={roomId} ruleId={ruleId} onSnoozed={onChange} />
-            )}
             {isHistory && (
-              <span style={{
-                fontSize: 9, padding: '2px 7px', borderRadius: 4,
-                background: cleared
-                  ? 'var(--bg-2)'
-                  : `color-mix(in srgb, ${color} 14%, transparent)`,
-                color: cleared ? 'var(--ink-mute)' : color,
-                fontFamily: '"IBM Plex Mono", monospace', fontWeight: 700,
-                letterSpacing: '0.05em',
-              }}>
-                {cleared ? 'CLEARED' : 'ACTIVE'}
+              <span className="z-chip" style={{ color: cleared ? 'var(--ink-mute)' : textColor, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                {cleared ? 'Cleared' : 'Active'}
               </span>
             )}
           </div>
@@ -358,6 +343,7 @@ export default function Anomalies() {
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [histLoading, setHistLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   const [rules, setRules] = useState(null)
   const [engineEnabled, setEngineEnabled] = useState(true)
@@ -441,6 +427,14 @@ export default function Anomalies() {
     if (tab === 'history') loadHistory()
   }, [tab, loadActive, loadHistory])
 
+  // Manual refresh: spin until the fetches actually settle.
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await Promise.allSettled([loadActive(), tab === 'history' ? loadHistory() : Promise.resolve()])
+    } finally { setRefreshing(false) }
+  }
+
   const patchRule = async (id, patch) => {
     const next = rules.map(r => r.id === id ? { ...r, ...patch } : r)
     setRules(next)
@@ -490,37 +484,40 @@ export default function Anomalies() {
   ]
 
   return (
-    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 40px' }}>
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 24px' }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18 }}>
+      <div className="z-page-head">
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>
+          <p className="z-eyebrow">
             {t('anomaliesPage.today')}{criticalCount + warningCount > 0 ? t('anomaliesPage.needAttentionCount', { n: criticalCount + warningCount }) : ''}
           </p>
-          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>{t('alerts.title')}</h1>
+          <h1 className="z-display" style={{ margin: 0 }}>{t('alerts.title')}</h1>
         </div>
         <button
-          onClick={() => { loadActive(); if (tab === 'history') loadHistory() }}
-          className="z-btn-secondary"
-          style={{ padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 500, flexShrink: 0 }}
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="z-icon-btn"
+          aria-label={t('common.refresh')}
+          title={t('common.refresh')}
         >
-          {t('common.refresh')}
+          <RefreshCw size={18} className={refreshing ? 'z-spin' : undefined} />
         </button>
       </div>
 
       {/* Tabs — segmented pill */}
-      <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 12, marginBottom: 18 }}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
-            flex: 1, padding: '7px 0', borderRadius: 9, fontFamily: 'inherit', cursor: 'pointer',
-            background: tab === t.id ? 'var(--surface)' : 'transparent',
-            border: 'none', fontSize: 12, fontWeight: 600,
-            color: tab === t.id ? 'var(--ink)' : 'var(--ink-mute)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-            boxShadow: tab === t.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+      <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--surface-2)', borderRadius: 'var(--r-ctl)', marginBottom: 16 }}>
+        {tabs.map(tb => (
+          <button key={tb.id} onClick={() => setTab(tb.id)} aria-pressed={tab === tb.id} style={{
+            flex: 1, minHeight: 40, padding: '0 8px', borderRadius: 'var(--r-chip)', fontFamily: 'inherit', cursor: 'pointer',
+            background: tab === tb.id ? 'var(--surface)' : 'transparent',
+            border: 'none', fontSize: 13, fontWeight: 600,
+            color: tab === tb.id ? 'var(--ink)' : 'var(--ink-mute)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+            boxShadow: tab === tb.id ? 'var(--shadow-sm)' : 'none',
+            transition: 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard)',
           }}>
-            {t.label}
+            {tb.label}
           </button>
         ))}
       </div>
@@ -533,16 +530,16 @@ export default function Anomalies() {
           {loading && activeList.length === 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {[1, 2].map(i => (
-                <div key={i} style={{ height: 100, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.5 }} />
+                <div key={i} style={{ height: 100, borderRadius: 'var(--r-card)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }} />
               ))}
             </div>
           )}
 
           {!loading && activeList.length === 0 && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ textAlign: 'center', padding: '52px 16px' }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
-              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>{t('anomaliesPage.allClear')}</p>
-              <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5, maxWidth: 280, margin: '0 auto' }}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={T_STATE} style={{ textAlign: 'center', padding: 32 }}>
+              <CheckCircle2 size={32} strokeWidth={1.75} style={{ color: 'var(--ok)', marginBottom: 12 }} />
+              <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('anomaliesPage.allClear')}</p>
+              <p style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5, maxWidth: 320, margin: '0 auto' }}>
                 {t('anomaliesPage.allClearHelp')}
               </p>
             </motion.div>
@@ -599,15 +596,15 @@ export default function Anomalies() {
           {histLoading && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {[1, 2, 3].map(i => (
-                <div key={i} style={{ height: 100, borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.4 }} />
+                <div key={i} style={{ height: 100, borderRadius: 'var(--r-card)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }} />
               ))}
             </div>
           )}
 
           {!histLoading && history.length === 0 && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ textAlign: 'center', padding: '52px 16px' }}>
-              <p className="z-eyebrow">{t('anomaliesPage.noHistory')}</p>
-              <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 8 }}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={T_STATE} style={{ textAlign: 'center', padding: 32 }}>
+              <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('anomaliesPage.noHistory')}</p>
+              <p style={{ fontSize: 13, color: 'var(--ink-mute)' }}>
                 {t('anomaliesPage.noHistoryHelp')}
               </p>
             </motion.div>
@@ -634,23 +631,22 @@ export default function Anomalies() {
         <>
           {rules === null && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100 }}>
-              <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+              <div className="z-spin" style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--line-2)', borderTopColor: 'var(--ink)' }} />
             </div>
           )}
 
           {rules !== null && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* Overall engine toggle */}
-              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 14, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <div>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{t('anomalies.engineTitle')}</p>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>{t('anomalies.engineDesc')}</p>
+              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', padding: '12px 16px', minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{t('anomalies.engineTitle')}</p>
+                  <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{t('anomalies.engineDesc')}</p>
                 </div>
-                <button
-                  className="z-toggle"
-                  aria-checked={engineEnabled}
-                  onClick={async () => {
-                    const next = !engineEnabled
+                <Toggle
+                  checked={engineEnabled}
+                  aria-label={t('anomalies.engineTitle')}
+                  onCheckedChange={async (next) => {
                     setEngineEnabled(next)
                     try { await patchAnomalyRules({ engine_enabled: next }) }
                     catch { addToast(t('anomalies.saveFailed'), 'error') }
@@ -659,36 +655,32 @@ export default function Anomalies() {
               </div>
 
               {/* Rule cards */}
-              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
                 {rules.map((rule, i) => {
                   const sevColor = SEV_COLOR[rule.severity] || SEV_COLOR.warning
+                  const sevText  = SEV_TEXT[rule.severity] || SEV_TEXT.warning
                   return (
-                    <div key={rule.id} style={{ padding: '12px 16px', borderBottom: i < rules.length - 1 ? '0.5px solid var(--line)' : 'none', opacity: engineEnabled ? 1 : 0.5 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: rule.config ? 10 : 0 }}>
-                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: sevColor, flexShrink: 0 }} />
+                    <div key={rule.id} style={{ padding: '12px 16px', borderBottom: i < rules.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, marginBottom: rule.config && rule.enabled ? 8 : 0 }}>
+                        <span className="z-dot" style={{ background: sevColor, flexShrink: 0 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <p style={{ fontSize: 15, fontWeight: 500, color: engineEnabled ? 'var(--ink)' : 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             {rule.label}
-                            <span style={{
-                              fontSize: 9, fontFamily: '"IBM Plex Mono", monospace',
-                              color: sevColor,
-                              background: `color-mix(in srgb, ${sevColor} 12%, var(--surface))`,
-                              padding: '1px 5px', borderRadius: 4,
-                            }}>{rule.severity}</span>
+                            <span className="z-chip" style={{ color: sevText }}>{rule.severity}</span>
                           </p>
-                          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 1 }}>{rule.description}</p>
+                          <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{rule.description}</p>
                         </div>
-                        <button
-                          className="z-toggle"
-                          aria-checked={!!rule.enabled}
+                        <Toggle
+                          checked={!!rule.enabled}
                           disabled={!engineEnabled}
-                          onClick={() => patchRule(rule.id, { enabled: !rule.enabled })}
+                          aria-label={rule.label}
+                          onCheckedChange={(v) => patchRule(rule.id, { enabled: v })}
                         />
                       </div>
                       {rule.config && rule.enabled && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 17 }}>
-                          <p style={{ fontSize: 11, color: 'var(--ink-mute)', flex: 1 }}>{rule.config.label}</p>
-                          <input
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingInlineStart: 20 }}>
+                          <p style={{ fontSize: 13, color: 'var(--ink-mute)', flex: 1 }}>{rule.config.label}</p>
+                          <Input
                             type="number"
                             min={1}
                             value={rule.config.value ?? rule.config.default}
@@ -696,10 +688,10 @@ export default function Anomalies() {
                               const val = parseInt(e.target.value)
                               if (!isNaN(val)) patchRule(rule.id, { config_value: val })
                             }}
-                            className="z-input"
-                            style={{ width: 70, height: 28, padding: '0 8px', fontSize: 12, textAlign: 'center' }}
+                            aria-label={rule.config.label}
+                            style={{ width: 96, textAlign: 'center', padding: '0 8px' }}
                           />
-                          <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{rule.config.unit}</p>
+                          <p style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{rule.config.unit}</p>
                         </div>
                       )}
                     </div>
@@ -712,39 +704,39 @@ export default function Anomalies() {
                   warnings as soon as their on-time exceeds the threshold.
                   Editing happens here, persisted under
                   anomaly_engine.exemptions in settings.yaml. */}
-              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 14, padding: '12px 16px' }}>
-                <div style={{ marginBottom: 10 }}>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{t('anomalies.alwaysOn')}</p>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
+              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', padding: 12 }}>
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{t('anomalies.alwaysOn')}</p>
+                  <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>
                     {t('anomalies.alwaysOnHint')}
                   </p>
                 </div>
 
                 {exemptions.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
                     {exemptions.map(eid => (
-                      <span key={eid} style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        fontSize: 11, color: 'var(--ink-2)',
-                        padding: '4px 8px 4px 10px', borderRadius: 999,
-                        background: 'var(--surface-2)', border: '0.5px solid var(--line)',
-                      }}>
+                      // The whole chip is the remove target so it clears 44px
+                      // without growing an X button inside a 13px capsule.
+                      <button
+                        key={eid}
+                        aria-label={`Remove ${entityLabel(eid)}`}
+                        title={t('common.remove')}
+                        onClick={() => saveExemptions(exemptions.filter(x => x !== eid))}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 8,
+                          fontSize: 13, color: 'var(--ink-2)', fontFamily: 'inherit', cursor: 'pointer',
+                          minHeight: 40, padding: '0 12px 0 16px', borderRadius: 999,
+                          background: 'var(--surface-2)', border: '0.5px solid var(--line)',
+                        }}
+                      >
                         {entityLabel(eid)}
-                        <button
-                          aria-label={`Remove ${eid}`}
-                          onClick={() => saveExemptions(exemptions.filter(x => x !== eid))}
-                          style={{
-                            background: 'none', border: 'none', cursor: 'pointer',
-                            padding: 0, color: 'var(--ink-faint)', fontSize: 14,
-                            lineHeight: 1, fontFamily: 'inherit',
-                          }}
-                        >×</button>
-                      </span>
+                        <X size={18} style={{ color: 'var(--ink-mute)' }} />
+                      </button>
                     ))}
                   </div>
                 )}
 
-                <select
+                <Select
                   value=""
                   onChange={e => {
                     const eid = e.target.value
@@ -752,18 +744,15 @@ export default function Anomalies() {
                       saveExemptions([...exemptions, eid].sort())
                     }
                   }}
-                  className="z-input"
-                  style={{ width: '100%', height: 34, padding: '0 10px', fontSize: 12 }}
-                >
-                  <option value="">+ Add exemption…</option>
-                  {exemptionPool.map(e => (
-                    <option key={e.entity_id} value={e.entity_id}>
-                      {e.display_name || e.friendly_name || e.entity_id} · {e.entity_id}
-                    </option>
-                  ))}
-                </select>
+                  aria-label={t('anomalies.alwaysOn')}
+                  style={{ width: '100%' }}
+                  options={[
+                    { value: '', label: '+ Add exemption…' },
+                    ...exemptionPool.map(e => ({ value: e.entity_id, label: e.display_name || e.friendly_name || e.entity_id })),
+                  ]}
+                />
                 {exemptionPool.length === 0 && exemptions.length === 0 && (
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6 }}>
+                  <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 8 }}>
                     No eligible switches or lights found.
                   </p>
                 )}

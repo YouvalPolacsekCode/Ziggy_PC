@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useT } from '../lib/i18n'
+import { Input } from '../components/ui/Input'
 
 export default function LoginPage() {
   const t = useT()
@@ -32,19 +34,12 @@ export default function LoginPage() {
     } catch { setError(t('login.cannotReach')); setLoading(false) }
   }
 
-  const fieldStyle = {
-    width: '100%', boxSizing: 'border-box',
-    background: 'var(--surface-2)',
-    border: '0.5px solid var(--line)',
-    borderRadius: 12, padding: '12px 14px',
-    color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14,
-    outline: 'none', transition: 'border-color 0.12s',
-  }
+  const disabled = loading || !username.trim() || !password
 
   if (mode === 'loading') {
     return (
       <div data-palette="dark" style={{ minHeight: 'var(--vh)', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ width: 20, height: 20, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <div className="z-spin" aria-hidden style={{ width: 20, height: 20, border: '2px solid var(--ink-mute)', borderTopColor: 'transparent', borderRadius: '50%' }} />
       </div>
     )
   }
@@ -68,93 +63,69 @@ export default function LoginPage() {
     >
       <div style={{ width: '100%', maxWidth: 380 }}>
 
-        {/* Logo */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 48, gap: 6 }}>
-          <div style={{
-            width: 56, height: 56,
-            background: 'var(--accent)',
-            borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-            boxShadow: 'var(--shadow-lg)',
-          }}>
-            <svg viewBox="0 0 24 24" width="28" height="28" fill="none">
-              <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="var(--bg)" />
-            </svg>
-          </div>
+        {/* Wordmark — the accent period is the one accent on this screen. */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 32, gap: 4 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
-            <span style={{ fontWeight: 700, fontSize: 28, letterSpacing: '-0.025em', color: 'var(--ink)' }}>ziggy</span>
-            <span style={{ color: 'var(--accent)', fontSize: 28, fontWeight: 700 }}>.</span>
+            <span className="z-display">ziggy</span>
+            <span className="z-display" style={{ color: 'var(--accent)' }}>.</span>
           </div>
-          <p className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>
+          <p className="z-subhead" style={{ textAlign: 'center' }}>
             {mode === 'setup' ? t('login.createAccount') : t('login.signInToHome')}
           </p>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <label className="z-eyebrow" style={{ display: 'block', marginBottom: 6 }}>{t('common.username')}</label>
-            <input
-              type="text"
-              autoComplete="username"
-              autoCapitalize="none"
-              dir="auto"
-              value={username}
-              onChange={e => { setUsername(e.target.value); setError('') }}
-              placeholder={t('login.usernamePlaceholder')}
-              style={fieldStyle}
-              onFocus={e => e.currentTarget.style.borderColor = 'var(--accent)'}
-              onBlur={e  => e.currentTarget.style.borderColor = 'var(--line)'}
-            />
-          </div>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Input
+            label={t('common.username')}
+            type="text"
+            autoComplete="username"
+            autoCapitalize="none"
+            value={username}
+            onChange={e => { setUsername(e.target.value); setError('') }}
+            placeholder={t('login.usernamePlaceholder')}
+          />
 
-          <div>
-            <label className="z-eyebrow" style={{ display: 'block', marginBottom: 6 }}>{t('common.password')}</label>
-            <div style={{ position: 'relative' }}>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                autoComplete={mode === 'setup' ? 'new-password' : 'current-password'}
-                value={password}
-                onChange={e => { setPassword(e.target.value); setError('') }}
-                placeholder="••••••••"
-                style={{ ...fieldStyle, paddingRight: 42 }}
-                onFocus={e => e.currentTarget.style.borderColor = 'var(--accent)'}
-                onBlur={e  => e.currentTarget.style.borderColor = 'var(--line)'}
-              />
-              <button type="button" onClick={() => setShowPassword(v => !v)} style={{
-                position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-mute)', padding: 4,
-              }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  {showPassword
-                    ? <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19M10.73 10.73A3 3 0 0013.27 13.27M3 3l18 18"/></>
-                    : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
-                  }
-                </svg>
-              </button>
-            </div>
+          <div style={{ position: 'relative' }}>
+            <Input
+              label={t('common.password')}
+              type={showPassword ? 'text' : 'password'}
+              autoComplete={mode === 'setup' ? 'new-password' : 'current-password'}
+              dir="ltr"
+              value={password}
+              onChange={e => { setPassword(e.target.value); setError('') }}
+              placeholder="••••••••"
+              style={{ paddingInlineEnd: 48 }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(v => !v)}
+              aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+              style={{
+                position: 'absolute', insetInlineEnd: 0, bottom: 0,
+                width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-mute)', padding: 0,
+              }}
+            >
+              {showPassword ? <EyeOff size={20} strokeWidth={1.75} /> : <Eye size={20} strokeWidth={1.75} />}
+            </button>
           </div>
 
           {error && (
-            <p style={{ fontSize: 12, color: 'var(--err)', textAlign: 'center' }}>{error}</p>
+            <p role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)', textAlign: 'center' }}>{error}</p>
           )}
 
           <button
             type="submit"
-            disabled={loading || !username.trim() || !password}
-            style={{
-              width: '100%', padding: '13px 16px', marginTop: 6,
-              background: 'var(--accent)', color: 'var(--bg)',
-              border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700,
-              cursor: loading || !username.trim() || !password ? 'not-allowed' : 'pointer',
-              opacity: loading || !username.trim() || !password ? 0.5 : 1,
-              fontFamily: 'inherit', transition: 'opacity 0.12s',
-            }}
+            className="z-btn-primary z-button"
+            disabled={disabled}
+            style={{ width: '100%', marginTop: 8 }}
           >
             {loading ? (
-              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                <span style={{ width: 14, height: 14, border: '2px solid var(--bg)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', display: 'inline-block' }} />
+              <>
+                <span className="z-spin" aria-hidden style={{ width: 16, height: 16, border: '2px solid var(--bg)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} />
                 {mode === 'setup' ? t('login.creating') : t('login.signingIn')}
-              </span>
+              </>
             ) : mode === 'setup' ? t('login.createAccountButton') : t('login.signIn')}
           </button>
         </form>

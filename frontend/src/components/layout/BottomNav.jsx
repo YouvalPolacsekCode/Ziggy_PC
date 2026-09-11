@@ -29,22 +29,25 @@ const MORE_BASE = [
 ]
 
 // Bar geometry — flat row, no notch / FAB. Bar height matches the CSS
-// --nav-h variable so pb-nav math stays in sync.
-const ROW_H  = 60
+// --nav-h variable so pb-nav math stays in sync. 56 = 8 top + 26 icon +
+// 4 gap + 11 label + 7 bottom, on the 4px grid.
+const ROW_H  = 56
 const BAR_BG = 'color-mix(in srgb, var(--bg) 92%, transparent)'
 
+// Tab labels sit at the Caption role (11/500): Apple's tab bar uses 10pt,
+// ours is one step up because Heebo's x-height runs small.
 // `minWidth: 0` + ellipsis keeps long labels from pushing neighbouring cells
 // narrower (under flex this drifted the cell centers off the grid track).
 const TAB_LABEL = {
-  fontSize: 12,
+  fontSize: 11,
   lineHeight: 1, letterSpacing: '0.01em',
   minWidth: 0, maxWidth: '100%',
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 }
 const TAB_CELL = {
-  minWidth: 0,
-  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-  padding: '8px 4px 6px',
+  minWidth: 0, height: ROW_H,
+  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
+  padding: '4px 4px 0',
   WebkitTapHighlightColor: 'transparent',
 }
 
@@ -52,12 +55,12 @@ function Tab({ to, name, label }) {
   const location = useLocation()
   const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
   return (
-    <NavLink to={to} style={{ ...TAB_CELL, textDecoration: 'none' }}>
-      <ZIcon name={name} size={26} stroke={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-faint)'} />
+    <NavLink to={to} style={{ ...TAB_CELL, textDecoration: 'none' }} aria-current={active ? 'page' : undefined}>
+      <ZIcon name={name} size={26} stroke={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
       <span style={{
         ...TAB_LABEL,
         fontWeight: active ? 600 : 500,
-        color: active ? 'var(--ink)' : 'var(--ink-faint)',
+        color: active ? 'var(--ink)' : 'var(--ink-mute)',
       }}>
         {label}
       </span>
@@ -74,11 +77,11 @@ function MoreTab({ active, onClick, expanded, label }) {
       aria-expanded={expanded}
       style={{ ...TAB_CELL, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
     >
-      <MoreHorizontal size={26} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-faint)'} />
+      <MoreHorizontal size={26} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
       <span style={{
         ...TAB_LABEL,
         fontWeight: active ? 600 : 500,
-        color: active ? 'var(--ink)' : 'var(--ink-faint)',
+        color: active ? 'var(--ink)' : 'var(--ink-mute)',
       }}>
         {label}
       </span>
@@ -134,13 +137,15 @@ export function BottomNav({ connected }) {
               bottom: `calc(${ROW_H}px + max(env(safe-area-inset-bottom, 0px), 8px) + 12px)`,
               paddingLeft: 'max(12px, env(safe-area-inset-left, 0px))',
               paddingRight: 'max(12px, env(safe-area-inset-right, 0px))',
+              animation: 'ziggy-sheet-in var(--dur-enter) var(--ease-enter)',
             }}
           >
+            <style>{`@keyframes ziggy-sheet-in { from { transform: translateY(12px); opacity: 0 } to { transform: none; opacity: 1 } }`}</style>
             <div style={{
               background: 'var(--surface)', border: '0.5px solid var(--line)',
-              borderRadius: 20, boxShadow: 'var(--shadow-lg)',
-              padding: 10, display: 'grid',
-              gridTemplateColumns: `repeat(${moreItems.length}, 1fr)`, gap: 6,
+              borderRadius: 'var(--r-sheet)', boxShadow: 'var(--shadow-lg)',
+              padding: 8, display: 'grid',
+              gridTemplateColumns: `repeat(${moreItems.length}, 1fr)`, gap: 8,
             }}>
               {moreItems.map(({ to, Icon, label }) => {
                 const active = location.pathname.startsWith(to)
@@ -150,14 +155,14 @@ export function BottomNav({ connected }) {
                     onClick={() => { setShowMore(false); navigate(to) }}
                     style={{
                       background: active ? 'var(--surface-2)' : 'transparent',
-                      border: active ? '0.5px solid var(--line)' : 'none',
-                      cursor: 'pointer', borderRadius: 14,
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-                      padding: '14px 8px', fontFamily: 'inherit',
+                      border: active ? '0.5px solid var(--line)' : '0.5px solid transparent',
+                      cursor: 'pointer', borderRadius: 'var(--r-card)', minHeight: 64,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      padding: '12px 8px', fontFamily: 'inherit',
                     }}
                   >
-                    <Icon size={22} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
-                    <span style={{ fontSize: 11, fontWeight: 500, color: active ? 'var(--ink)' : 'var(--ink-mute)', letterSpacing: '0.01em' }}>
+                    <Icon size={24} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
+                    <span style={{ fontSize: 12, fontWeight: active ? 600 : 500, color: active ? 'var(--ink)' : 'var(--ink-mute)' }}>
                       {label}
                     </span>
                   </button>
@@ -184,17 +189,16 @@ export function BottomNav({ connected }) {
         {connected === false && (
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '3px 0', background: 'var(--err)', gap: 5,
+            padding: '4px 0', background: 'var(--err)', gap: 6,
           }}>
-            <WifiOff size={10} color="var(--on-accent)" />
-            <span style={{ fontSize: 10, color: 'var(--on-accent)', fontWeight: 500 }}>{t('common.offline')}</span>
+            <WifiOff size={12} color="var(--on-accent)" />
+            <span style={{ fontSize: 11, color: 'var(--on-accent)', fontWeight: 500 }}>{t('common.offline')}</span>
           </div>
         )}
 
         {/* Flat 5-tab bar — Home · Rooms · Ask · Devices · More.
-            Replaces the previous notched FAB pattern; the Ask tab is now
-            a regular tab with the sparkle icon. Glass background uses
-            color-mix on var(--bg) so it tints with the active palette. */}
+            Glass background uses color-mix on var(--bg) so it tints with
+            the active palette. */}
         <div style={{
           position: 'relative',
           background: BAR_BG,
@@ -205,7 +209,7 @@ export function BottomNav({ connected }) {
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
-            alignItems: 'end',
+            alignItems: 'stretch',
             height: ROW_H, maxWidth: 480, margin: '0 auto', padding: '0 4px',
           }}>
             {PRIMARY_TABS.map(p => <Tab key={p.to} to={p.to} name={p.name} label={t(p.labelKey)} />)}

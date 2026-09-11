@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { Zap, Hand, Puzzle } from 'lucide-react'
 import { useT, useLang } from '../../../lib/i18n'
 import { getAutomationTemplates, getSuggestedRoutines, listBlueprints } from '../../../lib/api'
+import { chipStyle } from '../../../lib/automations/styles'
 import TemplateCard from './TemplateCard'
 
 // ── TemplatesTab — the unified Library (2026-07-19 IA addendum A2/A4) ───────
@@ -87,22 +89,19 @@ function TemplatesTab({ onConfigureNative, onConfigureCommunity, onConfigureRout
     (category === '' || i.category === category)
   ), [items, setupFilter, category])
 
-  const chipStyle = active => ({
-    padding: '5px 13px', borderRadius: 999, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap',
-    background: active ? 'var(--ink)' : 'var(--surface)',
-    color: active ? 'var(--bg)' : 'var(--ink-mute)',
-    border: active ? 'none' : '0.5px solid var(--line)',
-    cursor: 'pointer', fontFamily: 'inherit',
-  })
+  // Category select shares the chip geometry (44 tall, capsule); the active
+  // state is surface-2 + ink + hairline like every other filter chip.
+  const catActive = category !== ''
+  const { background: catBg, ...catChip } = chipStyle(catActive)
 
   return (
     <div>
       {/* Filter chips: [ All | Not set up | By category ▾ ] */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button onClick={() => setSetupFilter('all')} style={chipStyle(setupFilter === 'all')}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button onClick={() => setSetupFilter('all')} aria-pressed={setupFilter === 'all'} style={chipStyle(setupFilter === 'all')}>
           {t('automations.templatesTab.filterAll')}
         </button>
-        <button onClick={() => setSetupFilter('notSetUp')} style={chipStyle(setupFilter === 'notSetUp')}>
+        <button onClick={() => setSetupFilter('notSetUp')} aria-pressed={setupFilter === 'notSetUp'} style={chipStyle(setupFilter === 'notSetUp')}>
           {t('automations.templatesTab.filterNotSetUp')}
         </button>
         <div style={{ position: 'relative', display: 'inline-flex' }}>
@@ -114,16 +113,13 @@ function TemplatesTab({ onConfigureNative, onConfigureCommunity, onConfigureRout
               // NOTE: use backgroundColor (longhand), NOT the `background`
               // shorthand — the shorthand resets backgroundImage and wipes the
               // arrow, leaving the native select's default control background.
-              padding: '5px 13px', borderRadius: 999, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap',
-              backgroundColor: category !== '' ? 'var(--ink)' : 'var(--surface)',
-              color: category !== '' ? 'var(--bg)' : 'var(--ink-mute)',
-              border: category !== '' ? 'none' : '0.5px solid var(--line)',
-              cursor: 'pointer', fontFamily: 'inherit',
+              ...catChip,
+              backgroundColor: catBg,
               appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
-              paddingInlineEnd: 26,
-              backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='${category !== '' ? 'white' : 'gray'}' d='M0 0h10L5 6z'/></svg>")`,
+              paddingInlineEnd: 36,
+              backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%236E5A48' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round' d='M1 1.5l5 5 5-5'/></svg>")`,
               backgroundRepeat: 'no-repeat',
-              backgroundPosition: isHe ? 'left 9px center' : 'right 9px center',
+              backgroundPosition: isHe ? 'left 14px center' : 'right 14px center',
             }}
             dir="auto"
           >
@@ -141,12 +137,12 @@ function TemplatesTab({ onConfigureNative, onConfigureCommunity, onConfigureRout
 
       {loading && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {[1,2,3].map(i => <div key={i} style={{ height: 74, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.5 }} />)}
+          {[1,2,3].map(i => <div key={i} style={{ height: 80, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.5 }} />)}
         </div>
       )}
 
       {!loading && filtered.length === 0 && (
-        <p style={{ textAlign: 'center', padding: '32px 0', fontSize: 13, color: 'var(--ink-faint)' }}>
+        <p className="z-subhead" style={{ textAlign: 'center', padding: '32px 0' }}>
           {t('automations.templatesTab.empty')}
         </p>
       )}
@@ -161,13 +157,17 @@ function TemplatesTab({ onConfigureNative, onConfigureCommunity, onConfigureRout
         const automatic = filtered.filter(i => i.kind === 'automatic')
         const ondemand  = filtered.filter(i => i.kind === 'ondemand')
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {automatic.length > 0 && (
-              <p className="z-eyebrow" style={{ margin: '2px 0 3px' }}>⚡ {t('automations.librarySectionAutomatic')}</p>
+              <p className="z-eyebrow" style={{ margin: '0 0 4px', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <Zap size={14} strokeWidth={1.75} aria-hidden="true" />{t('automations.librarySectionAutomatic')}
+              </p>
             )}
             {automatic.map(renderItem)}
             {ondemand.length > 0 && (
-              <p className="z-eyebrow" style={{ margin: '14px 0 3px' }}>👆 {t('automations.librarySectionOnDemand')}</p>
+              <p className="z-eyebrow" style={{ margin: '16px 0 4px', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <Hand size={14} strokeWidth={1.75} aria-hidden="true" />{t('automations.librarySectionOnDemand')}
+              </p>
             )}
             {ondemand.map(renderItem)}
           </div>
@@ -186,21 +186,19 @@ function CommunityCard({ template, isHe, t, onConfigure }) {
   const desc = (isHe && template.description_he) ? template.description_he : (template.description || '').split('\n')[0]
   return (
     <div style={{
-      padding: '14px 16px', borderRadius: 12,
+      padding: 12, borderRadius: 'var(--r-card)',
       background: 'var(--surface)', border: '0.5px solid var(--line)',
-      display: 'flex', alignItems: 'flex-start', gap: 12,
+      display: 'flex', alignItems: 'flex-start', gap: 16,
     }} dir="auto">
-      <div style={{
-        width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+      <div aria-hidden="true" style={{
+        width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'var(--bg-2)', fontSize: 18,
-      }}>{template.icon || '🧩'}</div>
+        background: 'var(--surface-2)', color: 'var(--ink-2)', fontSize: 20, lineHeight: 1,
+      }}>{template.icon || <Puzzle size={22} strokeWidth={1.75} />}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', margin: 0 }} dir="auto">{name}</p>
-        </div>
-        {desc && <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: 0, lineHeight: 1.4 }} dir="auto">{desc}</p>}
-        <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
+        <p className="z-headline" style={{ margin: '0 0 2px' }} dir="auto">{name}</p>
+        {desc && <p className="z-subhead" style={{ margin: 0 }} dir="auto">{desc}</p>}
+        <p className="z-footnote z-mono" style={{ margin: '4px 0 0', color: 'var(--ink-faint)' }}>
           {t('automations.communityInputCount', { n: (template.inputs || []).length })}
         </p>
       </div>
@@ -208,7 +206,7 @@ function CommunityCard({ template, isHe, t, onConfigure }) {
         <button
           onClick={() => onConfigure(template.blueprint_id || template.id)}
           className="z-btn-primary"
-          style={{ fontSize: 12, padding: '6px 12px', borderRadius: 9, whiteSpace: 'nowrap' }}
+          style={{ whiteSpace: 'nowrap' }}
         >
           {t('automations.template.configure')}
         </button>

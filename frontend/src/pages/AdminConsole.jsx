@@ -1,49 +1,43 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useT } from '../lib/i18n'
 
-function ToolCard({ title, badge, description, bullets, path, onOpen }) {
+function ToolCard({ title, badge, description, bullets, onOpen }) {
   const t = useT()
   return (
     <button
       onClick={onOpen}
+      className="z-card"
       style={{
-        background: 'var(--surface)',
-        border: '0.5px solid var(--line)',
-        borderRadius: 16,
         padding: 24,
         cursor: 'pointer',
-        textAlign: 'left',
+        textAlign: 'start',
         display: 'flex',
         flexDirection: 'column',
-        gap: 14,
-        transition: 'border-color 0.12s',
+        gap: 16,
+        transition: 'border-color var(--dur-press) var(--ease-standard)',
         fontFamily: 'inherit',
+        color: 'var(--ink)',
       }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--ink-mute)'}
+      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--line-2)'}
       onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line)'}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{
-          fontSize: 9, fontWeight: 700, letterSpacing: '0.09em',
-          fontFamily: '"IBM Plex Mono", monospace',
-          color: 'var(--ink-faint)',
-          border: '0.5px solid var(--line)',
-          padding: '2px 7px', borderRadius: 4,
-          textTransform: 'uppercase',
-        }}>
-          {badge}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <span className="z-chip">{badge}</span>
+        <span className="z-subhead" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          {t('adminConsole.open')}
+          <ChevronRight size={16} strokeWidth={1.75} className="icon-flip-rtl" />
         </span>
-        <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 500 }}>{t('adminConsole.open')}</span>
       </div>
       <div>
-        <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>{title}</p>
-        <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.6, marginBottom: 10 }}>{description}</p>
-        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <p className="z-headline" style={{ marginBottom: 4 }}>{title}</p>
+        <p className="z-subhead" style={{ marginBottom: 12 }}>{description}</p>
+        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {bullets.map(b => (
-            <li key={b} style={{ fontSize: 11, color: 'var(--ink-faint)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'var(--ink-faint)', flexShrink: 0 }} />
+            <li key={b} className="z-footnote" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--ink-faint)', flexShrink: 0 }} />
               {b}
             </li>
           ))}
@@ -65,13 +59,11 @@ export default function AdminConsole() {
 
   if (role !== 'super_admin') {
     return (
-      <div style={{ padding: 48, textAlign: 'center' }}>
-        <p style={{ color: 'var(--ink-faint)', fontSize: 14 }}>{t('adminConsole.restricted')}</p>
-        <button
-          onClick={() => navigate('/')}
-          style={{ marginTop: 16, fontSize: 13, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}
-        >
-          ← {t('adminConsole.backToZiggy')}
+      <div style={{ padding: 32, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+        <p className="z-body" style={{ color: 'var(--ink-mute)' }}>{t('adminConsole.restricted')}</p>
+        <button onClick={() => navigate('/')} className="z-btn-secondary">
+          <ChevronLeft size={18} strokeWidth={1.75} className="icon-flip-rtl" />
+          {t('adminConsole.backToZiggy')}
         </button>
       </div>
     )
@@ -83,7 +75,7 @@ export default function AdminConsole() {
       {/* Header */}
       <header style={{
         padding: '0 20px',
-        height: 52,
+        minHeight: 48,
         borderBottom: '0.5px solid var(--line)',
         background: 'var(--bg-2)',
         display: 'flex',
@@ -95,55 +87,38 @@ export default function AdminConsole() {
           onClick={() => navigate('/')}
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--ink-faint)', fontSize: 12, fontWeight: 500,
+            color: 'var(--ink-mute)', fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
             display: 'flex', alignItems: 'center', gap: 4,
-            padding: '4px 8px', borderRadius: 6,
+            padding: '0 8px', minHeight: 40, borderRadius: 'var(--r-ctl)',
           }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M15 18l-6-6 6-6"/>
-          </svg>
+          <ChevronLeft size={18} strokeWidth={1.75} className="icon-flip-rtl" />
           Ziggy
         </button>
 
-        <span style={{ color: 'var(--line)', fontSize: 16 }}>/</span>
+        <span style={{ color: 'var(--line-2)', fontSize: 15 }}>/</span>
 
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', flex: 1 }}>
+        <span className="z-headline" style={{ flex: 1 }}>
           {t('adminConsole.title')}
         </span>
 
-        <span style={{
-          fontSize: 9, fontWeight: 700, letterSpacing: '0.09em',
-          fontFamily: '"IBM Plex Mono", monospace',
-          color: 'var(--ink-faint)',
-          border: '0.5px solid var(--line)',
-          padding: '2px 7px', borderRadius: 4,
-          textTransform: 'uppercase',
-        }}>
-          {t('adminConsole.superAdminBadge')}
-        </span>
+        <span className="z-chip">{t('adminConsole.superAdminBadge')}</span>
       </header>
 
       {/* Content */}
       <main style={{
         flex: 1,
-        padding: '40px 20px 60px',
-        maxWidth: 760,
+        padding: '24px 20px 24px',
+        maxWidth: 'var(--page-max-w)',
         width: '100%',
         margin: '0 auto',
         boxSizing: 'border-box',
       }}>
-        <div style={{ marginBottom: 36 }}>
-          <h1 style={{
-            fontSize: 24, fontWeight: 700,
-            color: 'var(--ink)', marginBottom: 8,
-            letterSpacing: '-0.01em',
-          }}>
-            {t('adminConsole.heading')}
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.6 }}>
-            {t('adminConsole.intro')}
-          </p>
+        <div className="z-page-head">
+          <div>
+            <h1 className="z-display" style={{ margin: 0 }}>{t('adminConsole.heading')}</h1>
+            <p className="z-subhead" style={{ marginTop: 4 }}>{t('adminConsole.intro')}</p>
+          </div>
         </div>
 
         <div style={{

@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence, Reorder } from 'framer-motion'
+import { Plus } from 'lucide-react'
+import { T_ENTER } from '../../../lib/motion'
+import { chipStyle, fieldLabelStyle, warnNoteBox } from '../../../lib/automations/styles'
 import { Input, Textarea } from '../../ui/Input'
 import { Select } from '../../ui/Select'
 import { useT } from '../../../lib/i18n'
@@ -101,17 +104,13 @@ function AutomationWizard({ initial, onSave, onClose }) {
       primaryLabel={primaryLabel}
     >
       {wizardWarnings.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {wizardWarnings.map(w => (
             <div
               key={w.id || w.text}
               dir="auto"
-              style={{
-                padding: '8px 12px', borderRadius: 8, fontSize: 12.5, lineHeight: 1.45,
-                background: w.level === 'warn' ? 'rgba(255, 196, 0, 0.12)' : 'var(--surface)',
-                border: '0.5px solid ' + (w.level === 'warn' ? 'rgba(255, 196, 0, 0.45)' : 'var(--line)'),
-                color: 'var(--ink)',
-              }}
+              className="z-subhead"
+              style={{ ...(w.level === 'warn' ? warnNoteBox : { padding: '12px 16px', borderRadius: 'var(--r-ctl)', background: 'var(--surface)', border: '0.5px solid var(--line)' }), color: 'var(--ink)' }}
             >
               {w.text}
             </div>
@@ -119,25 +118,19 @@ function AutomationWizard({ initial, onSave, onClose }) {
         </div>
       )}
       <AnimatePresence mode="wait">
-        <motion.div key={step} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.15 }}>
+        <motion.div key={step} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={T_ENTER}>
           {step === 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Input label={t('automations.namePlaceholder')} placeholder={t('automations.wizard.namePlaceholder')} value={name} onChange={e => setName(e.target.value)} dir="auto" />
               <Textarea label={t('automations.wizard.descriptionLabel')} placeholder={t('automations.wizard.descriptionPlaceholder')} value={description} onChange={e => setDescription(e.target.value)} rows={3} dir="auto" />
               {availableRooms.length > 0 && (
                 <div>
-                  <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>{t('automations.wizard.roomsLabel')}</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  <p style={{ ...fieldLabelStyle, marginBottom: 8 }}>{t('automations.wizard.roomsLabel')}</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {availableRooms.map(r => {
                       const sel = selectedRooms.includes(r.id)
                       return (
-                        <button key={r.id} type="button" onClick={() => toggleRoom(r.id)} style={{
-                          padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500,
-                          background: sel ? 'var(--ink)' : 'var(--surface)',
-                          color: sel ? 'var(--bg)' : 'var(--ink-mute)',
-                          border: sel ? 'none' : '0.5px solid var(--line)',
-                          cursor: 'pointer', fontFamily: 'inherit',
-                        }}>{r.name}</button>
+                        <button key={r.id} type="button" onClick={() => toggleRoom(r.id)} aria-pressed={sel} style={chipStyle(sel)}>{r.name}</button>
                       )
                     })}
                   </div>
@@ -148,7 +141,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
           {step === 1 && <TriggerEditor trigger={trigger} onChange={setTrigger} />}
           {step === 2 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 2 }}>
+              <p className="z-subhead" style={{ margin: 0 }}>
                 {t('automations.wizard.conditionsHint')}
               </p>
               {conditions.map((cond, i) => (
@@ -162,47 +155,40 @@ function AutomationWizard({ initial, onSave, onClose }) {
                 </div>
               ))}
               <button
+                type="button"
                 onClick={() => setConditions(cs => [...cs, { type: 'entity', entity_id: '', operator: 'is', value: 'on', _key: safeUuid() }])}
                 className="z-btn-secondary"
-                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                style={{ width: '100%', fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', border: '0.5px dashed var(--line-2)' }}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                <Plus size={18} strokeWidth={1.75} aria-hidden="true" />
                 {conditions.length === 0 ? t('automations.wizard.addCondition') : t('automations.wizard.addAnotherCondition')}
               </button>
             </div>
           )}
           {step === 3 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Reorder.Group axis="y" values={actions} onReorder={setActions} style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {actions.map((action, i) => (
                   <DraggableActionRow key={action._key} action={action} index={i} onChange={v => updateAction(i, v)} onRemove={() => removeAction(action._key)} collapsed={collapsedActions.has(action._key)} onToggleCollapse={() => toggleCollapse(action._key)} />
                 ))}
               </Reorder.Group>
-              <button onClick={addAction} className="z-btn-secondary" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              <button type="button" onClick={addAction} className="z-btn-secondary" style={{ width: '100%', fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', border: '0.5px dashed var(--line-2)' }}>
+                <Plus size={18} strokeWidth={1.75} aria-hidden="true" />
                 {t('automations.wizard.addAction')}
               </button>
             </div>
           )}
           {step === 4 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {blocker && (
-                <div
-                  dir="auto"
-                  style={{
-                    padding: '10px 13px', borderRadius: 9, fontSize: 12.5, lineHeight: 1.45,
-                    background: 'rgba(255, 196, 0, 0.12)',
-                    border: '0.5px solid rgba(255, 196, 0, 0.45)',
-                    color: 'var(--ink)',
-                  }}
-                >
+                <div dir="auto" className="z-subhead" style={{ ...warnNoteBox, color: 'var(--ink)' }}>
                   {t(`automations.wizard.blocked.${blocker}`)}
                 </div>
               )}
               <ReviewPanel name={name} description={description} trigger={trigger} conditions={conditions.map(({ _key, ...rest }) => rest)} actions={actions.map(({ _key, ...rest }) => ({ ...rest, _key }))} />
               <div>
                 <Select label={t('automations.mode.label')} options={getRunModes()} value={mode} onChange={e => setMode(e.target.value)} />
-                <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: '4px 0 0', lineHeight: 1.4 }} dir="auto">
+                <p className="z-footnote" style={{ margin: '4px 0 0' }} dir="auto">
                   {t('automations.mode.hint')}
                 </p>
               </div>

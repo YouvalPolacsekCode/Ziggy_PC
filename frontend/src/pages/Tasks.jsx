@@ -7,16 +7,19 @@ import { useTaskStore } from '../stores/taskStore'
 import { useUIStore } from '../stores/uiStore'
 import { formatDate, isHebrew } from '../lib/utils'
 import { useT, useTranslatedName } from '../lib/i18n'
+import { T_STATE, T_ENTER } from '../lib/motion'
 
-const PRIORITY_COLOR = { high: 'var(--accent)', medium: 'var(--warn)', low: 'var(--line-2)' }
+// Priority is carried by the ring around the checkbox: high = ink, medium =
+// warn (a fill, so the raw token is fine), low = hairline. Never accent.
+const PRIORITY_COLOR = { high: 'var(--ink)', medium: 'var(--warn)', low: 'var(--line-2)' }
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
-function ZIcon({ name, size = 14 }) {
-  const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' }
+function ZIcon({ name, size = 18 }) {
+  const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round' }
   switch (name) {
     case 'circle':    return <svg {...p}><circle cx="12" cy="12" r="9"/></svg>
     case 'check-c':   return <svg {...p}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
-    case 'check':     return <svg {...p}><path d="M20 6L9 17l-5-5"/></svg>
+    case 'check':     return <svg {...p} strokeWidth={2.25}><path d="M20 6L9 17l-5-5"/></svg>
     case 'plus':      return <svg {...p}><path d="M12 5v14M5 12h14"/></svg>
     case 'trash':     return <svg {...p}><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
     case 'edit':      return <svg {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -29,6 +32,13 @@ function ZIcon({ name, size = 14 }) {
   }
 }
 
+// Borderless 44×44 target for a row-level icon action.
+const ghostIcon = {
+  width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'none', border: 'none',
+  cursor: 'pointer', color: 'var(--ink-mute)', padding: 0, flexShrink: 0,
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+}
+
 // ── Sub-item row ──────────────────────────────────────────────────────────────
 function SubItem({ item, onToggle }) {
   const rtl = isHebrew(item.text)
@@ -37,16 +47,16 @@ function SubItem({ item, onToggle }) {
       onClick={onToggle}
       dir={rtl ? 'rtl' : 'ltr'}
       style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        width: '100%', padding: '4px 0', background: 'none', border: 'none', cursor: 'pointer',
-        textAlign: 'start',
+        display: 'flex', alignItems: 'center', gap: 12,
+        width: '100%', minHeight: 40, padding: '4px 0', background: 'none', border: 'none', cursor: 'pointer',
+        textAlign: 'start', fontFamily: 'inherit',
       }}
     >
-      <span style={{ color: item.done ? 'var(--ok)' : 'var(--line-2)', flexShrink: 0 }}>
-        <ZIcon name={item.done ? 'check-c' : 'square'} size={13} />
+      <span style={{ color: item.done ? 'var(--ok)' : 'var(--ink-faint)', flexShrink: 0, display: 'flex' }}>
+        <ZIcon name={item.done ? 'check-c' : 'square'} size={20} />
       </span>
       <span style={{
-        fontSize: 12, color: item.done ? 'var(--ink-faint)' : 'var(--ink-2)',
+        fontSize: 13, color: item.done ? 'var(--ink-mute)' : 'var(--ink-2)',
         textDecoration: item.done ? 'line-through' : 'none',
       }}>
         {item.text}
@@ -57,6 +67,7 @@ function SubItem({ item, onToggle }) {
 
 // ── Task row ──────────────────────────────────────────────────────────────────
 const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onDelete, onEdit }, ref) {
+  const t = useT()
   const [expanded, setExpanded] = useState(false)
   const rawTitle = task.task || task.title
   const displayTitle = useTranslatedName(rawTitle)
@@ -72,85 +83,93 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
       ref={ref}
       layout
       initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -16 }}
+      transition={T_ENTER}
       style={{
         display: 'flex', flexDirection: 'column',
-        padding: '11px 12px', borderRadius: 12,
+        padding: '8px 16px 8px 12px', borderRadius: 'var(--r-card)', minHeight: 48,
         background: 'var(--surface)',
         border: '0.5px solid var(--line)',
-        borderLeft: isOverdue ? '3px solid var(--err)' : '0.5px solid var(--line)',
+        borderInlineStart: isOverdue ? '3px solid var(--err)' : '0.5px solid var(--line)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        {/* Priority ring + check */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        {/* Priority ring + check: a 24px control inside a 44px target */}
         <button
           onClick={() => onToggle(task)}
+          aria-label={isDone ? t('tasks.filterDone') : t('tasks.filterPending')}
+          aria-pressed={!!isDone}
           style={{
-            width: 20, height: 20, borderRadius: '50%', flexShrink: 0, marginTop: 1,
-            border: `1.5px solid ${isDone ? 'var(--ok)' : pColor}`,
-            background: isDone ? 'var(--ok)' : 'transparent',
+            width: 40, height: 40, flexShrink: 0, background: 'none', border: 'none', padding: 0,
             cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: isDone ? '#fff' : 'transparent',
           }}
         >
-          {isDone && <ZIcon name="check" size={11} />}
+          <span style={{
+            width: 24, height: 24, borderRadius: '50%', boxSizing: 'border-box',
+            border: `1.5px solid ${isDone ? 'var(--ok)' : pColor}`,
+            background: isDone ? 'var(--ok)' : 'transparent',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: isDone ? 'var(--on-accent)' : 'transparent',
+            transition: 'background var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
+          }}>
+            {isDone && <ZIcon name="check" size={14} />}
+          </span>
         </button>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, paddingTop: 11 }}>
           <p
             dir="auto"
             style={{
-              fontSize: 14, fontWeight: task.priority === 'high' && !isDone ? 600 : 500,
-              color: isDone ? 'var(--ink-faint)' : 'var(--ink)',
+              fontSize: 15, fontWeight: task.priority === 'high' && !isDone ? 600 : 500,
+              color: isDone ? 'var(--ink-mute)' : 'var(--ink)',
               lineHeight: 1.3,
               textDecoration: isDone ? 'line-through' : 'none',
             }}
           >
             {displayTitle}
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
-            {task.due && (
-              <span style={{
-                fontSize: 10.5, color: isOverdue ? 'var(--accent)' : 'var(--ink-faint)',
-                fontFamily: '"IBM Plex Mono", monospace',
-                display: 'flex', alignItems: 'center', gap: 3,
-              }}>
-                <ZIcon name="cal" size={10} />
-                {formatDate(task.due)}
-              </span>
-            )}
-            {task.reminder && (
-              <span style={{
-                fontSize: 10.5, color: 'var(--ink-faint)',
-                fontFamily: '"IBM Plex Mono", monospace',
-                display: 'flex', alignItems: 'center', gap: 3,
-              }}>
-                <ZIcon name="clock" size={10} />
-                {task.reminder}
-              </span>
-            )}
-            {items.length > 0 && (
-              <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
-                {doneItems}/{items.length}
-              </span>
-            )}
-          </div>
+          {(task.due || task.reminder || items.length > 0) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
+              {task.due && (
+                <span style={{
+                  fontSize: 12, color: isOverdue ? 'var(--err-text)' : 'var(--ink-mute)',
+                  fontVariantNumeric: 'tabular-nums', display: 'flex', alignItems: 'center', gap: 4,
+                }}>
+                  <ZIcon name="cal" size={14} />
+                  {formatDate(task.due)}
+                </span>
+              )}
+              {task.reminder && (
+                <span style={{
+                  fontSize: 12, color: 'var(--ink-mute)',
+                  fontVariantNumeric: 'tabular-nums', display: 'flex', alignItems: 'center', gap: 4,
+                }}>
+                  <ZIcon name="clock" size={14} />
+                  {task.reminder}
+                </span>
+              )}
+              {items.length > 0 && (
+                <span style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
+                  {doneItems}/{items.length}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Actions */}
-        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+        <div style={{ display: 'flex', flexShrink: 0 }}>
           {hasExtras && (
-            <button onClick={() => setExpanded(v => !v)} style={{
-              background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4,
-              transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s',
-            }}>
-              <ZIcon name="chev-d" size={13} />
+            <button onClick={() => setExpanded(v => !v)} style={ghostIcon} aria-expanded={expanded} aria-label={t('tasks.checklistItems')}>
+              <span style={{ display: 'flex', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)' }}>
+                <ZIcon name="chev-d" size={18} />
+              </span>
             </button>
           )}
-          <button onClick={() => onEdit(task)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }}>
-            <ZIcon name="edit" size={13} />
+          <button onClick={() => onEdit(task)} style={ghostIcon} aria-label={t('common.edit')} title={t('common.edit')}>
+            <ZIcon name="edit" size={18} />
           </button>
-          <button onClick={() => onDelete(task.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4 }}>
-            <ZIcon name="trash" size={13} />
+          <button onClick={() => onDelete(task.id)} style={{ ...ghostIcon, color: 'var(--err-text)' }} aria-label={t('common.delete')} title={t('common.delete')}>
+            <ZIcon name="trash" size={18} />
           </button>
         </div>
       </div>
@@ -160,14 +179,14 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
         {expanded && hasExtras && (
           <motion.div
             initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.15 }}
+            exit={{ opacity: 0, height: 0 }} transition={T_STATE}
             style={{ overflow: 'hidden' }}
           >
-            <div style={{ paddingInlineStart: 32, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ paddingInlineStart: 52, paddingTop: 4, paddingBottom: 4, display: 'flex', flexDirection: 'column' }}>
               {task.description && (
                 <p
                   dir={isHebrew(task.description) ? 'rtl' : 'ltr'}
-                  style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5 }}
+                  style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5, marginBottom: 4 }}
                 >
                   {task.description}
                 </p>
@@ -199,36 +218,36 @@ function TaskForm({ values, onChange }) {
   const toggleItem = (idx) => onChange({ items: items.map((it, i) => i === idx ? { ...it, done: !it.done } : it) })
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Input label={t('tasks.taskLabel')} placeholder={t('tasks.taskPlaceholder')} value={taskText} onChange={e => onChange({ taskText: e.target.value })} dir="auto" autoFocus onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()} />
       <Textarea label={t('tasks.descriptionLabel')} placeholder={t('tasks.descriptionPlaceholder')} value={description} onChange={e => onChange({ description: e.target.value })} dir="auto" rows={2} />
       <Input label={t('tasks.dueDateOptional')} type="datetime-local" value={due} onChange={e => onChange({ due: e.target.value })} />
       <Select label={t('tasks.priorityLabel')} value={priority} onChange={e => onChange({ priority: e.target.value })} options={[{ value: 'high', label: t('tasks.priorityHigh') }, { value: 'medium', label: t('tasks.priorityMedium') }, { value: 'low', label: t('tasks.priorityLow') }]} />
 
       <div>
-        <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>{t('tasks.checklistItems')}</p>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-          <input
-            value={itemInput}
-            onChange={e => onChange({ itemInput: e.target.value })}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
-            placeholder={t('tasks.addItemPlaceholder')}
-            dir="auto"
-            className="z-input"
-            style={{ height: 36, padding: '0 12px', fontSize: 13 }}
-          />
-          <button onClick={addItem} className="z-btn-secondary" style={{ padding: '0 14px', borderRadius: 9, height: 36, whiteSpace: 'nowrap' }}>{t('tasks.addBtn')}</button>
+        <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 4 }}>{t('tasks.checklistItems')}</p>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Input
+              value={itemInput}
+              onChange={e => onChange({ itemInput: e.target.value })}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
+              placeholder={t('tasks.addItemPlaceholder')}
+              dir="auto"
+            />
+          </div>
+          <button onClick={addItem} className="z-btn-secondary" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{t('tasks.addBtn')}</button>
         </div>
         {items.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 140, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 180, overflowY: 'auto' }}>
             {items.map((item, idx) => (
-              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button onClick={() => toggleItem(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: item.done ? 'var(--ok)' : 'var(--line-2)', padding: 0, flexShrink: 0 }}>
-                  <ZIcon name={item.done ? 'check-c' : 'square'} size={14} />
+              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 40 }}>
+                <button onClick={() => toggleItem(idx)} style={{ ...ghostIcon, color: item.done ? 'var(--ok)' : 'var(--ink-faint)' }} aria-pressed={!!item.done} aria-label={item.text}>
+                  <ZIcon name={item.done ? 'check-c' : 'square'} size={20} />
                 </button>
-                <span dir={isHebrew(item.text) ? 'rtl' : 'ltr'} style={{ flex: 1, fontSize: 12, color: item.done ? 'var(--ink-faint)' : 'var(--ink-2)', textDecoration: item.done ? 'line-through' : 'none' }}>{item.text}</span>
-                <button onClick={() => removeItem(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 0 }}>
-                  <ZIcon name="x" size={13} />
+                <span dir={isHebrew(item.text) ? 'rtl' : 'ltr'} style={{ flex: 1, fontSize: 13, color: item.done ? 'var(--ink-mute)' : 'var(--ink-2)', textDecoration: item.done ? 'line-through' : 'none' }}>{item.text}</span>
+                <button onClick={() => removeItem(idx)} style={ghostIcon} aria-label={t('common.remove')}>
+                  <ZIcon name="x" size={18} />
                 </button>
               </div>
             ))}
@@ -295,9 +314,9 @@ function TaskGroup({ label, count, tint, tasks, ...rowProps }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span style={{ width: 4, height: 14, borderRadius: 2, background: tint, flexShrink: 0 }} />
         <p className="z-eyebrow">{label}</p>
-        <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace', marginInlineStart: 'auto' }}>{count}</span>
+        <span style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', marginInlineStart: 'auto' }}>{count}</span>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <AnimatePresence mode="popLayout">
           {tasks.map(t => <TaskRow key={t.id || t.task} task={t} {...rowProps} />)}
         </AnimatePresence>
@@ -356,39 +375,35 @@ export default function Tasks() {
   const rowProps = { onToggle: handleToggle, onUpdateItems: handleUpdateItems, onDelete: handleDelete, onEdit: setEditTask }
 
   return (
-    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 24px' }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div className="z-page-head">
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('tasks.eyebrow')}</p>
-          <h1 className="z-display" style={{ fontSize: 26, margin: 0 }}>
+          <p className="z-eyebrow">{t('tasks.eyebrow')}</p>
+          <h1 className="z-display" style={{ margin: 0 }}>
             {pendingCount > 0 ? t('tasks.pendingHeader', { n: pendingCount }) : t('tasks.allClear')}
           </h1>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontFamily: '"IBM Plex Mono", monospace' }}>
+          <p className="z-footnote" style={{ fontVariantNumeric: 'tabular-nums' }}>
             {t('tasks.totalCount', { n: tasks.length })}
           </p>
         </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="z-btn-primary"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 10 }}
-        >
-          <ZIcon name="plus" size={14} />
+        <button onClick={() => setShowAdd(true)} className="z-btn-primary" style={{ flexShrink: 0 }}>
+          <ZIcon name="plus" size={18} />
           {t('tasks.newTask')}
         </button>
       </div>
 
       {/* Filter tabs — segmented pill */}
-      <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 12, marginBottom: 22 }}>
+      <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--surface-2)', borderRadius: 'var(--r-ctl)', marginBottom: 24 }}>
         {FILTERS.map(f => (
-          <button key={f.id} onClick={() => setFilter(f.id)} style={{
-            flex: 1, padding: '7px 0', borderRadius: 9, fontFamily: 'inherit', cursor: 'pointer',
+          <button key={f.id} onClick={() => setFilter(f.id)} aria-pressed={filter === f.id} style={{
+            flex: 1, minHeight: 40, padding: '0 8px', borderRadius: 'var(--r-chip)', fontFamily: 'inherit', cursor: 'pointer',
             background: filter === f.id ? 'var(--surface)' : 'transparent',
-            border: 'none', fontSize: 12, fontWeight: 600,
+            border: 'none', fontSize: 13, fontWeight: 600,
             color: filter === f.id ? 'var(--ink)' : 'var(--ink-mute)',
-            boxShadow: filter === f.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
-            transition: 'background 0.15s',
+            boxShadow: filter === f.id ? 'var(--shadow-sm)' : 'none',
+            transition: 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard)',
           }}>
             {f.label}
           </button>
@@ -397,34 +412,35 @@ export default function Tasks() {
 
       {/* Loading skeleton */}
       {loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[1,2,3,4].map(i => (
-            <div key={i} style={{ height: 52, borderRadius: 11, background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />
+            <div key={i} style={{ height: 56, borderRadius: 'var(--r-card)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }} />
           ))}
         </div>
       )}
 
       {/* Empty state */}
       {!loading && filtered.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--ink-faint)' }}>
-          <p className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>
+        <div style={{ textAlign: 'center', padding: 32 }}>
+          <p style={{ fontSize: 15, color: 'var(--ink)', marginBottom: 16 }}>
             {filter === 'pending' ? t('tasks.allCaughtUp') : t('tasks.nothingHere')}
           </p>
+          <button onClick={() => setShowAdd(true)} className="z-btn-secondary">{t('tasks.newTask')}</button>
         </div>
       )}
 
       {/* Grouped view */}
       {!loading && groupedView && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           {(todayTasks.length > 0 || weekTasks.length > 0 || laterTasks.length > 0) ? (
             <>
-              <TaskGroup label={t('tasks.today')} count={todayTasks.length} tint="var(--accent)" tasks={todayTasks} {...rowProps} />
+              <TaskGroup label={t('tasks.today')} count={todayTasks.length} tint="var(--ink)" tasks={todayTasks} {...rowProps} />
               <TaskGroup label={t('tasks.thisWeek')} count={weekTasks.length} tint="var(--warn)" tasks={weekTasks} {...rowProps} />
               <TaskGroup label={t('tasks.laterNoDate')} count={laterTasks.length} tint="var(--line-2)" tasks={laterTasks} {...rowProps} />
             </>
           ) : (
             filtered.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <AnimatePresence mode="popLayout">
                   {filtered.map(t => <TaskRow key={t.id || t.task} task={t} {...rowProps} />)}
                 </AnimatePresence>
@@ -436,7 +452,7 @@ export default function Tasks() {
 
       {/* Done view — flat list */}
       {!loading && !groupedView && done.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <AnimatePresence mode="popLayout">
             {done.map(t => <TaskRow key={t.id || t.task} task={t} {...rowProps} />)}
           </AnimatePresence>

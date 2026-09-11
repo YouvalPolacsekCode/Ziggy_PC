@@ -22,6 +22,13 @@ function _fmtAgo(iso) {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
+// 44×44 quiet icon target used for the per-signal dismiss.
+const ICON_BTN = {
+  width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  background: 'transparent', border: 'none', padding: 0,
+}
+
 function SignalRow({ signal, devices, onAssigned, onDismissed }) {
   const t = useT()
   const [deviceId, setDeviceId] = useState('')
@@ -62,25 +69,24 @@ function SignalRow({ signal, devices, onAssigned, onDismissed }) {
     }
   }
 
+  const canBind = !busy && !!deviceId && !!commandName.trim()
+
   return (
-    <div style={{
-      padding: 12, borderRadius: 11, border: '0.5px solid var(--line)',
-      background: 'var(--surface)', marginBottom: 8,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+    <div className="z-card" style={{ padding: 12, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
         <div style={{
-          width: 30, height: 30, borderRadius: 9,
-          background: 'color-mix(in srgb, var(--accent) 15%, transparent)',
+          width: 40, height: 40, borderRadius: 'var(--r-ctl)',
+          background: 'var(--surface-2)', color: 'var(--ink-2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
         }}>
-          <Radio size={14} style={{ color: 'var(--accent)' }} />
+          <Radio size={20} strokeWidth={1.75} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>
+          <p className="z-headline truncate" style={{ margin: 0 }}>
             {t('unassignedSig.unknownSignal')} {signal.count > 1 ? `×${signal.count}` : ''}
           </p>
-          <p className="z-mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)', margin: 0 }}>
+          <p className="z-footnote z-mono truncate" style={{ margin: 0 }}>
             {_fmtAgo(signal.last_seen_at || signal.received_at)}
             {signal.fingerprint ? ` · fp ${signal.fingerprint.slice(0, 8)}` : ''}
             {signal.pulse_count ? ` · ${signal.pulse_count} pulses` : ''}
@@ -91,28 +97,20 @@ function SignalRow({ signal, devices, onAssigned, onDismissed }) {
           onClick={handleDismiss}
           disabled={busy}
           title={t('unassignedSig.dismissTitle')}
-          style={{
-            width: 28, height: 28, borderRadius: 8,
-            background: 'transparent', border: '0.5px solid var(--line)',
-            color: 'var(--ink-faint)', cursor: busy ? 'wait' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-          }}
+          aria-label={t('unassignedSig.dismissTitle')}
+          className="hover:bg-surface-2 transition-colors"
+          style={{ ...ICON_BTN, color: 'var(--err-text)', cursor: busy ? 'wait' : 'pointer' }}
         >
-          <Trash2 size={13} />
+          <Trash2 size={18} strokeWidth={1.75} />
         </button>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <select
           value={deviceId}
           onChange={(e) => { setDeviceId(e.target.value); setCommandName('') }}
-          style={{
-            flex: '1 1 140px', minWidth: 0,
-            padding: '7px 9px', borderRadius: 9, fontSize: 12,
-            background: 'var(--surface-2)', border: '0.5px solid var(--line)',
-            color: 'var(--ink)',
-          }}
+          className="z-input"
+          style={{ flex: '1 1 160px', minWidth: 0, width: 'auto' }}
         >
           <option value="">{t('unassignedSig.pickDevice')}</option>
           {devices.map((d) => (
@@ -128,18 +126,14 @@ function SignalRow({ signal, devices, onAssigned, onDismissed }) {
           onChange={(e) => setCommandName(e.target.value)}
           placeholder={t('unassignedSig.commandPlaceholder')}
           disabled={!deviceId}
-          style={{
-            flex: '1 1 120px', minWidth: 0,
-            padding: '7px 9px', borderRadius: 9, fontSize: 12,
-            background: 'var(--surface-2)', border: '0.5px solid var(--line)',
-            color: 'var(--ink)',
-          }}
+          className="z-input"
+          style={{ flex: '1 1 140px', minWidth: 0, width: 'auto' }}
         />
         {device && (
           <datalist id={`cmd-${signal.id}`}>
             {commandOptions.map((c) => (
               <option key={c} value={c}>
-                {learnedSet.has(c) ? '(already learned)' : ''}
+                {learnedSet.has(c) ? `(${t('unassignedSig.alreadyLearned')})` : ''}
               </option>
             ))}
           </datalist>
@@ -147,16 +141,11 @@ function SignalRow({ signal, devices, onAssigned, onDismissed }) {
 
         <button
           onClick={handleAssign}
-          disabled={busy || !deviceId || !commandName.trim()}
-          style={{
-            padding: '7px 13px', borderRadius: 9, fontSize: 12, fontWeight: 600,
-            background: 'var(--ink)', color: 'var(--bg)', border: 'none',
-            cursor: busy || !deviceId ? 'not-allowed' : 'pointer',
-            opacity: busy || !deviceId || !commandName.trim() ? 0.5 : 1,
-            display: 'flex', alignItems: 'center', gap: 5,
-          }}
+          disabled={!canBind}
+          className="z-btn-secondary"
+          style={{ cursor: canBind ? 'pointer' : 'not-allowed', opacity: canBind ? 1 : 0.5, flexShrink: 0 }}
         >
-          <Send size={11} /> Bind
+          <Send size={16} strokeWidth={1.75} /> {t('unassignedSig.bind')}
         </button>
       </div>
     </div>
@@ -200,33 +189,26 @@ export default function UnassignedSignalsPanel({ open, onClose, refreshSignal })
 
   return (
     <Modal open={open} onClose={onClose} title={t('unassignedSig.title')} maxWidth={560}>
-      <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 14, lineHeight: 1.5 }}>
+      <p className="z-subhead" style={{ marginBottom: 16 }}>
         {t('unassignedSig.help')}
       </p>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <button
           onClick={refresh}
           disabled={loading}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            padding: '6px 12px', borderRadius: 9, fontSize: 11.5, fontWeight: 500,
-            background: 'var(--surface-2)', border: '0.5px solid var(--line)',
-            color: 'var(--ink-mute)', cursor: 'pointer',
-          }}
+          className="z-btn-secondary"
+          style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)' }}
         >
-          <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+          {/* 1s linear spin, only while a load is in flight */}
+          <RefreshCw size={16} strokeWidth={1.75} className={loading ? 'z-spin' : ''} />
           {t('common.refresh')}
         </button>
         {signals.length > 0 && (
           <button
             onClick={handleClearAll}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '6px 12px', borderRadius: 9, fontSize: 11.5, fontWeight: 500,
-              background: 'transparent', border: '0.5px solid var(--line)',
-              color: 'var(--warn)', cursor: 'pointer',
-            }}
+            className="z-btn-secondary"
+            style={{ fontSize: 13, fontWeight: 500, color: 'var(--err-text)' }}
           >
             {t('unassignedSig.clearAll')}
           </button>
@@ -234,16 +216,16 @@ export default function UnassignedSignalsPanel({ open, onClose, refreshSignal })
       </div>
 
       {loading && signals.length === 0 && (
-        <p style={{ fontSize: 12, color: 'var(--ink-faint)', textAlign: 'center', padding: 20 }}>
+        <p className="z-subhead" style={{ textAlign: 'center', padding: 20 }}>
           {t('common.loading')}
         </p>
       )}
 
       {!loading && signals.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '32px 12px', color: 'var(--ink-faint)' }}>
-          <Radio size={28} style={{ opacity: 0.4, marginBottom: 8 }} />
-          <p style={{ fontSize: 13, color: 'var(--ink-2)', fontWeight: 600 }}>{t('unassignedSig.noneTitle')}</p>
-          <p style={{ fontSize: 11, marginTop: 4 }}>
+        <div style={{ textAlign: 'center', padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <Radio size={28} strokeWidth={1.75} style={{ color: 'var(--ink-faint)', marginBottom: 8 }} />
+          <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{t('unassignedSig.noneTitle')}</p>
+          <p className="z-subhead" style={{ margin: 0 }}>
             {t('unassignedSig.noneHint')}
           </p>
         </div>

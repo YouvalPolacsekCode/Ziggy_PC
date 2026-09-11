@@ -64,14 +64,13 @@ function LangPicker({ lang, voices, active, onPickAndSave }) {
 
   if (voices.length === 0) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em',
-                      textTransform: 'uppercase', color: 'var(--ink-mute)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <p className="z-eyebrow">
           {t('voiceSettings.replyLanguageLabel', { lang: LANG_LABEL[lang] })}
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--ink-faint)', padding: 14,
+        </p>
+        <div style={{ fontSize: 13, color: 'var(--ink-mute)', padding: 12,
                       background: 'var(--surface)', border: '0.5px solid var(--line)',
-                      borderRadius: 10 }}>
+                      borderRadius: 'var(--r-ctl)' }}>
           {t('voiceSettings.noVoicesForLang')}
         </div>
       </div>
@@ -79,7 +78,7 @@ function LangPicker({ lang, voices, active, onPickAndSave }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <Select
@@ -94,21 +93,14 @@ function LangPicker({ lang, voices, active, onPickAndSave }) {
           disabled={busy || !active}
           title={t('voiceSettings.preview')}
           aria-label={t('voiceSettings.preview')}
-          style={{
-            height: 40, width: 40, flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'var(--surface)',
-            border: '0.5px solid var(--line)', borderRadius: 10,
-            color: busy ? 'var(--accent)' : 'var(--ink)',
-            cursor: busy || !active ? 'wait' : 'pointer',
-            transition: 'border-color 0.12s',
-          }}
+          className="z-icon-btn"
+          style={{ cursor: busy || !active ? 'wait' : 'pointer' }}
         >
-          {busy ? <Volume2 size={15} /> : <Play size={15} />}
+          {busy ? <Volume2 size={18} /> : <Play size={18} />}
         </button>
       </div>
       {selected?.description && (
-        <div style={{ fontSize: 11, color: 'var(--ink-mute)', paddingLeft: 2, lineHeight: 1.4 }}>
+        <div style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.4 }}>
           {selected.description}
         </div>
       )}
@@ -155,7 +147,7 @@ export default function VoiceSection() {
   if (loading) {
     return (
       <Card>
-        <div style={{ padding: 24, fontSize: 13, color: 'var(--ink-faint)' }}>
+        <div style={{ padding: 24, fontSize: 13, color: 'var(--ink-mute)' }}>
           {t('common.loading')}
         </div>
       </Card>
@@ -166,16 +158,16 @@ export default function VoiceSection() {
   const enVoices = (data.available || []).filter(v => (v.languages || []).includes('en'))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {!data.configured && (
         <div style={{
-          display: 'flex', gap: 10, alignItems: 'flex-start',
-          padding: 14, borderRadius: 12,
+          display: 'flex', gap: 12, alignItems: 'flex-start',
+          padding: 12, borderRadius: 'var(--r-ctl)',
           background: 'color-mix(in srgb, var(--warn) 10%, var(--surface))',
           border: '0.5px solid color-mix(in srgb, var(--warn) 50%, var(--line))',
         }}>
-          <AlertCircle size={14} style={{ color: 'var(--warn)', marginTop: 2, flexShrink: 0 }} />
-          <div style={{ fontSize: 12, color: 'var(--ink)', lineHeight: 1.5 }}>
+          <AlertCircle size={20} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} />
+          <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.5 }}>
             {t('voiceSettings.notConfigured')}
           </div>
         </div>
@@ -183,7 +175,7 @@ export default function VoiceSection() {
 
       {error && (
         <div style={{
-          padding: 12, borderRadius: 10, fontSize: 12,
+          padding: 12, borderRadius: 'var(--r-ctl)', fontSize: 13,
           background: 'color-mix(in srgb, var(--err) 8%, var(--surface))',
           border: '0.5px solid color-mix(in srgb, var(--err) 45%, var(--line))',
           color: 'var(--ink)',
@@ -193,12 +185,12 @@ export default function VoiceSection() {
       )}
 
       <Card>
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
               {t('voiceSettings.title')}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+            <div style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
               {t('voiceSettings.description')}
             </div>
           </div>
@@ -218,7 +210,7 @@ export default function VoiceSection() {
           />
 
           {savingLang && (
-            <div style={{ fontSize: 11, color: 'var(--ink-faint)', textAlign: 'center' }}>
+            <div style={{ fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center' }}>
               {t('common.saving')}
             </div>
           )}

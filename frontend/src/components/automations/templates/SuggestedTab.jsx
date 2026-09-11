@@ -1,35 +1,40 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Lightbulb, X, RefreshCw } from 'lucide-react'
 import { useT, t as tStatic } from '../../../lib/i18n'
+import { T_ENTER } from '../../../lib/motion'
+import { chipStyle } from '../../../lib/automations/styles'
 
 // ── Suggested tab (embedded from Suggestions.jsx logic) ──────────────────────
+// Confidence: ONE 13px footnote line — "82%" plus five dots — in ink-mute. The
+// old 9/11px pairing and the per-type tint made every card compete.
 function ConfidenceMeter({ value }) {
   const filled = Math.round(value * 5)
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-      <span className="z-mono" style={{ fontSize: 9, color: 'var(--ink-faint)' }}>{Math.round(value * 100)}%</span>
-      <span style={{ display: 'inline-flex', gap: 2 }}>
+    <span className="z-footnote z-mono" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+      {Math.round(value * 100)}%
+      <span style={{ display: 'inline-flex', gap: 3 }} aria-hidden="true">
         {[0,1,2,3,4].map(i => (
-          <span key={i} style={{ width: 4, height: 4, borderRadius: '50%', background: i < filled ? 'var(--ink-2)' : 'var(--line)' }} />
+          <span key={i} style={{ width: 4, height: 4, borderRadius: '50%', background: i < filled ? 'var(--ink-2)' : 'var(--line-2)' }} />
         ))}
       </span>
-    </div>
+    </span>
   )
 }
 
 function getPatternTypeMeta() {
   return {
-    time_based: { label: tStatic('automations.pattern.timePattern'), tint: 'var(--info)' },
-    sequence:   { label: tStatic('automations.pattern.routine'),     tint: 'var(--ok)' },
-    group:      { label: tStatic('automations.pattern.group'),       tint: 'var(--warn)' },
+    time_based: { label: tStatic('automations.pattern.timePattern') },
+    sequence:   { label: tStatic('automations.pattern.routine') },
+    group:      { label: tStatic('automations.pattern.group') },
   }
 }
 function getSuggestionStatusMeta() {
   return {
-    accepted:    { label: tStatic('automations.suggestionStatus.accepted'),    tint: 'var(--ok)' },
-    rejected:    { label: tStatic('automations.suggestionStatus.rejected'),    tint: 'var(--err)' },
-    snoozed:     { label: tStatic('automations.suggestionStatus.snoozed'),     tint: 'var(--warn)' },
-    implemented: { label: tStatic('automations.suggestionStatus.implemented'), tint: 'var(--ok)' },
+    accepted:    { label: tStatic('automations.suggestionStatus.accepted'),    color: 'var(--ok-text)' },
+    rejected:    { label: tStatic('automations.suggestionStatus.rejected'),    color: 'var(--err-text)' },
+    snoozed:     { label: tStatic('automations.suggestionStatus.snoozed'),     color: 'var(--warn-text)' },
+    implemented: { label: tStatic('automations.suggestionStatus.implemented'), color: 'var(--ok-text)' },
   }
 }
 
@@ -40,44 +45,46 @@ function getSuggestionStatusMeta() {
 // that one for new work.
 function SuggestionCard({ suggestion, onConfigure, onReject, onSnooze }) {
   const t = useT()
-  const [expanded, setExpanded] = useState(false)
   const [acting,   setActing]   = useState(null)
   const isPending = suggestion.status === 'pending'
   const PATTERN_TYPE_META = getPatternTypeMeta()
   const SUGGESTION_STATUS_META = getSuggestionStatusMeta()
   const meta = PATTERN_TYPE_META[suggestion.pattern_type] || PATTERN_TYPE_META.time_based
+  const statusMeta = SUGGESTION_STATUS_META[suggestion.status]
   const act = async (fn, label) => { setActing(label); try { await fn() } finally { setActing(null) } }
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: isPending ? 1 : 0.65, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.18 }}
-      style={{ padding: 14, borderRadius: 16, background: 'var(--surface)', border: '0.5px solid var(--line)' }}
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={T_ENTER}
+      style={{ padding: 12, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', color: isPending ? 'var(--ink)' : 'var(--ink-mute)' }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <p className="z-eyebrow" style={{ color: meta.tint }}>{meta.label}</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        <p className="z-eyebrow" style={{ margin: 0 }}>{meta.label}</p>
         <div style={{ flex: 1 }} />
         <ConfidenceMeter value={suggestion.confidence} />
         {!isPending && (
-          <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 5, background: `color-mix(in srgb, ${SUGGESTION_STATUS_META[suggestion.status]?.tint || 'var(--info)'} 14%, transparent)`, color: SUGGESTION_STATUS_META[suggestion.status]?.tint || 'var(--info)', fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            {SUGGESTION_STATUS_META[suggestion.status]?.label || suggestion.status}
+          <span className="z-chip" style={{ color: statusMeta?.color || 'var(--ink-2)' }}>
+            {statusMeta?.label || suggestion.status}
           </span>
         )}
       </div>
-      <p style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.4, color: 'var(--ink)', marginBottom: 8 }} dir="auto">{suggestion.user_message}</p>
+      <p className="z-body" style={{ fontWeight: 500, marginBottom: 8, color: 'inherit' }} dir="auto">{suggestion.user_message}</p>
       {(suggestion.trigger || suggestion.actions?.length > 0) && (
-        <div style={{ padding: '8px 10px', borderRadius: 9, background: 'var(--bg-2)', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: isPending ? 10 : 0 }}>
-          {suggestion.trigger?.type && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t('automations.suggested.tagWhen', { desc: `${suggestion.trigger.type}${suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}` })}</span>}
-          {suggestion.actions?.slice(0, 2).map((a, i) => <span key={i} className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t('automations.suggested.tagDo', { desc: `${a.intent?.replace(/_/g, ' ')}${a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}` })}</span>)}
+        <div style={{ padding: '8px 12px', borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: isPending ? 12 : 0 }}>
+          {suggestion.trigger?.type && <span className="z-subhead">{t('automations.suggested.tagWhen', { desc: `${suggestion.trigger.type}${suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}` })}</span>}
+          {suggestion.actions?.slice(0, 2).map((a, i) => <span key={i} className="z-subhead">{t('automations.suggested.tagDo', { desc: `${a.intent?.replace(/_/g, ' ')}${a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}` })}</span>)}
         </div>
       )}
       {isPending && (
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={() => act(onConfigure, 'configure')} disabled={!!acting} style={{ flex: 1, padding: '10px', borderRadius: 10, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 13, fontWeight: 600, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => act(onConfigure, 'configure')} disabled={!!acting} className="z-btn-primary" style={{ flex: 1, opacity: acting ? 0.6 : 1 }}>
             {acting === 'configure' ? t('automations.suggested.openingDots') : t('automations.suggested.configure')}
           </button>
-          <button onClick={() => act(() => onSnooze(3), 'snooze')} disabled={!!acting} style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--surface-2)', color: 'var(--ink-2)', border: '0.5px solid var(--line)', fontSize: 13, fontWeight: 500, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>
+          <button onClick={() => act(() => onSnooze(3), 'snooze')} disabled={!!acting} className="z-btn-secondary" style={{ opacity: acting ? 0.6 : 1 }}>
             {acting === 'snooze' ? '…' : t('automations.suggested.later')}
           </button>
-          <button onClick={() => act(onReject, 'reject')} disabled={!!acting} aria-label={t('common.delete')} style={{ padding: '10px', borderRadius: 10, background: 'transparent', color: 'var(--ink-faint)', border: '0.5px solid var(--line)', fontSize: 13, cursor: acting ? 'default' : 'pointer', opacity: acting ? 0.6 : 1, fontFamily: 'inherit' }}>✕</button>
+          <button onClick={() => act(onReject, 'reject')} disabled={!!acting} aria-label={t('common.delete')} title={t('common.delete')} className="z-icon-btn" style={{ opacity: acting ? 0.6 : 1 }}>
+            <X size={18} strokeWidth={1.75} />
+          </button>
         </div>
       )}
     </motion.div>
@@ -128,10 +135,12 @@ function SuggestionNudgeStrip({ suggestions, onConfigure, onReject, onSnooze, on
   const shown = pending.slice(0, max)
 
   return (
-    <div style={{ marginBottom: 22 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <p className="z-eyebrow" style={{ margin: 0 }}>💡 {t('automations.tabSuggested')}</p>
-        <button onClick={onOpenInbox} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, color: 'var(--ink-mute)', padding: 0 }}>
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <p className="z-eyebrow" style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <Lightbulb size={16} strokeWidth={1.75} aria-hidden="true" />{t('automations.tabSuggested')}
+        </p>
+        <button onClick={onOpenInbox} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, color: 'var(--ink-mute)', minHeight: 40, padding: '0 8px', margin: '0 -8px' }}>
           {t('automations.suggested.seeAll', { n: pending.length })}
         </button>
       </div>
@@ -155,28 +164,28 @@ function SuggestedTab({ suggestions, loading, analyzing, onConfigure, onReject, 
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           {[{ id: 'pending', label: t('automations.suggested.pending'), count: pending.length }, { id: 'history', label: t('automations.suggested.history') }].map(tab => (
-            <button key={tab.id} onClick={() => setSubtab(tab.id)} style={{ padding: '4px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: subtab === tab.id ? 'var(--ink)' : 'var(--surface-2)', color: subtab === tab.id ? 'var(--bg)' : 'var(--ink-mute)', border: subtab === tab.id ? 'none' : '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <button key={tab.id} onClick={() => setSubtab(tab.id)} aria-pressed={subtab === tab.id} style={chipStyle(subtab === tab.id)}>
               {tab.label}
-              {tab.count > 0 && <span style={{ background: subtab === tab.id ? 'rgba(255,255,255,0.25)' : 'var(--accent)', color: '#fff', fontSize: 9, padding: '1px 5px', borderRadius: 999, fontFamily: '"IBM Plex Mono", monospace', fontWeight: 700 }}>{tab.count}</span>}
+              {tab.count > 0 && <span className="z-chip z-mono" style={{ padding: '0 8px', lineHeight: '22px' }}>{tab.count}</span>}
             </button>
           ))}
         </div>
-        <button onClick={onAnalyze} disabled={analyzing} className="z-btn-secondary" style={{ padding: '6px 12px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, flexShrink: 0 }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: analyzing ? 'spin 1s linear infinite' : 'none' }}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+        <button onClick={onAnalyze} disabled={analyzing} className="z-btn-secondary" style={{ flexShrink: 0 }}>
+          <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" className={analyzing ? 'z-spin' : undefined} />
           {analyzing ? t('automations.suggested.analyzing') : t('automations.suggested.analyze')}
         </button>
       </div>
 
-      {loading && <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{[1,2,3].map(i => <div key={i} style={{ height: 100, borderRadius: 14, background: 'var(--surface)', opacity: 0.6 }} />)}</div>}
+      {loading && <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{[1,2,3].map(i => <div key={i} style={{ height: 100, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', opacity: 0.6 }} />)}</div>}
 
       {!loading && displayed.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>{subtab === 'pending' ? t('automations.suggested.noPending') : t('automations.suggested.noHistory')}</p>
-          {subtab === 'pending' && <p style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5, maxWidth: 280, margin: '0 auto 16px' }}>{t('automations.suggested.learnsHint')}</p>}
-          {subtab === 'pending' && <button onClick={onAnalyze} disabled={analyzing} className="z-btn-secondary" style={{ padding: '8px 14px', borderRadius: 9, fontFamily: 'inherit' }}>{analyzing ? t('automations.suggested.analyzing') : t('automations.suggested.runAnalysis')}</button>}
+        <div style={{ textAlign: 'center', padding: 32 }}>
+          <p className="z-headline" style={{ margin: '0 0 4px' }}>{subtab === 'pending' ? t('automations.suggested.noPending') : t('automations.suggested.noHistory')}</p>
+          {subtab === 'pending' && <p className="z-subhead" style={{ maxWidth: 320, margin: '0 auto 16px' }}>{t('automations.suggested.learnsHint')}</p>}
+          {subtab === 'pending' && <button onClick={onAnalyze} disabled={analyzing} className="z-btn-secondary">{analyzing ? t('automations.suggested.analyzing') : t('automations.suggested.runAnalysis')}</button>}
         </div>
       )}
 

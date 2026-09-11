@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { Zap, Search, Play, RefreshCw, ChevronDown, Check, X, ArrowRight } from 'lucide-react'
 import { useT, useTranslatedName } from '../../lib/i18n'
 import { getTriggerTypes, getActionTypes } from '../../lib/automations/types'
-import { triggerSummary, actionSummary, conditionSummary, formatRelativeTime, ACTION_TYPE_ICON } from '../../lib/automations/summaries'
+import { triggerSummary, actionSummary, conditionSummary, formatRelativeTime } from '../../lib/automations/summaries'
 import { AndConnector } from './wizard/Atoms'
 import { isCompleteCondition } from './wizard/ActionRow'
 import { getAutomationTraces, getAutomationTraceDetail } from '../../lib/api'
@@ -12,6 +13,11 @@ import { getAutomationTraces, getAutomationTraceDetail } from '../../lib/api'
 //   • History — most recent runs, click to inspect step-by-step outcomes
 // History is lazy-fetched on first tab activation. Each run's pill color reflects
 // outcome; opening a run expands its timeline inline (no extra modal hop).
+//
+// HIG pass: Headline / Subhead / Footnote roles, 44px glyph box and controls,
+// neutral chips (.z-chip) instead of info-tinted pills, line icons for the
+// emoji glyphs, and the --err family for failures (the old `--danger` token
+// did not exist, so failed steps rendered in the inherited colour).
 function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClose }) {
   const t = useT()
   const automationName = useTranslatedName(automation?.name)
@@ -27,35 +33,38 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
   const actionTypes = getActionTypes()
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* Header — name, description, state pill row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 11, background: automation.enabled ? `color-mix(in srgb, var(--info) 12%, var(--surface))` : 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={automation.enabled ? 'var(--info)' : 'var(--ink-faint)'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Header — name, description */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', color: automation.enabled ? 'var(--ink-2)' : 'var(--ink-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Zap size={22} strokeWidth={1.75} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }} dir="auto">{automationName}</p>
-          {automation.description && <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }} dir="auto">{automationDesc}</p>}
+          <p className="z-headline" style={{ margin: 0 }} dir="auto">{automationName}</p>
+          {automation.description && <p className="z-subhead" style={{ margin: '2px 0 0' }} dir="auto">{automationDesc}</p>}
         </div>
       </div>
 
-      {/* Tab switcher — matches the Actions-page segmented pill style. */}
-      <div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--surface-2)', borderRadius: 11 }}>
+      {/* Tab switcher — matches the Actions-page segmented control. */}
+      <div role="tablist" style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--surface-2)', borderRadius: 'var(--r-ctl)' }}>
         {[
           { id: 'details', label: t('automations.view.tabDetails') },
           { id: 'history', label: t('automations.view.tabHistory') },
-        ].map(tabDef => (
-          <button key={tabDef.id} onClick={() => setTab(tabDef.id)} style={{
-            flex: 1, padding: '7px 0', borderRadius: 9, fontFamily: 'inherit', cursor: 'pointer',
-            background: tab === tabDef.id ? 'var(--surface)' : 'transparent',
-            border: 'none', fontSize: 12, fontWeight: 600,
-            color: tab === tabDef.id ? 'var(--ink)' : 'var(--ink-mute)',
-            boxShadow: tab === tabDef.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
-            transition: 'background 0.15s',
-          }}>
-            {tabDef.label}
-          </button>
-        ))}
+        ].map(tabDef => {
+          const active = tab === tabDef.id
+          return (
+            <button key={tabDef.id} role="tab" aria-selected={active} onClick={() => setTab(tabDef.id)} style={{
+              flex: 1, minHeight: 40, padding: '0 16px', borderRadius: 'var(--r-ctl)', fontFamily: 'inherit', cursor: 'pointer',
+              background: active ? 'var(--surface)' : 'transparent',
+              border: `0.5px solid ${active ? 'var(--line)' : 'transparent'}`,
+              fontSize: 13, fontWeight: 600,
+              color: active ? 'var(--ink)' : 'var(--ink-mute)',
+              transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
+            }}>
+              {tabDef.label}
+            </button>
+          )
+        })}
       </div>
 
       {tab === 'details' && (
@@ -74,10 +83,10 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
 
       {/* Footer actions — quick path to edit or run from the view itself */}
       {(onEdit || onTrigger) && (
-        <div style={{ display: 'flex', gap: 8, paddingTop: 4, borderTop: '0.5px solid var(--line)', marginTop: 2 }}>
+        <div style={{ display: 'flex', gap: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
           {onTrigger && (
-            <button onClick={() => { onTrigger(automation.id); onClose?.() }} className="z-btn-secondary" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z"/></svg>
+            <button onClick={() => { onTrigger(automation.id); onClose?.() }} className="z-btn-secondary" style={{ flex: 1 }}>
+              <Play size={16} strokeWidth={1.75} aria-hidden="true" />
               {t('automations.view.runNow')}
             </button>
           )}
@@ -95,15 +104,13 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
 // ── Details tab ──────────────────────────────────────────────────────────────
 function DetailsTab({ automation, roomNameMap, triggerTypeLabel, completeConditions, actions, actionTypes, lastRun, t }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Trigger */}
-      <div style={{ padding: '12px 14px', borderRadius: 11, background: 'var(--bg-2)', border: '0.5px solid var(--line)' }}>
-        <p className="z-eyebrow" style={{ marginBottom: 6 }}>{t('automations.triggerLabel')}</p>
+      <div style={{ padding: '12px 16px', borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.triggerLabel')}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, background: `color-mix(in srgb, var(--info) 12%, transparent)`, color: 'var(--info)', fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace' }}>
-            {triggerTypeLabel}
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{triggerSummary(automation.trigger)}</span>
+          <span className="z-chip">{triggerTypeLabel}</span>
+          <span className="z-subhead">{triggerSummary(automation.trigger)}</span>
         </div>
       </div>
 
@@ -118,9 +125,9 @@ function DetailsTab({ automation, roomNameMap, triggerTypeLabel, completeConditi
             {completeConditions.map((c, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {i > 0 && <AndConnector />}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
-                  <span style={{ fontSize: 13, flexShrink: 0 }}>🔍</span>
-                  <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{conditionSummary(c)}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, padding: '8px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
+                  <Search size={18} strokeWidth={1.75} aria-hidden="true" style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
+                  <span className="z-subhead" style={{ color: 'var(--ink-2)' }}>{conditionSummary(c)}</span>
                 </div>
               </div>
             ))}
@@ -132,17 +139,17 @@ function DetailsTab({ automation, roomNameMap, triggerTypeLabel, completeConditi
       <div>
         <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.view.stepsCount', { n: actions.length })}</p>
         {actions.length === 0
-          ? <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic' }}>{t('automations.view.noSteps')}</p>
+          ? <p className="z-subhead">{t('automations.view.noSteps')}</p>
           : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {actions.map((a, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
-                  <span style={{ width: 20, height: 20, borderRadius: '50%', background: `color-mix(in srgb, var(--info) 12%, transparent)`, color: 'var(--info)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: '"IBM Plex Mono", monospace' }}>{i + 1}</span>
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minHeight: 48, padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
+                  <span className="z-caption z-mono" style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>{i + 1}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>
-                      {ACTION_TYPE_ICON[a.type] || '•'} {actionTypes.find(at => at.value === a.type)?.label || a.type}
+                    <p className="z-headline" style={{ margin: 0 }}>
+                      {actionTypes.find(at => at.value === a.type)?.label || a.type}
                     </p>
-                    <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, fontFamily: '"IBM Plex Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{actionSummary(a)}</p>
+                    <p className="z-subhead" style={{ margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{actionSummary(a)}</p>
                   </div>
                 </div>
               ))}
@@ -153,10 +160,10 @@ function DetailsTab({ automation, roomNameMap, triggerTypeLabel, completeConditi
       {/* Rooms */}
       {(automation.rooms || []).length > 0 && (
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 6 }}>{t('automations.view.rooms')}</p>
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+          <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.view.rooms')}</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {automation.rooms.map(r => (
-              <span key={r} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: `color-mix(in srgb, var(--info) 10%, var(--surface))`, color: 'var(--info)', border: '0.5px solid var(--line)' }}>
+              <span key={r} className="z-chip">
                 {roomNameMap?.[r] || r.replace(/_/g, ' ')}
               </span>
             ))}
@@ -166,13 +173,13 @@ function DetailsTab({ automation, roomNameMap, triggerTypeLabel, completeConditi
 
       {/* Status footer */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: `color-mix(in srgb, ${automation.enabled ? 'var(--ok)' : 'var(--ink-mute)'} 12%, transparent)`, color: automation.enabled ? 'var(--ok)' : 'var(--ink-mute)' }}>
+        <span className="z-chip" style={{ color: automation.enabled ? 'var(--ok-text)' : 'var(--ink-mute)' }}>
           {automation.enabled ? t('automations.view.enabled') : t('automations.view.disabled')}
         </span>
-        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace', background: 'var(--bg-2)', color: 'var(--ink-faint)' }}>
+        <span className="z-chip">
           {automation.source === 'ziggy' ? t('automations.view.localScheduler') : t('automations.view.haTriggered')}
         </span>
-        <span style={{ fontSize: 11, color: 'var(--ink-faint)', marginLeft: 'auto', fontFamily: '"IBM Plex Mono", monospace' }}>
+        <span className="z-footnote z-mono" style={{ marginInlineStart: 'auto', color: 'var(--ink-faint)' }}>
           {lastRun ? t('automations.view.lastRan', { when: lastRun }) : t('automations.view.neverRun')}
         </span>
       </div>
@@ -187,10 +194,10 @@ function DetailsTab({ automation, roomNameMap, triggerTypeLabel, completeConditi
 // refetch. Click a run to expand its step timeline inline.
 
 const STATUS_PALETTE = {
-  success: { fg: 'var(--ok)',         label: 'automations.view.statusSuccess' },
-  stopped: { fg: 'var(--warn)',       label: 'automations.view.statusStopped' },
-  failed:  { fg: 'var(--danger)',     label: 'automations.view.statusFailed'  },
-  running: { fg: 'var(--info)',       label: 'automations.view.statusRunning' },
+  success: { dot: 'var(--ok)',   text: 'var(--ok-text)',   label: 'automations.view.statusSuccess' },
+  stopped: { dot: 'var(--warn)', text: 'var(--warn-text)', label: 'automations.view.statusStopped' },
+  failed:  { dot: 'var(--err)',  text: 'var(--err-text)',  label: 'automations.view.statusFailed'  },
+  running: { dot: 'var(--info)', text: 'var(--ink-2)',     label: 'automations.view.statusRunning' },
 }
 
 function HistoryTab({ automation, t }) {
@@ -215,7 +222,7 @@ function HistoryTab({ automation, t }) {
 
   if (state.status === 'loading') {
     return (
-      <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13 }}>
+      <div className="z-subhead" style={{ padding: '24px 0', textAlign: 'center' }}>
         {t('automations.view.loadingRuns')}
       </div>
     )
@@ -223,33 +230,32 @@ function HistoryTab({ automation, t }) {
 
   if (state.status === 'error') {
     return (
-      <div style={{ padding: '20px 16px', borderRadius: 11, background: `color-mix(in srgb, var(--warn) 8%, var(--surface))`, border: '0.5px solid var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-        <p style={{ fontSize: 13, color: 'var(--ink-2)', textAlign: 'center' }} dir="auto">{state.error}</p>
-        <button onClick={load} className="z-btn-secondary" style={{ fontSize: 12 }}>{t('common.retry')}</button>
+      <div style={{ padding: '20px 16px', borderRadius: 'var(--r-ctl)', background: 'color-mix(in srgb, var(--warn) 8%, var(--surface))', border: '0.5px solid var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+        <p className="z-subhead" style={{ color: 'var(--ink-2)', textAlign: 'center', margin: 0 }} dir="auto">{state.error}</p>
+        <button onClick={load} className="z-btn-secondary">{t('common.retry')}</button>
       </div>
     )
   }
 
   if (state.runs.length === 0) {
     return (
-      <div style={{ padding: '32px 16px', textAlign: 'center', borderRadius: 11, background: 'var(--bg-2)', border: '0.5px dashed var(--line)' }}>
-        <p style={{ fontSize: 28, marginBottom: 8 }}>⌛</p>
-        <p style={{ fontSize: 13, color: 'var(--ink-2)', fontWeight: 600 }} dir="auto">{t('automations.view.noRunsYet')}</p>
-        <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 4 }} dir="auto">{t('automations.view.noRunsHint')}</p>
+      <div style={{ padding: 32, textAlign: 'center', borderRadius: 'var(--r-card)', background: 'var(--surface-2)', border: '0.5px dashed var(--line)' }}>
+        <p className="z-headline" style={{ margin: 0 }} dir="auto">{t('automations.view.noRunsYet')}</p>
+        <p className="z-subhead" style={{ margin: '4px 0 0' }} dir="auto">{t('automations.view.noRunsHint')}</p>
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-        <p className="z-eyebrow">{t('automations.view.recentRuns', { n: state.runs.length })}</p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <p className="z-eyebrow" style={{ margin: 0 }}>{t('automations.view.recentRuns', { n: state.runs.length })}</p>
         <button onClick={load} style={{
-          background: 'transparent', border: 'none', cursor: 'pointer',
-          fontSize: 11, color: 'var(--ink-faint)', display: 'flex', alignItems: 'center', gap: 4,
+          background: 'transparent', border: 'none', cursor: 'pointer', minHeight: 40, padding: '0 8px', margin: '0 -8px',
+          fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 8,
           fontFamily: 'inherit',
         }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
           {t('common.refresh')}
         </button>
       </div>
@@ -274,29 +280,25 @@ function RunRow({ run, index, automationId, isOpen, onToggle, t }) {
   const when = formatRunTimestamp(run.started_at)
   const triggerLabel = friendlyTriggerLabel(run.trigger_label, t)
   return (
-    <div style={{ borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)', overflow: 'hidden' }}>
-      <button onClick={onToggle} style={{
-        width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-        padding: '10px 12px', background: 'transparent', border: 'none', cursor: 'pointer',
-        fontFamily: 'inherit', textAlign: 'inherit',
+    <div style={{ borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)', overflow: 'hidden' }}>
+      <button onClick={onToggle} aria-expanded={isOpen} style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 12, minHeight: 48,
+        padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer',
+        fontFamily: 'inherit', textAlign: 'inherit', color: 'var(--ink)',
       }}>
-        <span style={{
-          width: 8, height: 8, borderRadius: '50%', background: palette.fg, flexShrink: 0,
-        }} />
+        <span className="z-dot" style={{ background: palette.dot }} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }} dir="auto">
+          <p className="z-headline" style={{ margin: 0 }} dir="auto">
             {t('automations.view.runNumber', { n: index })}
-            {when && <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}> · {when}</span>}
+            {when && <span className="z-mono" style={{ color: 'var(--ink-mute)', fontWeight: 400 }}> · {when}</span>}
           </p>
-          <p style={{ fontSize: 11, color: 'var(--ink-mute)', marginTop: 2 }} dir="auto">
-            <span style={{ color: palette.fg, fontWeight: 600 }}>{t(palette.label)}</span>
-            {triggerLabel && <span style={{ color: 'var(--ink-faint)' }}> · {t('automations.view.triggeredBy', { source: triggerLabel })}</span>}
+          <p className="z-subhead" style={{ margin: '2px 0 0' }} dir="auto">
+            <span style={{ color: palette.text, fontWeight: 600 }}>{t(palette.label)}</span>
+            {triggerLabel && <span> · {t('automations.view.triggeredBy', { source: triggerLabel })}</span>}
           </p>
         </div>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-          style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.15s', color: 'var(--ink-faint)', flexShrink: 0 }}>
-          <polyline points="6 9 12 15 18 9"/>
-        </svg>
+        <ChevronDown size={18} strokeWidth={1.75} aria-hidden="true"
+          style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform var(--dur-state) var(--ease-standard)', color: 'var(--ink-faint)', flexShrink: 0 }} />
       </button>
       {isOpen && <RunDetail automationId={automationId} runId={run.run_id} t={t} />}
     </div>
@@ -332,30 +334,15 @@ function RunDetail({ automationId, runId, t }) {
     return () => { cancelled = true }
   }, [automationId, runId, t])
 
-  if (state.status === 'loading') {
-    return (
-      <div style={{ padding: '12px 14px', borderTop: '0.5px solid var(--line)', fontSize: 12, color: 'var(--ink-faint)', textAlign: 'center' }}>
-        {t('automations.view.loadingRunDetail')}
-      </div>
-    )
-  }
-  if (state.status === 'error') {
-    return (
-      <div style={{ padding: '12px 14px', borderTop: '0.5px solid var(--line)', fontSize: 12, color: 'var(--ink-mute)' }} dir="auto">
-        {state.error}
-      </div>
-    )
-  }
-  if (state.steps.length === 0) {
-    return (
-      <div style={{ padding: '12px 14px', borderTop: '0.5px solid var(--line)', fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic' }} dir="auto">
-        {t('automations.view.noStepDetails')}
-      </div>
-    )
-  }
+  const note = (text, extra) => (
+    <div className="z-subhead" style={{ padding: '12px 16px', borderTop: '0.5px solid var(--line)', ...extra }} dir="auto">{text}</div>
+  )
+  if (state.status === 'loading') return note(t('automations.view.loadingRunDetail'), { textAlign: 'center' })
+  if (state.status === 'error')   return note(state.error)
+  if (state.steps.length === 0)   return note(t('automations.view.noStepDetails'))
 
   return (
-    <div style={{ padding: '8px 12px 10px', borderTop: '0.5px solid var(--line)', background: 'var(--bg-2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div style={{ padding: '8px 16px 12px', borderTop: '0.5px solid var(--line)', background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
       {state.steps.map((step, i) => (
         <StepRow key={step.path || i} step={step} t={t} />
       ))}
@@ -365,17 +352,14 @@ function RunDetail({ automationId, runId, t }) {
 
 function StepRow({ step, t }) {
   const isCondition = step.kind === 'condition'
-  // Color: green = passed, red = failed, gray = neutral/trigger.
-  let color, icon
+  // Colour: ok = passed, err = failed, neutral = trigger / plain step.
+  let dot, text, Icon
   if (step.passed === false || step.error) {
-    color = 'var(--danger)'
-    icon = '✕'
+    dot = 'var(--err)'; text = 'var(--err-text)'; Icon = X
   } else if (step.passed === true && isCondition) {
-    color = 'var(--ok)'
-    icon = '✓'
+    dot = 'var(--ok)'; text = 'var(--ok-text)'; Icon = Check
   } else {
-    color = 'var(--ink-faint)'
-    icon = step.kind === 'trigger' ? '⚡' : '→'
+    dot = 'var(--ink-faint)'; text = 'var(--ink-mute)'; Icon = step.kind === 'trigger' ? Zap : ArrowRight
   }
 
   const kindLabelKey = {
@@ -385,22 +369,21 @@ function StepRow({ step, t }) {
   }[step.kind] || 'automations.view.stepKindStep'
 
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 4px' }}>
-      <span style={{
-        width: 18, height: 18, borderRadius: '50%',
-        background: `color-mix(in srgb, ${color} 14%, transparent)`,
-        color, fontSize: 10, fontWeight: 700,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-      }}>{icon}</span>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '8px 0' }}>
+      <span aria-hidden="true" style={{
+        width: 22, height: 22, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+        background: `color-mix(in srgb, ${dot} 14%, transparent)`, color: text,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}><Icon size={12} strokeWidth={2.25} /></span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 11, color: 'var(--ink-2)' }} dir="auto">
+        <p className="z-subhead" style={{ margin: 0, color: 'var(--ink-2)' }} dir="auto">
           <span style={{ fontWeight: 600 }}>{t(kindLabelKey)}:</span> {step.label}
           {step.passed === false && !step.error && (
-            <span style={{ color: 'var(--warn)', marginLeft: 6 }} dir="auto">— {t('automations.view.stepConditionFailed')}</span>
+            <span style={{ color: 'var(--warn-text)', marginInlineStart: 8 }} dir="auto">— {t('automations.view.stepConditionFailed')}</span>
           )}
         </p>
         {step.error && (
-          <p style={{ fontSize: 10, color: 'var(--danger)', marginTop: 2, wordBreak: 'break-word' }} dir="auto">{step.error}</p>
+          <p className="z-footnote" style={{ color: 'var(--err-text)', margin: '2px 0 0', wordBreak: 'break-word' }} dir="auto">{step.error}</p>
         )}
       </div>
     </div>

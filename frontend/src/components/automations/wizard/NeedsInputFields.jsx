@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { Input } from '../../ui/Input'
+import { Select } from '../../ui/Select'
 import { useT } from '../../../lib/i18n'
 import { getEntityState } from '../../../lib/api'
-import { selectStyle } from '../../../lib/automations/styles'
 
 // ── NeedsInputFields ──────────────────────────────────────────────────────────
 function NeedsInputFields({ fields, entityId, serviceData, onChangeServiceData }) {
@@ -17,17 +17,20 @@ function NeedsInputFields({ fields, entityId, serviceData, onChangeServiceData }
     const currentVal = (serviceData || {})[key] ?? ''
     if (fetchKey && options.length > 0) {
       return (
-        <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>{label}</label>
-          <select style={selectStyle} value={currentVal} onChange={e => onChangeServiceData({ ...(serviceData || {}), [key]: e.target.value })}>
-            <option value="">{t('automations.needs.pickLabel', { label })}</option>
-            {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-          </select>
-        </div>
+        <Select
+          key={key}
+          label={label}
+          value={currentVal}
+          onChange={e => onChangeServiceData({ ...(serviceData || {}), [key]: e.target.value })}
+          options={[
+            { value: '', label: t('automations.needs.pickLabel', { label }) },
+            ...options.map(opt => ({ value: opt, label: opt })),
+          ]}
+        />
       )
     }
     if (fetchKey && !entityId) return (
-      <p key={key} style={{ fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic' }}>{t('automations.needs.entityHint', { label: label.toLowerCase() })}</p>
+      <p key={key} className="z-subhead" style={{ margin: 0 }}>{t('automations.needs.entityHint', { label: label.toLowerCase() })}</p>
     )
     return (
       <Input

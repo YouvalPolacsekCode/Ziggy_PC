@@ -1,4 +1,5 @@
 import React from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { saveCircadian, deleteCircadian } from '../../../../lib/api'
 import { entityDisplayName } from '../../../../lib/utils'
 
@@ -47,25 +48,24 @@ function RightNow({ values, ctx, t }) {
   const offSchedule = status?.manual_lights || []
   const nameFor = (eid) => entityDisplayName(ctx?.entityMap?.[eid]) || eid
   return (
-    <div style={{ borderRadius: 14, padding: '14px 16px',
-      background: 'color-mix(in srgb, var(--ok) 7%, var(--surface))',
-      border: '0.5px solid color-mix(in srgb, var(--ok) 22%, var(--line))' }}>
+    <div style={{ borderRadius: 'var(--r-card)', padding: 12,
+      background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
       <p className="z-eyebrow" style={{ margin: '0 0 4px' }}>{t('automations.circadian.rightNow')}</p>
-      <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', margin: 0 }} dir="auto">
+      <p className="z-title z-mono" style={{ margin: 0 }} dir="auto">
         {cur.kelvin}K · {cur.pct}%
       </p>
-      <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: '2px 0 0' }} dir="auto">{warmthWord(t, cur.kelvin || 3000)}</p>
+      <p className="z-subhead" style={{ margin: '2px 0 0' }} dir="auto">{warmthWord(t, cur.kelvin || 3000)}</p>
 
       {offSchedule.length > 0 && (
-        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '0.5px solid color-mix(in srgb, var(--warn) 25%, var(--line))' }}>
-          <p style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: 'var(--warn)' }} dir="auto">
-            <span aria-hidden="true">⚠</span>
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid var(--line)' }}>
+          <p className="z-subhead" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 4px', fontWeight: 600, color: 'var(--warn-text)' }} dir="auto">
+            <AlertTriangle size={16} strokeWidth={1.75} aria-hidden="true" />
             {t('automations.circadian.offScheduleCount', { n: offSchedule.length })}
           </p>
-          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.4 }} dir="auto">
+          <p className="z-subhead" style={{ margin: 0, color: 'var(--ink)' }} dir="auto">
             {offSchedule.map(nameFor).join(' · ')}
           </p>
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--ink-mute)', lineHeight: 1.4 }} dir="auto">
+          <p className="z-footnote" style={{ margin: '4px 0 0' }} dir="auto">
             {t('automations.circadian.handControlledHint')}
           </p>
         </div>

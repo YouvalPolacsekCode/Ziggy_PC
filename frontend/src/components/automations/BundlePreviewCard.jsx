@@ -1,7 +1,19 @@
 import { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
+import { AlertTriangle, Check, X, Undo2 } from 'lucide-react'
 import { useT } from '../../lib/i18n'
+import { T_ENTER } from '../../lib/motion'
 import { applyAutomationBundle, deleteAutomationBundle } from '../../lib/api'
+
+// One 1s linear spinner (the .z-spin keyframe), sized to sit inside a button.
+function Spinner({ size = 16 }) {
+  return (
+    <span className="z-spin" aria-hidden="true" style={{
+      width: size, height: size, borderRadius: '50%', display: 'inline-block', flexShrink: 0,
+      border: '1.5px solid currentColor', borderTopColor: 'transparent',
+    }} />
+  )
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BundlePreviewCard — Ziggy Pro Mode bundle review surface (D4)
@@ -113,11 +125,7 @@ function SectionHeader({ label, count }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
       <p className="z-eyebrow" style={{ margin: 0 }}>{label}</p>
-      <span style={{
-        fontSize: 10, padding: '1px 7px', borderRadius: 999,
-        background: 'var(--bg-2)', color: 'var(--ink-faint)',
-        fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600,
-      }}>{count}</span>
+      <span className="z-chip z-mono" style={{ padding: '0 8px', lineHeight: '22px' }}>{count}</span>
     </div>
   )
 }
@@ -129,13 +137,13 @@ function OccupancyRow({ sensor, t }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      gap: 10, padding: '8px 12px', borderRadius: 10,
+      gap: 12, minHeight: 40, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
       border: '0.5px solid var(--line)', background: 'var(--surface)',
     }}>
-      <span style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 500 }} dir="auto">
+      <span className="z-subhead" style={{ color: 'var(--ink)', fontWeight: 500 }} dir="auto">
         {room}
       </span>
-      <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+      <span className="z-footnote z-mono">
         {sources === 1
           ? t('automations.proCard.occupancySourceOne')
           : t('automations.proCard.occupancySourceMany', { n: sources })}
@@ -151,17 +159,13 @@ function ModeRow({ kv }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      gap: 10, padding: '8px 12px', borderRadius: 10,
+      gap: 12, minHeight: 40, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
       border: '0.5px solid var(--line)', background: 'var(--surface)',
     }}>
-      <span style={{ fontSize: 12, color: 'var(--ink)', fontFamily: '"IBM Plex Mono", monospace' }}>
+      <span className="z-subhead z-code" style={{ color: 'var(--ink)' }}>
         {label}
       </span>
-      <span style={{
-        fontSize: 10, padding: '1px 7px', borderRadius: 999,
-        background: 'var(--bg-2)', color: 'var(--ink-mute)',
-        fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600,
-      }}>
+      <span className="z-chip z-mono">
         {def}
       </span>
     </div>
@@ -183,33 +187,18 @@ function AutomationRow({ auto, lang, t }) {
 
   return (
     <div style={{
-      display: 'flex', flexDirection: 'column', gap: 6,
-      padding: '10px 12px', borderRadius: 10,
+      display: 'flex', flexDirection: 'column', gap: 8,
+      padding: '12px 16px', borderRadius: 'var(--r-ctl)',
       border: '0.5px solid var(--line)', background: 'var(--surface)',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', flex: 1, minWidth: 0 }} dir="auto">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span className="z-headline" style={{ flex: 1, minWidth: 0 }} dir="auto">
           {auto.name}
         </span>
-        <span style={{
-          fontSize: 9.5, padding: '1.5px 7px', borderRadius: 999, fontWeight: 600,
-          background: src === 'template'
-            ? 'color-mix(in srgb, var(--info) 12%, transparent)'
-            : 'color-mix(in srgb, var(--accent) 12%, transparent)',
-          color: src === 'template' ? 'var(--info)' : 'var(--accent)',
-          fontFamily: '"IBM Plex Mono", monospace', letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-        }}>{srcLabel}</span>
-        <span style={{
-          fontSize: 9.5, padding: '1.5px 7px', borderRadius: 999, fontWeight: 600,
-          background: 'var(--bg-2)', color: 'var(--ink-mute)',
-          fontFamily: '"IBM Plex Mono", monospace', letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-        }}>{safeModeLabel}</span>
+        <span className="z-chip">{srcLabel}</span>
+        <span className="z-chip">{safeModeLabel}</span>
       </div>
-      <p style={{
-        fontSize: 11.5, color: 'var(--ink-mute)', margin: 0, lineHeight: 1.4,
-      }} dir="auto">
+      <p className="z-subhead" style={{ margin: 0 }} dir="auto">
         {summary}
       </p>
     </div>
@@ -224,13 +213,13 @@ function VoiceIntentRow({ vi, t }) {
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', gap: 2,
-      padding: '8px 12px', borderRadius: 10,
-      border: '0.5px dashed var(--line)', background: 'var(--bg-2)',
+      minHeight: 40, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
+      border: '0.5px dashed var(--line)', background: 'var(--surface-2)',
     }}>
-      <span style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: 500 }} dir="auto">
+      <span className="z-subhead" style={{ color: 'var(--ink)', fontWeight: 500 }} dir="auto">
         “{vi.phrase}”
       </span>
-      <span style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontStyle: 'italic' }} dir="auto">
+      <span className="z-footnote" dir="auto">
         {t('automations.proCard.voiceIntentManualNote')}
       </span>
     </div>
@@ -238,38 +227,34 @@ function VoiceIntentRow({ vi, t }) {
 }
 
 // Per-artifact result row inside the post-apply RESULTS view. Distinguishes
-// created (green check) from errors (red dot + first-line of error text).
+// created (ok check) from errors (err cross + first line of error text).
 function ResultRow({ kind, label, error }) {
   const isErr = !!error
   return (
     <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: 8,
-      padding: '8px 12px', borderRadius: 10,
+      display: 'flex', alignItems: 'flex-start', gap: 12,
+      minHeight: 40, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
       border: '0.5px solid var(--line)',
       background: isErr
         ? 'color-mix(in srgb, var(--err) 6%, var(--surface))'
         : 'color-mix(in srgb, var(--ok) 6%, var(--surface))',
     }}>
-      <span style={{
-        width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
+      <span aria-hidden="true" style={{
+        width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: isErr ? 'var(--err)' : 'var(--ok)', color: '#fff', marginTop: 1,
+        background: isErr ? 'var(--err)' : 'var(--ok)', color: 'var(--on-accent)', marginTop: 2,
       }}>
-        {isErr ? (
-          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        ) : (
-          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6"/></svg>
-        )}
+        {isErr ? <X size={12} strokeWidth={3} /> : <Check size={12} strokeWidth={3} />}
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: 0, fontFamily: '"IBM Plex Mono", monospace', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        <p className="z-footnote" style={{ margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
           {kind}
         </p>
-        <p style={{ fontSize: 12.5, color: 'var(--ink)', margin: '2px 0 0', fontWeight: isErr ? 500 : 400 }} dir="auto">
+        <p className="z-subhead" style={{ color: 'var(--ink)', margin: '2px 0 0', fontWeight: isErr ? 500 : 400 }} dir="auto">
           {label}
         </p>
         {isErr && (
-          <p style={{ fontSize: 11, color: 'var(--err)', margin: '3px 0 0' }} dir="auto">
+          <p className="z-footnote" style={{ color: 'var(--err-text)', margin: '4px 0 0' }} dir="auto">
             {error}
           </p>
         )}
@@ -439,35 +424,36 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
                               showTimeout, currentTimeout, timeoutUnitKey }) => {
     const included = isIncluded(kind, idx)
     const e = getEdit(kind, idx)
+    // Include/exclude is a filter chip: surface-2 + ink when on, never inverted.
     const pill = (on) => ({
-      fontSize: 10.5, fontWeight: 600, padding: '3px 9px', borderRadius: 999,
-      border: `0.5px solid ${on ? 'color-mix(in srgb, var(--ok) 35%, var(--line))' : 'var(--line)'}`,
-      background: on ? 'color-mix(in srgb, var(--ok) 12%, var(--surface))' : 'var(--bg-2)',
-      color: on ? 'var(--ok)' : 'var(--ink-mute)', cursor: 'pointer',
+      minHeight: 40, padding: '8px 16px', borderRadius: 999, fontSize: 13, fontWeight: 500,
+      display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', cursor: 'pointer',
+      border: `0.5px solid ${on ? 'var(--line-2)' : 'var(--line)'}`,
+      background: on ? 'var(--surface-2)' : 'var(--surface)',
+      color: on ? 'var(--ink)' : 'var(--ink-mute)',
+      transition: 'background var(--dur-press) var(--ease-standard)',
     })
-    const field = {
-      fontSize: 11.5, padding: '3px 8px', borderRadius: 8,
-      border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)',
-    }
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-        <button type="button" style={pill(included)}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+        <button type="button" style={pill(included)} aria-pressed={included}
                 onClick={() => setEdit(kind, idx, { included: !included })}>
-          {included ? `✓ ${t('automations.proCard.included')}` : t('automations.proCard.excluded')}
+          {included && <Check size={16} strokeWidth={2} aria-hidden="true" />}
+          {included ? t('automations.proCard.included') : t('automations.proCard.excluded')}
         </button>
         {included && showRename && (
           <input
-            dir="auto" style={{ ...field, flex: 1, minWidth: 120 }}
+            dir="auto" className="z-input" style={{ flex: 1, minWidth: 160, width: 'auto' }}
             value={e.name ?? currentName ?? ''}
             placeholder={t('automations.proCard.renamePh')}
+            aria-label={t('automations.proCard.renamePh')}
             onChange={(ev) => setEdit(kind, idx, { name: ev.target.value })}
           />
         )}
         {included && showTimeout && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--ink-mute)' }}>
+          <label className="z-subhead" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {t('automations.proCard.timeoutLabel')}
             <input
-              type="number" min="0" style={{ ...field, width: 64 }}
+              type="number" min="0" className="z-input" style={{ width: 96 }}
               value={e.timeout ?? currentTimeout ?? ''}
               onChange={(ev) => {
                 const v = ev.target.value
@@ -484,10 +470,10 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
   return (
     <motion.div
       dir={dir}
-      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }}
+      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={T_ENTER}
       style={{
         display: 'flex', flexDirection: 'column', gap: 12,
-        padding: 14, borderRadius: 14,
+        padding: 12, borderRadius: 'var(--r-card)',
         background: 'var(--surface)', border: '0.5px solid var(--line)',
         boxShadow: 'var(--shadow-sm)',
         // textAlign honors the bundle's own direction so EN bundles in an
@@ -500,17 +486,11 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
         <p className="z-eyebrow" style={{ marginBottom: 4 }}>
           {t('automations.proCard.eyebrow')}
         </p>
-        <h3 style={{
-          fontSize: 17, fontWeight: 700, color: 'var(--ink)',
-          margin: 0, lineHeight: 1.25, letterSpacing: '-0.01em',
-        }} dir="auto">
+        <h3 className="z-headline" style={{ margin: 0 }} dir="auto">
           {bundle.name || t('automations.proCard.untitledBundle')}
         </h3>
         {bundle.rationale && (
-          <p style={{
-            fontSize: 12.5, color: 'var(--ink-mute)', margin: '6px 0 0',
-            fontStyle: 'italic', lineHeight: 1.4,
-          }} dir="auto">
+          <p className="z-subhead" style={{ margin: '8px 0 0' }} dir="auto">
             {bundle.rationale}
           </p>
         )}
@@ -519,18 +499,16 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
       {/* Decline / partial-fulfillment note */}
       {decline && (
         <div style={{
-          display: 'flex', gap: 8, padding: '10px 12px', borderRadius: 10,
-          background: 'color-mix(in srgb, var(--warn) 10%, var(--surface))',
-          border: '0.5px solid color-mix(in srgb, var(--warn) 35%, var(--line))',
+          display: 'flex', gap: 12, padding: '12px 16px', borderRadius: 'var(--r-ctl)',
+          background: 'color-mix(in srgb, var(--warn) 8%, var(--surface))',
+          border: '0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))',
         }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
-            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-          </svg>
+          <AlertTriangle size={18} strokeWidth={1.75} aria-hidden="true" style={{ color: 'var(--warn-text)', flexShrink: 0, marginTop: 2 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p className="z-eyebrow" style={{ margin: 0, color: 'var(--warn)' }}>
+            <p className="z-eyebrow" style={{ margin: 0, color: 'var(--warn-text)' }}>
               {t('automations.proCard.noteLabel')}
             </p>
-            <p style={{ fontSize: 12.5, color: 'var(--ink)', margin: '3px 0 0', lineHeight: 1.4 }} dir="auto">
+            <p className="z-subhead" style={{ color: 'var(--ink)', margin: '4px 0 0' }} dir="auto">
               {decline}
             </p>
           </div>
@@ -541,29 +519,29 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
       {showingUndone ? (
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-          padding: '18px 12px', textAlign: 'center',
+          padding: '16px 12px', textAlign: 'center',
         }}>
-          <span style={{
-            width: 32, height: 32, borderRadius: '50%',
+          <span aria-hidden="true" style={{
+            width: 40, height: 40, borderRadius: '50%',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'var(--bg-2)', color: 'var(--ink-mute)',
+            background: 'var(--surface-2)', color: 'var(--ink-mute)',
           }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+            <Undo2 size={20} strokeWidth={1.75} />
           </span>
-          <p style={{ fontSize: 13, color: 'var(--ink)', margin: 0, fontWeight: 500 }} dir="auto">
+          <p className="z-subhead" style={{ color: 'var(--ink)', margin: 0, fontWeight: 500 }} dir="auto">
             {t('automations.proCard.undone')}
           </p>
         </div>
       ) : /* RESULTS / SUCCESS VIEW — per-artifact created + any errors */
       (showingResults || showingSuccess) ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {applyResult.created.length > 0 && (
             <div>
               <SectionHeader
                 label={t('automations.proCard.createdLabel')}
                 count={applyResult.created.length}
               />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {applyResult.created.map((c, i) => (
                   <ResultRow
                     key={`ok-${i}`}
@@ -583,7 +561,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
                 label={t('automations.proCard.errorsLabel')}
                 count={applyResult.errors.length}
               />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {applyResult.errors.map((e, i) => (
                   <ResultRow
                     key={`err-${i}`}
@@ -596,7 +574,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
             </div>
           )}
           {/* Summary line */}
-          <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: 0, textAlign: 'center' }}>
+          <p className="z-subhead" style={{ margin: 0, textAlign: 'center' }}>
             {applyResult.errors.length === 0
               ? t('automations.proCard.allCreated', { n: applyResult.created.length })
               : applyResult.created.length === 0
@@ -609,14 +587,14 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
         </div>
       ) : (
         // PREVIEW VIEW — what the LLM proposed
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {occupancy.length > 0 && (
             <div>
               <SectionHeader
                 label={t('automations.proCard.sectionOccupancy')}
                 count={occupancy.length}
               />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {occupancy.map((s, i) => {
                   const e = getEdit('occupancy_sensor', i)
                   const eff = { ...s, ...(e.name ? { friendly_name: e.name } : {}) }
@@ -642,7 +620,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
                 label={t('automations.proCard.sectionModes')}
                 count={modes.length}
               />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {modes.map((kv, i) => (
                   <div key={i} style={{ opacity: isIncluded('kv_state', i) ? 1 : 0.45 }}>
                     <ModeRow kv={kv} />
@@ -660,7 +638,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
                 label={t('automations.proCard.sectionAutomations')}
                 count={automations.length}
               />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {automations.map((a, i) => {
                   const e = getEdit('automation', i)
                   const baseTimeout = triggerTimeoutMinutes(a.trigger)
@@ -692,7 +670,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
                 label={t('automations.proCard.sectionVoice')}
                 count={voices.length}
               />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {voices.map((vi, i) => {
                   const e = getEdit('voice_intent', i)
                   const eff = { ...vi, ...(e.name ? { phrase: e.name } : {}) }
@@ -715,9 +693,9 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
 
       {/* Top-of-footer error (from a failed POST that left the card intact) */}
       {topError && (
-        <p style={{
-          fontSize: 12, color: 'var(--err)', margin: 0, padding: '6px 10px',
-          borderRadius: 8, background: 'color-mix(in srgb, var(--err) 8%, var(--surface))',
+        <p className="z-subhead" role="alert" style={{
+          color: 'var(--err-text)', margin: 0, padding: '12px 16px',
+          borderRadius: 'var(--r-ctl)', background: 'color-mix(in srgb, var(--err) 8%, var(--surface))',
           border: '0.5px solid color-mix(in srgb, var(--err) 30%, var(--line))',
         }} dir="auto">
           {topError}
@@ -759,17 +737,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
                   cursor: undoing ? 'progress' : 'pointer',
                 }}
               >
-                {undoing && (
-                  <motion.span
-                    style={{
-                      width: 12, height: 12, borderRadius: '50%',
-                      border: '1.5px solid currentColor',
-                      borderTopColor: 'transparent', display: 'inline-block',
-                    }}
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
-                  />
-                )}
+                {undoing && <Spinner />}
                 {undoing ? t('automations.proCard.undoing') : t('automations.proCard.undo')}
               </button>
             )}
@@ -806,17 +774,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
                 cursor: applying ? 'progress' : (includedCount === 0 ? 'not-allowed' : 'pointer'),
               }}
             >
-              {applying && (
-                <motion.span
-                  style={{
-                    width: 12, height: 12, borderRadius: '50%',
-                    border: '1.5px solid currentColor',
-                    borderTopColor: 'transparent', display: 'inline-block',
-                  }}
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
-                />
-              )}
+              {applying && <Spinner />}
               {applying
                 ? t('automations.proCard.creating')
                 : includedCount === 0

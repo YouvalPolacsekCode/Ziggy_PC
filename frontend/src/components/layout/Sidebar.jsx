@@ -35,10 +35,18 @@ function NavItem({ to, Icon, label }) {
       className={`z-nav-item ${active ? 'active' : ''}`}
       style={{ textDecoration: 'none' }}
     >
-      <Icon size={15} strokeWidth={active ? 2.1 : 1.7} color={active ? 'var(--ink)' : 'var(--ink-faint)'} style={{ flexShrink: 0 }} />
-      <span style={{ flex: 1, fontSize: 13 }}>{label}</span>
+      <Icon size={18} strokeWidth={active ? 2 : 1.75} color={active ? 'var(--ink)' : 'var(--ink-mute)'} style={{ flexShrink: 0 }} />
+      <span style={{ flex: 1 }}>{label}</span>
     </NavLink>
   )
+}
+
+// Footer icon buttons keep a 44px target (desktop minimum is 28, but these
+// sit at the very bottom of the window where the pointer arrives fast).
+const footBtn = {
+  background: 'transparent', border: 'none', cursor: 'pointer',
+  width: 40, height: 40, borderRadius: 'var(--r-ctl)', padding: 0,
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
 }
 
 export function Sidebar({ connected }) {
@@ -67,22 +75,23 @@ export function Sidebar({ connected }) {
         // states use --surface-2 so they're visible against this bg.
         background: 'var(--surface)',
         borderRight: '0.5px solid var(--line)',
-        padding: '18px 10px',
+        padding: '16px 12px',
         // Sidebar is desktop-only; safe-area-top is for tablets/laptops with
         // notch (e.g. MacBook Pro in fullscreen, iPad PWA).
-        paddingTop: 'calc(18px + var(--safe-top))',
-        paddingBottom: 'calc(18px + var(--safe-bottom))',
+        paddingTop: 'calc(16px + var(--safe-top))',
+        paddingBottom: 'calc(16px + var(--safe-bottom))',
       }}
     >
-      {/* Logo */}
-      <div style={{ padding: '0 8px 20px', display: 'flex', alignItems: 'center', gap: 4 }}>
-        <span style={{ fontWeight: 700, fontSize: 17, letterSpacing: '-0.025em', color: 'var(--ink)' }}>
+      {/* Wordmark — the one place the brand accent appears in the chrome. */}
+      <div style={{ padding: '4px 12px 24px', display: 'flex', alignItems: 'center', gap: 2, minHeight: 40 }}>
+        <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.02em', color: 'var(--ink)', lineHeight: 1 }}>
           Ziggy
         </span>
         <span style={{ color: 'var(--accent)', fontSize: 18, fontWeight: 700, lineHeight: 1 }}>.</span>
         <span
+          aria-label={connected ? t('common.connected') : t('common.offline')}
           style={{
-            marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+            marginInlineStart: 'auto', width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
             background: connected ? 'var(--ok)' : 'var(--err)',
             boxShadow: `0 0 0 3px color-mix(in srgb, ${connected ? 'var(--ok)' : 'var(--err)'} 22%, transparent)`,
           }}
@@ -90,15 +99,15 @@ export function Sidebar({ connected }) {
       </div>
 
       {/* Primary nav */}
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {PRIMARY.map(p => <NavItem key={p.to} to={p.to} Icon={p.Icon} label={t(p.labelKey)} />)}
       </nav>
 
       {/* Divider */}
-      <div style={{ height: 1, background: 'var(--line)', margin: '10px 0' }} />
+      <div style={{ height: 1, background: 'var(--line)', margin: '12px 0' }} />
 
       {/* Secondary nav */}
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {SECONDARY.map(p => <NavItem key={p.to} to={p.to} Icon={p.Icon} label={t(p.labelKey)} />)}
       </nav>
 
@@ -110,16 +119,12 @@ export function Sidebar({ connected }) {
         {isSuperAdmin && (
           <NavItem to="/ops" Icon={ShieldAlert} label={t('nav.opsConsole')} />
         )}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '4px 8px' }}>
-          <button
-            onClick={toggleTheme}
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 0, display: 'flex', alignItems: 'center', borderRadius: 6 }}
-            title={t('common.toggleTheme')}
-          >
-            {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <button onClick={toggleTheme} style={{ ...footBtn, color: 'var(--ink-mute)' }} title={t('common.toggleTheme')} aria-label={t('common.toggleTheme')}>
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
-          <span style={{ marginLeft: 'auto', color: connected ? 'var(--ok)' : 'var(--err)', display: 'flex', alignItems: 'center' }}>
-            {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
+          <span style={{ ...footBtn, cursor: 'default', marginInlineStart: 'auto', color: connected ? 'var(--ok-text)' : 'var(--err-text)' }} title={connected ? t('common.connected') : t('common.offline')}>
+            {connected ? <Wifi size={18} /> : <WifiOff size={18} />}
           </span>
         </div>
       </div>

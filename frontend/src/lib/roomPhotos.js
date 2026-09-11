@@ -103,16 +103,28 @@ export function resizeImageToDataUrl(file) {
   })
 }
 
+// Resolution order: the person's own upload, then the picture they picked in
+// the room editor, then a curated photo whose key matches the room id, then
+// the house default. Every room always has a picture.
+//
+// The tile renderers still handle a null return by drawing a flat surface
+// with a room glyph (`.z-room-plain`), so the default tier can be dropped
+// later without touching them.
 export function getRoomPhoto(room) {
+  if (!room) return null
   try {
     const custom = getCustomPhoto(room.id)
     if (custom) return custom
-    const overrides = JSON.parse(localStorage.getItem('ziggy_room_photos') || '{}')
+    const overrides = JSON.parse(localStorage.getItem(OVERRIDE_KEY) || '{}')
     const key = overrides[room.id] || room.id
     return ROOM_PHOTOS[key] || DEFAULT_PHOTO
   } catch {
     return ROOM_PHOTOS[room.id] || DEFAULT_PHOTO
   }
+}
+
+export function hasRoomPhoto(room) {
+  return !!getRoomPhoto(room)
 }
 
 export function saveRoomPhoto(roomId, photoKey) {

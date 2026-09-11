@@ -2,7 +2,11 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
 import { useT } from '../../lib/i18n'
+import { T_STATE, T_ENTER } from '../../lib/motion'
 
+// Modal — Title 3 (20px) header, 44px close target, sheet radius, one enter
+// curve. `fullScreen` is the phone-sheet form: it fills the viewport and
+// clears the system bars itself.
 export function Modal({ open, onClose, title, children, className, maxWidth = 520, fullScreen = false }) {
   const t = useT()
   return (
@@ -15,7 +19,7 @@ export function Modal({ open, onClose, title, children, className, maxWidth = 52
                 <motion.div
                   style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'var(--backdrop)', backdropFilter: 'blur(8px)' }}
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15 }}
+                  transition={T_STATE}
                 />
               </Dialog.Overlay>
             )}
@@ -37,23 +41,23 @@ export function Modal({ open, onClose, title, children, className, maxWidth = 52
                     // sheet shrinks with the on-screen keyboard.
                     height: 'var(--vh)',
                   }}
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 20 }}
-                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  exit={{ opacity: 0, y: 16 }}
+                  transition={T_ENTER}
                   className={className}
                 >
                   {/* Full-screen header */}
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '16px 20px', borderBottom: '0.5px solid var(--line)',
+                    padding: '12px 16px', borderBottom: '0.5px solid var(--line)',
                     flexShrink: 0, background: 'var(--surface)',
                   }}>
-                    <button onClick={onClose} className="z-icon-btn" style={{ width: 32, height: 32, borderRadius: 10 }} aria-label={t('common.close')}>
-                      <X size={15} />
+                    <button onClick={onClose} className="z-icon-btn" aria-label={t('common.close')}>
+                      <X size={18} />
                     </button>
                     {title && (
-                      <Dialog.Title style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-0.015em', color: 'var(--ink)', margin: 0 }}>
+                      <Dialog.Title className="z-title3" style={{ margin: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {title}
                       </Dialog.Title>
                     )}
@@ -80,30 +84,30 @@ export function Modal({ open, onClose, title, children, className, maxWidth = 52
                       display: 'flex', flexDirection: 'column',
                       background: 'var(--surface)',
                       border: '0.5px solid var(--line)',
-                      borderRadius: 18,
+                      borderRadius: 'var(--r-sheet)',
                       boxShadow: 'var(--shadow-lg)',
                     }}
-                    initial={{ opacity: 0, scale: 0.97, y: 6 }}
+                    initial={{ opacity: 0, scale: 0.98, y: 8 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.97, y: 6 }}
-                    transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                    exit={{ opacity: 0, scale: 0.98, y: 8 }}
+                    transition={T_ENTER}
                     className={className}
                   >
                     <div style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '18px 20px 14px', borderBottom: '0.5px solid var(--line)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                      padding: '16px 16px 16px 24px', borderBottom: '0.5px solid var(--line)',
                       flexShrink: 0,
                     }}>
                       {title && (
-                        <Dialog.Title style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-0.015em', color: 'var(--ink)', margin: 0 }}>
+                        <Dialog.Title className="z-title3" style={{ margin: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {title}
                         </Dialog.Title>
                       )}
-                      <button onClick={onClose} className="z-icon-btn" style={{ marginLeft: 'auto', width: 30, height: 30, borderRadius: 8 }} aria-label={t('common.close')}>
-                        <X size={14} />
+                      <button onClick={onClose} className="z-icon-btn" style={{ marginInlineStart: 'auto' }} aria-label={t('common.close')}>
+                        <X size={18} />
                       </button>
                     </div>
-                    <div className="scrollbar-thin" style={{ padding: '18px 20px 20px', overflowY: 'auto', overflowX: 'visible' }}>
+                    <div className="scrollbar-thin" style={{ padding: '24px', overflowY: 'auto', overflowX: 'visible' }}>
                       {children}
                     </div>
                   </motion.div>

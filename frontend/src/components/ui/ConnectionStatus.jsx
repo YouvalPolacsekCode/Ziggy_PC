@@ -13,7 +13,8 @@
 // outages.
 //
 // Color: amber for "connecting" (transient), red for "offline" (action-
-// required). Tuned via CSS variables so dark/light themes both work.
+// required). Text is --on-accent (near-black) rather than white: white on the
+// light-palette --warn fill is 3.8:1, --on-accent is 4.5:1 on the same fill.
 
 import { useEffect, useState } from 'react'
 import { t as i18nT } from '../../lib/i18n'
@@ -46,10 +47,9 @@ export function ConnectionStatus() {
       aria-live="polite"
       style={{
         position: 'sticky', top: 0, zIndex: 10,
-        background: bg, color: '#fff',
-        fontSize: 12, fontWeight: 500, textAlign: 'center', padding: '5px 12px',
-        // Smooth in so it doesn't pop.
-        animation: 'ziggy-banner-in 180ms ease-out',
+        background: bg, color: 'var(--on-accent)',
+        fontSize: 13, fontWeight: 500, textAlign: 'center', padding: '8px 16px',
+        animation: 'ziggy-banner-in var(--dur-enter) var(--ease-enter)',
       }}
     >
       <style>{`@keyframes ziggy-banner-in {

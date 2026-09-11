@@ -76,13 +76,13 @@ export default function WebOnboarding() {
       display: 'flex', flexDirection: 'column',
       padding: '24px max(20px, env(safe-area-inset-left)) 24px max(20px, env(safe-area-inset-right))',
       boxSizing: 'border-box',
-      background: 'var(--bg-1)',
+      background: 'var(--bg)',
       color: 'var(--ink)',
     }}>
       <div style={{ width: '100%', maxWidth: 480, margin: '0 auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <header style={{ marginBottom: 24 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{t('mobileOnboard.welcome')}</h1>
-          <p style={{ margin: '8px 0 0', fontSize: 14, color: 'var(--ink-faint)' }}>
+        <header className="z-page-head" style={{ display: 'block' }}>
+          <h1 className="z-display" style={{ margin: 0 }}>{t('mobileOnboard.welcome')}</h1>
+          <p className="z-subhead" style={{ margin: '4px 0 0' }}>
             {step === STEP.SETUP    && t('mobileOnboard.subtitleClaim')}
             {step === STEP.SENSORS  && t('mobileOnboard.subtitleSensors')}
             {step === STEP.STARTER  && t('mobileOnboard.subtitleStarter')}
@@ -181,8 +181,8 @@ function WebSetupStep({ onDone, onError }) {
 
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{t('mobileOnboard.claim.title')}</h2>
-      <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
+      <h2 className="z-title" style={{ margin: 0 }}>{t('mobileOnboard.claim.title')}</h2>
+      <p className="z-body" style={{ margin: 0, color: 'var(--ink-mute)' }}>
         {t('mobileOnboard.claim.body')}
       </p>
       <label style={fieldLabel}>{t('mobileOnboard.claim.username')}</label>
@@ -204,8 +204,8 @@ function WebSetupStep({ onDone, onError }) {
         style={textInput}
         dir="ltr"
       />
-      <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('mobileOnboard.claim.passwordHint')}</div>
-      {error && <div style={{ fontSize: 12, color: 'var(--danger, #c00)' }}>{error}</div>}
+      <div className="z-footnote">{t('mobileOnboard.claim.passwordHint')}</div>
+      {error && <div role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>}
       <button onClick={submit} disabled={busy} style={primaryBtn}>
         {busy ? t('mobileOnboard.claim.creating') : t('mobileOnboard.claim.create')}
       </button>
@@ -251,11 +251,11 @@ function WebLocationStep({ onDone, onError, authToken }) {
 
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{t('mobileOnboard.locationTitle')}</h2>
-      <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
+      <h2 className="z-title" style={{ margin: 0 }}>{t('mobileOnboard.locationTitle')}</h2>
+      <p className="z-body" style={{ margin: 0, color: 'var(--ink-mute)' }}>
         {t('mobileOnboard.locationBody')}
       </p>
-      <p style={{ margin: 0, fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.5 }}>
+      <p className="z-subhead" style={{ margin: 0 }}>
         {t('webOnboard.locationAppNote')
           || 'Automatic arrive/leave (turning things on as you get home) needs the Ziggy app on your phone — you can set that up later.'}
       </p>

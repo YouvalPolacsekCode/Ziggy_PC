@@ -1,28 +1,27 @@
 import React, { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { Zap, Hand, Mic, Sparkles, Check, ChevronRight } from 'lucide-react'
 import { useT, useLang } from '../../../lib/i18n'
+import { T_STATE } from '../../../lib/motion'
 
 // Trigger chip — makes the Automatic/On-demand line visible per-card in a
 // MIXED list (Active tab, a filtered "all" view). Inside a single-kind Library
 // section it's just noise (the section header already says it), so TemplatesTab
 // passes showTriggerChip={false} there.
 const TRIGGER_CHIP = {
-  automatic: { icon: '⚡', labelKey: 'automations.chipAutomatic' },
-  tap:       { icon: '👆', labelKey: 'automations.chipTap' },
-  say:       { icon: '🗣', labelKey: 'automations.chipSay' },
+  automatic: { Icon: Zap,  labelKey: 'automations.chipAutomatic' },
+  tap:       { Icon: Hand, labelKey: 'automations.chipTap' },
+  say:       { Icon: Mic,  labelKey: 'automations.chipSay' },
 }
 
 export function TriggerChip({ kind }) {
   const t = useT()
   const chip = TRIGGER_CHIP[kind]
   if (!chip) return null
+  const { Icon } = chip
   return (
-    <span style={{
-      fontSize: 9, padding: '1px 7px', borderRadius: 999, fontWeight: 600,
-      fontFamily: '"IBM Plex Mono", monospace', display: 'inline-flex',
-      alignItems: 'center', gap: 3, background: 'var(--bg-2)', color: 'var(--ink-mute)',
-    }}>
-      <span aria-hidden="true">{chip.icon}</span>{t(chip.labelKey)}
+    <span className="z-chip">
+      <Icon size={14} strokeWidth={1.75} aria-hidden="true" />{t(chip.labelKey)}
     </span>
   )
 }
@@ -31,6 +30,11 @@ export function TriggerChip({ kind }) {
 // Friendly, plain-language card. No tier caps-badges, no ✓/✗ capability audit —
 // just: what it does, whether you can add it now, and one warm line about what
 // (if anything) it still needs.
+//
+// HIG pass: 44px glyph box (the recipe's own emoji identity when the library
+// supplies one, else a line glyph), Headline name, Subhead status line, 13px
+// chips, and one class-driven Add button. The ready tint is gone — "Ready to
+// add" in words is the signal; a green card border was a second, louder one.
 function TemplateCard({ template, onConfigure, showTriggerChip = true }) {
   const t = useT()
   const lang = useLang()
@@ -62,37 +66,37 @@ function TemplateCard({ template, onConfigure, showTriggerChip = true }) {
       onClick={() => setExpanded(v => !v)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(v => !v) } }}
       style={{
-        padding: '14px 16px', borderRadius: 14,
-        background: isReady ? 'color-mix(in srgb, var(--ok) 4%, var(--surface))' : 'var(--surface)',
-        border: `0.5px solid ${isReady ? 'color-mix(in srgb, var(--ok) 22%, var(--line))' : 'var(--line)'}`,
-        display: 'flex', alignItems: 'flex-start', gap: 12,
+        padding: 12, borderRadius: 'var(--r-card)',
+        background: 'var(--surface)', border: '0.5px solid var(--line)',
+        display: 'flex', alignItems: 'flex-start', gap: 16,
         cursor: 'pointer', userSelect: 'none',
       }}
       dir="auto"
     >
-      <div style={{
-        width: 38, height: 38, borderRadius: 11, flexShrink: 0,
+      <div aria-hidden="true" style={{
+        width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'var(--bg-2)', fontSize: 19,
+        background: 'var(--surface-2)', color: 'var(--ink-2)', fontSize: 20, lineHeight: 1,
       }}>
-        {template.icon}
+        {template.icon || <Sparkles size={22} strokeWidth={1.75} />}
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Name row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14.5, letterSpacing: '-0.01em', margin: 0 }} dir="auto">{displayName}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+          <p className="z-headline" style={{ margin: 0 }} dir="auto">{displayName}</p>
           {showTriggerChip && <TriggerChip kind={template.trigger_kind} />}
           {template.already_exists && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, padding: '1px 7px', borderRadius: 999, fontWeight: 600, background: 'color-mix(in srgb, var(--ok) 14%, transparent)', color: 'var(--ok)' }}>
-              ✓ {t('automations.template.added')}
+            <span className="z-chip" style={{ color: 'var(--ok-text)' }}>
+              <Check size={14} strokeWidth={2} aria-hidden="true" />{t('automations.template.added')}
             </span>
           )}
         </div>
 
         {/* One-line status + expander chevron */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: isReady ? 'var(--ok)' : 'var(--ink-mute)' }}>
-          <span aria-hidden="true" style={{ transform: expanded ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s', color: 'var(--ink-faint)' }}>›</span>
+        <div className="z-subhead" style={{ display: 'flex', alignItems: 'center', gap: 4, color: isReady ? 'var(--ok-text)' : 'var(--ink-mute)' }}>
+          <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true"
+            style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)', color: 'var(--ink-faint)', flexShrink: 0 }} />
           {statusLine}
         </div>
 
@@ -102,17 +106,17 @@ function TemplateCard({ template, onConfigure, showTriggerChip = true }) {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.15 }}
+              transition={T_STATE}
               style={{ overflow: 'hidden' }}
             >
-              <p style={{ fontSize: 13, color: 'var(--ink-2)', margin: '9px 0 0', lineHeight: 1.45 }} dir="auto">{template.description}</p>
+              <p className="z-subhead" style={{ color: 'var(--ink-2)', margin: '8px 0 0' }} dir="auto">{template.description}</p>
               {!isReady && missReq.length > 0 && (
-                <p style={{ fontSize: 12.5, color: 'var(--ink-mute)', margin: '8px 0 0', lineHeight: 1.4 }} dir="auto">
+                <p className="z-subhead" style={{ margin: '8px 0 0' }} dir="auto">
                   {t('automations.template.youllNeed', { items: nameOf(missReq) })}
                 </p>
               )}
               {isReady && missOpt.length > 0 && (
-                <p style={{ fontSize: 12, color: 'var(--ink-faint)', margin: '6px 0 0', lineHeight: 1.4 }} dir="auto">
+                <p className="z-footnote" style={{ margin: '8px 0 0' }} dir="auto">
                   {t('automations.template.betterWith', { items: nameOf(missOpt) })}
                 </p>
               )}
@@ -125,8 +129,8 @@ function TemplateCard({ template, onConfigure, showTriggerChip = true }) {
         <button
           onClick={(e) => { e.stopPropagation(); onConfigure(template) }}
           disabled={!canAdd}
-          className={isReady ? 'z-btn-primary' : 'z-btn-secondary'}
-          style={{ fontSize: 13, padding: '7px 16px', borderRadius: 10, whiteSpace: 'nowrap', fontWeight: 600, opacity: canAdd ? 1 : 0.4 }}
+          className={canAdd ? 'z-btn-primary' : 'z-btn-secondary'}
+          style={{ whiteSpace: 'nowrap', opacity: canAdd ? 1 : 0.4, cursor: canAdd ? 'pointer' : 'not-allowed' }}
         >
           {t('automations.template.add')}
         </button>

@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
 import { useT } from '../../../../lib/i18n'
 import { useBundleCtx } from './context'
 import BundleWizard from './BundleWizard'
 import BundleEditor from './BundleEditor'
+import { Spinner } from './StepFrame'
 import { RECIPES } from '../recipes'
 
 // ── BundleHost ────────────────────────────────────────────────────────────────
@@ -61,8 +61,7 @@ export default function BundleHost({ recipeId, initial, automations, hostActions
   if (!ready || values === null) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 12px' }}>
-        <motion.span style={{ width: 24, height: 24, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent' }}
-          animate={{ rotate: 360 }} transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }} />
+        <Spinner size={24} />
       </div>
     )
   }

@@ -79,7 +79,7 @@ export function MediaTransportRemote({ entity }) {
   const fireSmart = makeFireSmart({ entity, fire, pairedRemoteId, addToast })
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <NowPlayingHero entity={entity} attrs={attrs} facts={facts} />
       <ScrubBar entity={entity} attrs={attrs} fire={fire} />
       <TransportRow entity={entity} fire={fire} state={entity?.state} />
@@ -113,7 +113,7 @@ function OsNavSection({ entity, pairedRemoteId, fireSmart }) {
 
   return (
     <div className="z-card" style={{
-      padding: 14, borderRadius: 14,
+      padding: 12, borderRadius: 16,
       display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center',
     }}>
       {dpadVisible && (
@@ -123,10 +123,10 @@ function OsNavSection({ entity, pairedRemoteId, fireSmart }) {
         />
       )}
       {navVisible && (
-        <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-          {backOk && <NavPill onClick={() => fireSmart('back')}><ChevronLeft size={12} /> Back</NavPill>}
-          {homeOk && <NavPill onClick={() => fireSmart('home')}><Home size={12} /> Home</NavPill>}
-          {menuOk && <NavPill onClick={() => fireSmart('menu')}><Menu size={12} /> Menu</NavPill>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+          {backOk && <NavPill onClick={() => fireSmart('back')}><ChevronLeft size={18} strokeWidth={1.75} className="icon-flip-rtl" /> {i18nT('remote.back')}</NavPill>}
+          {homeOk && <NavPill onClick={() => fireSmart('home')}><Home size={18} strokeWidth={1.75} /> {i18nT('remote.home')}</NavPill>}
+          {menuOk && <NavPill onClick={() => fireSmart('menu')}><Menu size={18} strokeWidth={1.75} /> {i18nT('remote.menu')}</NavPill>}
         </div>
       )}
     </div>
@@ -134,12 +134,15 @@ function OsNavSection({ entity, pairedRemoteId, fireSmart }) {
 }
 
 
-// Compact d-pad — 140px circular dial, smaller OK puck than TVRemote's.
-// Sized to fit alongside the hero card + transport without dominating.
+// Compact d-pad — 160px dial, 72px OK puck: the ring between them is exactly
+// 44px, so each arrow is a full 44×44 target without overlapping the puck.
+// Still smaller than TVRemote's 200px dial so it sits alongside the hero
+// card + transport without dominating.
 function CompactDPad({ okOk, upOk, downOk, leftOk, rightOk, fireSmart }) {
-  const DIAL = 140
+  const DIAL = 160
   const OK   = 72
-  const ARROW_OFFSET = 8
+  const ARROW = 44
+  const ARROW_OFFSET = 0
 
   return (
     <div style={{
@@ -151,8 +154,8 @@ function CompactDPad({ okOk, upOk, downOk, leftOk, rightOk, fireSmart }) {
       <button
         onClick={() => okOk && fireSmart('nav_ok')}
         disabled={!okOk}
-        aria-label="OK"
-        title={okOk ? '' : 'OK not available'}
+        aria-label={i18nT('remote.ok')}
+        title={okOk ? '' : i18nT('remote.okNotAvailable')}
         style={{
           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
           width: OK, height: OK, borderRadius: '50%',
@@ -163,24 +166,26 @@ function CompactDPad({ okOk, upOk, downOk, leftOk, rightOk, fireSmart }) {
           cursor: okOk ? 'pointer' : 'not-allowed',
           opacity: okOk ? 1 : 0.28, fontFamily: 'inherit',
         }}
-      >OK</button>
+      >{i18nT('remote.ok')}</button>
       {[
-        { dir: 'up',    cmd: 'nav_up',    ok: upOk,    style: { top: ARROW_OFFSET, left: '50%', transform: 'translateX(-50%)' }, Icon: ChevronUp },
-        { dir: 'down',  cmd: 'nav_down',  ok: downOk,  style: { bottom: ARROW_OFFSET, left: '50%', transform: 'translateX(-50%)' }, Icon: ChevronDown },
-        { dir: 'left',  cmd: 'nav_left',  ok: leftOk,  style: { left: ARROW_OFFSET, top: '50%', transform: 'translateY(-50%)' }, Icon: ChevronLeft },
-        { dir: 'right', cmd: 'nav_right', ok: rightOk, style: { right: ARROW_OFFSET, top: '50%', transform: 'translateY(-50%)' }, Icon: ChevronRight },
-      ].map(({ dir, cmd, ok, style, Icon }) => (
+        { dir: 'up',    cmd: 'nav_up',    ok: upOk,    label: i18nT('remote.up'),    style: { top: ARROW_OFFSET, left: '50%', transform: 'translateX(-50%)' }, Icon: ChevronUp },
+        { dir: 'down',  cmd: 'nav_down',  ok: downOk,  label: i18nT('remote.down'),  style: { bottom: ARROW_OFFSET, left: '50%', transform: 'translateX(-50%)' }, Icon: ChevronDown },
+        { dir: 'left',  cmd: 'nav_left',  ok: leftOk,  label: i18nT('remote.left'),  style: { left: ARROW_OFFSET, top: '50%', transform: 'translateY(-50%)' }, Icon: ChevronLeft },
+        { dir: 'right', cmd: 'nav_right', ok: rightOk, label: i18nT('remote.right'), style: { right: ARROW_OFFSET, top: '50%', transform: 'translateY(-50%)' }, Icon: ChevronRight },
+      ].map(({ dir, cmd, ok, label, style, Icon }) => (
         <button
-          key={dir} onClick={() => ok && fireSmart(cmd)} aria-label={dir} disabled={!ok}
-          title={ok ? '' : `${dir} not available`}
+          key={dir} onClick={() => ok && fireSmart(cmd)} aria-label={label} disabled={!ok}
+          title={ok ? '' : i18nT('remote.notAvailable', { name: label })}
           style={{
             position: 'absolute', background: 'none', border: 'none',
-            color: 'var(--ink-mute)', padding: 4, lineHeight: 0,
+            width: ARROW, height: ARROW, borderRadius: '50%',
+            color: 'var(--ink-mute)', padding: 0, lineHeight: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: ok ? 'pointer' : 'not-allowed',
             opacity: ok ? 1 : 0.3,
             ...style,
           }}
-        ><Icon size={16} strokeWidth={2} /></button>
+        ><Icon size={20} strokeWidth={1.75} /></button>
       ))}
     </div>
   )
@@ -189,14 +194,9 @@ function CompactDPad({ okOk, upOk, downOk, leftOk, rightOk, fireSmart }) {
 
 function NavPill({ onClick, children }) {
   return (
-    <button onClick={onClick} style={{
-      padding: '6px 11px', borderRadius: 9,
-      background: 'var(--surface)', color: 'var(--ink-2)',
-      border: '0.5px solid var(--line)',
-      fontSize: 11, fontWeight: 600, fontFamily: 'inherit',
-      display: 'inline-flex', alignItems: 'center', gap: 4,
-      cursor: 'pointer',
-    }}>{children}</button>
+    <button onClick={onClick} className="z-btn-secondary" style={{ padding: '0 16px', fontSize: 13 }}>
+      {children}
+    </button>
   )
 }
 
@@ -210,51 +210,49 @@ function NowPlayingHero({ entity, attrs, facts }) {
   const title    = attrs.media_title || facts.name || i18nT('remote.idle')
   const subtitle = attrs.media_artist
                 || attrs.media_album_name
-                || (facts.isOn ? facts.stateLabel : 'Off')
+                || (facts.isOn ? facts.stateLabel : i18nT('common.off'))
   const app      = attrs.app_name
   // entity_picture is served by HA at /api/media_player_proxy/<eid>?token=…
   // It's a full path; we just point an <img> at it. Same-origin for tunneled
   // installs because HA serves the bytes through the same hostname.
   const art      = attrs.entity_picture || attrs.entity_picture_local || null
-  const accent   = facts.tint || 'var(--accent)'
 
   return (
     <div className="z-card" style={{
-      display: 'flex', flexDirection: 'column', gap: 14,
-      padding: 16, borderRadius: 18,
+      display: 'flex', flexDirection: 'column', gap: 16,
+      padding: 12,
     }}>
-      <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-        {/* Artwork or fallback */}
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+        {/* Artwork or fallback — a plain surface-2 tile with the kind glyph,
+            no tint: the artwork is the colour when there is any. */}
         <div style={{
-          width: 76, height: 76, borderRadius: 12,
-          background: art ? 'var(--bg-2)' : `color-mix(in srgb, ${accent} 14%, var(--surface-2))`,
-          color: facts.isOn ? accent : 'var(--ink-mute)',
+          width: 76, height: 76, borderRadius: 'var(--r-ctl)',
+          background: art ? 'var(--bg-2)' : 'var(--surface-2)',
+          color: facts.isOn ? 'var(--ink)' : 'var(--ink-mute)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          overflow: 'hidden', flexShrink: 0, fontSize: 32,
+          overflow: 'hidden', flexShrink: 0,
         }}>
           {art
             ? <img src={art} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-            : <DeviceIcon kind={facts.kind} size={24} fill />}
+            : <DeviceIcon kind={facts.kind} size={28} />}
         </div>
 
         {/* Title + subtitle + app badge */}
         <div style={{ flex: 1, minWidth: 0 }}>
           {app && (
-            <div style={{
+            <div className="z-caption" style={{
               display: 'inline-block', padding: '2px 8px', borderRadius: 999,
               background: 'var(--surface-2)', color: 'var(--ink-mute)',
-              fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
-              textTransform: 'uppercase', marginBottom: 6,
+              marginBottom: 4,
             }}>{app}</div>
           )}
-          <div style={{
-            fontSize: 16, fontWeight: 700, color: 'var(--ink)',
-            letterSpacing: '-0.01em', lineHeight: 1.2,
+          <div dir="auto" style={{
+            fontSize: 15, fontWeight: 600, color: 'var(--ink)', lineHeight: '22px',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>{title}</div>
           {subtitle && (
-            <div style={{
-              fontSize: 12, color: 'var(--ink-mute)', marginTop: 2,
+            <div dir="auto" style={{
+              fontSize: 13, color: 'var(--ink-mute)', marginTop: 2,
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>{subtitle}</div>
           )}
@@ -262,7 +260,7 @@ function NowPlayingHero({ entity, attrs, facts }) {
 
         {/* On/off dot — same convention as the TVRemote's NowPlayingCard. */}
         <span className={facts.isOn ? 'z-dot z-dot-on' : 'z-dot'}
-          style={facts.isOn ? {} : { background: 'var(--ink-ghost)' }} />
+          style={facts.isOn ? {} : { background: 'var(--ink-faint)' }} />
       </div>
     </div>
   )
@@ -309,7 +307,7 @@ function ScrubBar({ entity, attrs, fire }) {
   }
 
   return (
-    <div className="z-card" style={{ padding: 14, borderRadius: 14 }}>
+    <div className="z-card" style={{ padding: 12 }}>
       <input
         type="range"
         min={0} max={duration} step={1}
@@ -319,22 +317,21 @@ function ScrubBar({ entity, attrs, fire }) {
         onTouchEnd={commit}
         disabled={!seekOk}
         style={{
-          width: '100%', cursor: seekOk ? 'pointer' : 'not-allowed',
-          accentColor: 'var(--accent)',
+          width: '100%', height: 44, cursor: seekOk ? 'pointer' : 'not-allowed',
+          accentColor: 'var(--ink)',
           opacity: seekOk ? 1 : 0.5,
         }}
       />
       <div style={{
         display: 'flex', justifyContent: 'space-between', marginTop: 4,
-        fontSize: 11, color: 'var(--ink-faint)',
-        fontFamily: '"IBM Plex Mono", monospace',
-      }}>
-        <span>{_fmtSec(value)}</span>
-        <span>−{_fmtSec(Math.max(0, duration - value))}</span>
+        fontSize: 12, color: 'var(--ink-mute)',
+        fontVariantNumeric: 'tabular-nums', }}>
+        <span dir="ltr">{_fmtSec(value)}</span>
+        <span dir="ltr">−{_fmtSec(Math.max(0, duration - value))}</span>
       </div>
       {!seekOk && (
-        <div style={{ fontSize: 10, color: 'var(--ink-ghost)', textAlign: 'center', marginTop: 4 }}>
-          Seek not supported by this player
+        <div style={{ fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center', marginTop: 4 }}>
+          {i18nT('remote.seekNotSupported')}
         </div>
       )}
     </div>
@@ -359,13 +356,13 @@ function TransportRow({ entity, fire, state }) {
       onClick={() => ok && onClick()}
       disabled={!ok}
       aria-label={label}
-      title={ok ? label : `${label} not supported`}
+      title={ok ? label : i18nT('remote.notSupported', { name: label })}
       style={{
         height: primary ? 64 : 52,
         width:  primary ? 64 : 52,
         borderRadius: '50%',
         background: primary ? 'var(--ink)' : 'var(--surface-2)',
-        color: primary ? 'var(--bg)' : (ok ? 'var(--ink)' : 'var(--ink-ghost)'),
+        color: primary ? 'var(--bg)' : (ok ? 'var(--ink)' : 'var(--ink-faint)'),
         border: primary ? 'none' : '0.5px solid var(--line)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         cursor: ok ? 'pointer' : 'not-allowed',
@@ -378,7 +375,7 @@ function TransportRow({ entity, fire, state }) {
   )
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
       {btn(<SkipBack size={20} />, i18nT('remote.previousLabel'), () => fire('prev_track'), prevOk)}
       {btn(
         isPlaying ? <Pause size={26} /> : <Play size={26} style={{ marginLeft: 2 }} />,
@@ -432,23 +429,23 @@ function VolumeRow({ entity, attrs, fire }) {
 
   return (
     <div className="z-card" style={{
-      display: 'flex', alignItems: 'center', gap: 10,
-      padding: '12px 14px', borderRadius: 14,
+      display: 'flex', alignItems: 'center', gap: 12,
+      padding: '8px 16px', minHeight: 48,
     }}>
       <button
         onClick={() => muteOk && fire('mute_toggle', { muted: !isMuted })}
         disabled={!muteOk}
+        className="z-icon-btn"
+        aria-pressed={isMuted}
+        aria-label={isMuted ? i18nT('remote.unmute') : i18nT('remote.mute')}
         title={isMuted ? i18nT('remote.unmute') : i18nT('remote.mute')}
         style={{
-          width: 34, height: 34, borderRadius: 9,
-          background: isMuted ? 'var(--ink)' : 'var(--surface-2)',
-          color: isMuted ? 'var(--bg)' : 'var(--ink-mute)',
-          border: '0.5px solid var(--line)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: isMuted ? 'var(--ink)' : undefined,
+          color: isMuted ? 'var(--bg)' : undefined,
           cursor: muteOk ? 'pointer' : 'not-allowed',
-          opacity: muteOk ? 1 : 0.4, flexShrink: 0,
+          opacity: muteOk ? 1 : 0.4,
         }}
-      >{isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
+      >{isMuted ? <VolumeX size={20} strokeWidth={1.75} /> : <Volume2 size={20} strokeWidth={1.75} />}</button>
 
       {setVolOk ? (
         <input
@@ -457,25 +454,28 @@ function VolumeRow({ entity, attrs, fire }) {
           onChange={(e) => setLocal(Number(e.target.value))}
           onMouseUp={(e) => commit(Number(e.currentTarget.value))}
           onTouchEnd={(e) => commit(Number(e.currentTarget.value))}
-          style={{ flex: 1, accentColor: 'var(--accent)', cursor: 'pointer' }}
+          aria-label={i18nT('remote.volumeHeading')}
+          style={{ flex: 1, height: 44, accentColor: 'var(--ink)', cursor: 'pointer' }}
         />
       ) : (
         <div style={{ flex: 1, display: 'flex', gap: 8, justifyContent: 'center' }}>
           <button onClick={() => bumpStep(-1)} disabled={!downOk}
-            style={{ width: 64, height: 30, borderRadius: 8, background: 'var(--surface-2)',
-                     color: 'var(--ink-2)', border: '0.5px solid var(--line)',
+            aria-label={i18nT('remote.volumeDown')}
+            style={{ width: 64, height: 44, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)',
+                     color: 'var(--ink-2)', border: '0.5px solid var(--line)', fontSize: 18,
                      cursor: downOk ? 'pointer' : 'not-allowed', opacity: downOk ? 1 : 0.4,
                      fontFamily: 'inherit' }}>−</button>
           <button onClick={() => bumpStep(+1)} disabled={!upOk}
-            style={{ width: 64, height: 30, borderRadius: 8, background: 'var(--surface-2)',
-                     color: 'var(--ink-2)', border: '0.5px solid var(--line)',
+            aria-label={i18nT('remote.volumeUp')}
+            style={{ width: 64, height: 44, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)',
+                     color: 'var(--ink-2)', border: '0.5px solid var(--line)', fontSize: 18,
                      cursor: upOk ? 'pointer' : 'not-allowed', opacity: upOk ? 1 : 0.4,
                      fontFamily: 'inherit' }}>+</button>
         </div>
       )}
 
       <span className="z-mono" style={{
-        fontSize: 11, color: 'var(--ink-faint)', minWidth: 32, textAlign: 'right',
+        fontSize: 12, color: 'var(--ink-mute)', minWidth: 40, textAlign: 'end',
       }}>{setVolOk ? `${local}%` : (haVolPct != null ? `${haVolPct}%` : '')}</span>
     </div>
   )
@@ -483,8 +483,9 @@ function VolumeRow({ entity, attrs, fire }) {
 
 
 // ─── Power pill — demoted from the TVRemote's BigButton ────────────────────
-// A small toggle at the bottom of the layout. Hidden entirely when the
-// device doesn't accept turn_on/turn_off (rare; most do).
+// A secondary capsule at the bottom of the layout: the play/pause puck is
+// this remote's one inverted control. Hidden entirely when the device
+// doesn't accept turn_on/turn_off (rare; most do).
 
 function PowerPill({ entity, facts, fire }) {
   const powerOk = commandAvailable(entity, 'toggle')
@@ -493,17 +494,10 @@ function PowerPill({ entity, facts, fire }) {
     <div style={{ display: 'flex', justifyContent: 'center' }}>
       <button
         onClick={() => fire('toggle')}
-        style={{
-          height: 38, padding: '0 18px', borderRadius: 999,
-          background: facts.isOn ? 'var(--surface-2)' : 'var(--ink)',
-          color: facts.isOn ? 'var(--err)' : 'var(--bg)',
-          border: '0.5px solid ' + (facts.isOn ? 'var(--line)' : 'var(--ink)'),
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-          cursor: 'pointer',
-        }}
+        className="z-btn-secondary"
+        style={{ borderRadius: 999 }}
       >
-        <Power size={14} strokeWidth={2.4} />
+        <Power size={18} strokeWidth={1.75} />
         {facts.isOn ? i18nT('remote.turnOff') : i18nT('remote.turnOn')}
       </button>
     </div>

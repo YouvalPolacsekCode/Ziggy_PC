@@ -1,9 +1,11 @@
 import React from 'react'
 import { getActionLabel } from '../../ui/EntitySelect'
 import { useT } from '../../../lib/i18n'
-import { selectStyle } from '../../../lib/automations/styles'
+import { selectStyle, fieldLabelStyle } from '../../../lib/automations/styles'
 
 // ── MergedActionPicker ────────────────────────────────────────────────────────
+// A raw <select> (the shared Select can't render <optgroup>) drawn with the
+// shared 44px / 17px select geometry.
 function MergedActionPicker({ haActions, irDevice, haValue, onChangeHa, onPickIrCommand }) {
   const t = useT()
   const learned = new Set(irDevice?.learned_commands || [])
@@ -18,7 +20,7 @@ function MergedActionPicker({ haActions, irDevice, haValue, onChangeHa, onPickIr
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>{t('automations.action.label')}</label>
+      <label style={fieldLabelStyle}>{t('automations.action.label')}</label>
       <select style={selectStyle} value={haValue} onChange={handleChange}>
         <optgroup label={t('automations.action.haGroup')}>
           {haActions.map(a => <option key={a.value} value={a.value}>{getActionLabel(a, t)}</option>)}
@@ -29,7 +31,7 @@ function MergedActionPicker({ haActions, irDevice, haValue, onChangeHa, onPickIr
           </optgroup>
         )}
       </select>
-      {irList.length > 0 && <p style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t('automations.action.irConvertHint')}</p>}
+      {irList.length > 0 && <p className="z-footnote" style={{ margin: '4px 0 0' }}>{t('automations.action.irConvertHint')}</p>}
     </div>
   )
 }

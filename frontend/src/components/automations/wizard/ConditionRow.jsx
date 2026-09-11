@@ -1,4 +1,6 @@
 import React from 'react'
+import { Trash2 } from 'lucide-react'
+import { cardIconBtn } from '../../../lib/automations/styles'
 import { Input } from '../../ui/Input'
 import { Select } from '../../ui/Select'
 import { EntitySelect } from '../../ui/EntitySelect'
@@ -45,10 +47,10 @@ function ConditionRow({ condition, onChange, onRemove }) {
 
   const sharedWrapper = (children) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <p className="z-eyebrow">{t('automations.cond.title')}</p>
-        <button onClick={onRemove} title={t('automations.cond.remove')} aria-label={t('automations.cond.remove')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 4 }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '-8px -12px -8px 0' }}>
+        <p className="z-eyebrow" style={{ margin: 0 }}>{t('automations.cond.title')}</p>
+        <button type="button" onClick={onRemove} title={t('automations.cond.remove')} aria-label={t('automations.cond.remove')} style={cardIconBtn('var(--err-text)')}>
+          <Trash2 size={18} strokeWidth={1.75} />
         </button>
       </div>
       <Select

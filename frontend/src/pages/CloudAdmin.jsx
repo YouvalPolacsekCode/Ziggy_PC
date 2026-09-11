@@ -5,6 +5,7 @@ import {
   Activity, Package, Database, Smartphone, LifeBuoy, Terminal,
 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
+import { Button } from '../components/ui/Button'
 import FleetOps from '../components/admin/ops/FleetOps'
 import { useUIStore } from '../stores/uiStore'
 import { useT } from '../lib/i18n'
@@ -27,18 +28,20 @@ import {
 
 const ROLE_ORDER = ['super_admin', 'admin', 'user', 'guest']
 const ROLE_LABEL_KEY = { super_admin: 'roles.owner', admin: 'roles.admin', user: 'roles.member', guest: 'roles.guest' }
-const ROLE_COLOR = { super_admin: '#7c3aed', admin: '#2563eb', user: '#16a34a', guest: '#6b7280' }
+// Role colour rides on an 8px dot next to the word; the word itself stays
+// ink so the 13px chip passes contrast in both palettes.
+const ROLE_DOT = { super_admin: 'var(--info)', admin: 'var(--info)', user: 'var(--ok)', guest: 'var(--ink-faint)' }
+
+function Dot({ color }) {
+  return <span className="z-dot" style={{ background: color }} />
+}
 
 function RoleBadge({ role }) {
   const t = useT()
   const labelKey = ROLE_LABEL_KEY[role]
   return (
-    <span style={{
-      fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-      background: (ROLE_COLOR[role] || '#6b7280') + '18',
-      color: ROLE_COLOR[role] || '#6b7280',
-      border: `0.5px solid ${(ROLE_COLOR[role] || '#6b7280')}40`,
-    }}>
+    <span className="z-chip" style={{ gap: 6 }}>
+      <Dot color={ROLE_DOT[role] || 'var(--ink-faint)'} />
       {labelKey ? t(labelKey) : role}
     </span>
   )
@@ -59,13 +62,10 @@ function TrafficLightPill({ home, latestPayload }) {
   return (
     <span
       title={tooltip}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 5,
-        fontSize: 10, fontWeight: 600, padding: '1px 8px', borderRadius: 999,
-        background: colors.bg, color: colors.fg, border: `0.5px solid ${colors.border}`,
-      }}
+      className="z-chip"
+      style={{ gap: 6, background: colors.bg, color: colors.fg, borderColor: colors.border }}
     >
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors.fg }} />
+      <Dot color={colors.dot} />
       {t(`fleetHealth.${level}`)}
     </span>
   )
@@ -86,12 +86,11 @@ function timeAgoLabel(t, iso) {
 
 function StatRow({ label, value, mono }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '0.5px dashed var(--line)' }}>
-      <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{label}</span>
-      <span style={{
-        fontSize: 11, color: 'var(--ink)',
-        fontFamily: mono ? '"IBM Plex Mono", monospace' : 'inherit',
-        wordBreak: 'break-all', textAlign: 'right',
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', padding: '8px 0', borderBottom: '0.5px dashed var(--line)' }}>
+      <span className="z-footnote" style={{ flexShrink: 0 }}>{label}</span>
+      <span className={mono ? 'z-code' : undefined} style={{
+        fontSize: mono ? 13 : 15, color: 'var(--ink)',
+        wordBreak: 'break-all', textAlign: 'end',
       }}>
         {value ?? '—'}
       </span>
@@ -101,11 +100,21 @@ function StatRow({ label, value, mono }) {
 
 function TabSpinner() {
   return (
-    <div style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ink-faint)', fontSize: 11 }}>
-      <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} />
+    <div style={{ padding: 12, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ink-mute)' }}>
+      <Loader size={18} strokeWidth={1.75} className="z-spin" />
       <span />
     </div>
   )
+}
+
+function TabError({ children }) {
+  return <p style={{ padding: 12, fontSize: 13, color: 'var(--warn-text)' }}>{children}</p>
+}
+function TabEmpty({ children }) {
+  return <p className="z-body" style={{ padding: 32, textAlign: 'center', color: 'var(--ink-mute)' }}>{children}</p>
+}
+function FieldLabel({ children }) {
+  return <p className="z-footnote" style={{ marginBottom: 4 }}>{children}</p>
 }
 
 // ── Telemetry tab ─────────────────────────────────────────────────────────────
@@ -134,10 +143,10 @@ function TelemetryTab({ homeId, onPayload }) {
 
   if (state.status === 'loading') return <TabSpinner />
   if (state.status === 'error') return (
-    <p style={{ padding: 14, fontSize: 11, color: 'var(--warn)' }}>{t('cloudAdmin.tabLoadError')}: {state.error}</p>
+    <TabError>{t('cloudAdmin.tabLoadError')}: {state.error}</TabError>
   )
   if (state.rows.length === 0) return (
-    <p style={{ padding: 14, fontSize: 11, color: 'var(--ink-faint)' }}>{t('cloudAdmin.telemetryNone')}</p>
+    <TabEmpty>{t('cloudAdmin.telemetryNone')}</TabEmpty>
   )
 
   const row = state.rows[0]
@@ -191,17 +200,16 @@ function TelemetryTab({ homeId, onPayload }) {
           ? t('cloudAdmin.telemetryPushDelivery', { success: webSuccess ?? 0, failure: webFailure ?? 0 })
           : t('cloudAdmin.telemetryPushStub')}
       />
-      <button
-        onClick={() => setShowRaw(v => !v)}
-        style={{ marginTop: 10, fontSize: 10, color: 'var(--ink-faint)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-      >
-        {showRaw ? '▼' : '▶'} {t('cloudAdmin.telemetryViewRaw')}
-      </button>
+      <Button variant="ghost" size="sm" onClick={() => setShowRaw(v => !v)} style={{ marginTop: 12, paddingInline: 8 }}>
+        {showRaw
+          ? <ChevronDown size={18} strokeWidth={1.75} />
+          : <ChevronRight size={18} strokeWidth={1.75} className="icon-flip-rtl" />}
+        {t('cloudAdmin.telemetryViewRaw')}
+      </Button>
       {showRaw && (
-        <pre style={{
-          fontSize: 9.5, color: 'var(--ink-mute)', background: 'var(--bg-2)',
-          padding: 10, borderRadius: 8, overflow: 'auto',
-          fontFamily: '"IBM Plex Mono", monospace', marginTop: 8,
+        <pre className="z-code" style={{
+          fontSize: 12, lineHeight: '18px', color: 'var(--ink-mute)', background: 'var(--surface-2)',
+          padding: 12, borderRadius: 'var(--r-ctl)', overflow: 'auto', marginTop: 8,
           maxHeight: 240, border: '0.5px solid var(--line)',
         }}>
           {JSON.stringify(p, null, 2)}
@@ -241,7 +249,7 @@ function OtaTab({ home }) {
     return () => { cancelled = true }
   }, [home.id])
 
-  if (error) return <p style={{ padding: 14, fontSize: 11, color: 'var(--warn)' }}>{t('cloudAdmin.tabLoadError')}: {error}</p>
+  if (error) return <TabError>{t('cloudAdmin.tabLoadError')}: {error}</TabError>
   if (releases == null || cohorts == null) return <TabSpinner />
 
   const savePin = async () => {
@@ -262,14 +270,12 @@ function OtaTab({ home }) {
     finally { setSavingCohort(false) }
   }
 
-  const inputStyle = { width: '100%', height: 32, padding: '0 8px', borderRadius: 8, border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', fontSize: 12 }
-
   return (
-    <div style={{ padding: '14px 20px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ padding: '16px 20px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div>
-        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('cloudAdmin.otaPinLabel')}</p>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <select value={pinId} onChange={e => setPinId(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}>
+        <FieldLabel>{t('cloudAdmin.otaPinLabel')}</FieldLabel>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <select value={pinId} onChange={e => setPinId(e.target.value)} className="z-input" style={{ flex: 1, cursor: 'pointer' }}>
             <option value="">{t('cloudAdmin.otaPinNone')}</option>
             {releases.map(r => (
               <option key={r.id} value={String(r.id)}>
@@ -277,15 +283,15 @@ function OtaTab({ home }) {
               </option>
             ))}
           </select>
-          <button onClick={savePin} disabled={savingPin} className="z-btn-secondary" style={{ padding: '0 12px', height: 32, borderRadius: 8, fontSize: 11 }}>
+          <button onClick={savePin} disabled={savingPin} className="z-btn-secondary">
             {savingPin ? '…' : t('cloudAdmin.otaSavePin')}
           </button>
         </div>
       </div>
       <div>
-        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('cloudAdmin.otaCohortLabel')}</p>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <select value={cohort} onChange={e => setCohort(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}>
+        <FieldLabel>{t('cloudAdmin.otaCohortLabel')}</FieldLabel>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <select value={cohort} onChange={e => setCohort(e.target.value)} className="z-input" style={{ flex: 1, cursor: 'pointer' }}>
             <option value="">{t('cloudAdmin.otaCohortNone')}</option>
             {cohorts.map(c => (
               <option key={c.cohort_name} value={c.cohort_name}>
@@ -293,7 +299,7 @@ function OtaTab({ home }) {
               </option>
             ))}
           </select>
-          <button onClick={saveCohort} disabled={savingCohort} className="z-btn-secondary" style={{ padding: '0 12px', height: 32, borderRadius: 8, fontSize: 11 }}>
+          <button onClick={saveCohort} disabled={savingCohort} className="z-btn-secondary">
             {savingCohort ? '…' : t('cloudAdmin.otaSaveCohort')}
           </button>
         </div>
@@ -317,7 +323,7 @@ function BackupTab({ homeId }) {
   }, [homeId])
 
   if (state.status === 'loading') return <TabSpinner />
-  if (state.status === 'error') return <p style={{ padding: 14, fontSize: 11, color: 'var(--warn)' }}>{t('cloudAdmin.tabLoadError')}: {state.error}</p>
+  if (state.status === 'error') return <TabError>{t('cloudAdmin.tabLoadError')}: {state.error}</TabError>
   const d = state.data || {}
   const restoreEvents = Array.isArray(d.restore_events) ? d.restore_events : []
   // The relay reports a backup RUN: {ts, outcome, stage, files, uploaded_bytes,
@@ -335,7 +341,7 @@ function BackupTab({ homeId }) {
   const fileCount = Array.isArray(d.files) ? d.files.length : null
 
   if (!lastBackupAt && !d.last_unsealed_at && restoreEvents.length === 0) {
-    return <p style={{ padding: 14, fontSize: 11, color: 'var(--ink-faint)' }}>{t('cloudAdmin.backupNoStatus')}</p>
+    return <TabEmpty>{t('cloudAdmin.backupNoStatus')}</TabEmpty>
   }
 
   return (
@@ -345,7 +351,7 @@ function BackupTab({ homeId }) {
         <StatRow
           label="Outcome"
           value={
-            <span style={{ color: failed ? '#ef4444' : 'var(--ok)', fontWeight: 600 }}>
+            <span style={{ color: failed ? 'var(--err-text)' : 'var(--ok-text)', fontWeight: 600 }}>
               {failed ? `${outcome}${d.error_reason ? ` — ${d.error_reason}` : ''}` : 'success'}
               {d.dry_run ? ' (dry run)' : ''}
             </span>
@@ -361,17 +367,29 @@ function BackupTab({ homeId }) {
           ? t('cloudAdmin.backupKeyUnsealed', { by: d.last_unsealed_by || '?', when: timeAgoLabel(t, d.last_unsealed_at) })
           : t('cloudAdmin.backupKeySealed')}
       />
-      <div style={{ marginTop: 10 }}>
-        <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+      <div style={{ marginTop: 16 }}>
+        <p className="z-eyebrow" style={{ marginBottom: 8 }}>
           {t('cloudAdmin.backupRestoreEvents')}
         </p>
         {restoreEvents.length === 0 ? (
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('cloudAdmin.backupNoRestoreEvents')}</p>
+          <p className="z-subhead">{t('cloudAdmin.backupNoRestoreEvents')}</p>
         ) : restoreEvents.map((ev, i) => (
-          <div key={i} style={{ fontSize: 11, color: 'var(--ink-mute)', padding: '4px 0', borderBottom: '0.5px dashed var(--line)', fontFamily: '"IBM Plex Mono", monospace' }}>
+          <div key={i} className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)', padding: '8px 0', borderBottom: '0.5px dashed var(--line)' }}>
             {ev.ts} · {ev.event} {ev.ok === false ? '(failed)' : ''}
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Shared modal shell ────────────────────────────────────────────────────────
+function ModalShell({ onClose, maxWidth, children }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--backdrop)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: 'var(--surface)', borderRadius: 'var(--r-sheet)', border: '0.5px solid var(--line)', width: '100%', maxWidth, boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}>
+        {children}
       </div>
     </div>
   )
@@ -439,94 +457,91 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
   if (!open) return null
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
-      onClick={e => e.target === e.currentTarget && handleClose()}>
-      <div style={{ background: 'var(--surface)', borderRadius: 20, border: '0.5px solid var(--line)', width: '100%', maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.15)', overflow: 'hidden' }}>
-        <div style={{ padding: '20px 20px 16px', borderBottom: '0.5px solid var(--line)' }}>
-          <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>
-            {link
-              ? (mode === 'home' ? t('cloud.modalNewHomeInvite') : t('cloud.modalUserInvited'))
-              : (mode === 'home' ? t('cloud.modalSetUpHome') : t('cloud.modalInviteUserTo', { home: homeName || t('cloud.modalFallbackHome') }))}
-          </p>
-        </div>
-
-        <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {link ? (
-            <>
-              {emailSent && (
-                <div style={{ display: 'flex', gap: 10, background: 'var(--ok)10', border: '0.5px solid var(--ok)30', borderRadius: 10, padding: '12px 14px' }}>
-                  <CheckCircle size={15} style={{ color: 'var(--ok)', flexShrink: 0 }} />
-                  <p style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 600 }}>
-                    {mode === 'home' ? t('cloud.setupEmailSent') : t('cloud.inviteEmailSent')} {t('cloud.emailToStrong')} <strong>{email}</strong>
-                  </p>
-                </div>
-              )}
-              {emailError && (
-                <div style={{ display: 'flex', gap: 10, background: 'var(--warn)10', border: '0.5px solid var(--warn)30', borderRadius: 10, padding: '12px 14px' }}>
-                  <XCircle size={15} style={{ color: 'var(--warn)', flexShrink: 0 }} />
-                  <div>
-                    <p style={{ fontSize: 12, color: 'var(--warn)', fontWeight: 600, marginBottom: 2 }}>{t('cloud.emailNotSent')}</p>
-                    <p style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{emailError}</p>
-                  </div>
-                </div>
-              )}
-              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>{t('cloud.linkExpires')}</p>
-              <div style={{ background: 'var(--bg-2)', borderRadius: 10, padding: '10px 12px', fontFamily: '"IBM Plex Mono", monospace', fontSize: 10.5, color: 'var(--ink)', wordBreak: 'break-all', lineHeight: 1.5 }}>
-                {link}
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={copyLink} className="z-btn-secondary" style={{ flex: 1, height: 36, borderRadius: 10, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                  <Copy size={12} /> {t('cloud.copyLink')}
-                </button>
-                <button onClick={handleClose} className="z-btn-primary" style={{ height: 36, borderRadius: 10, fontSize: 12, padding: '0 16px' }}>{t('cloud.doneBtn')}</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div>
-                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>
-                  {t('cloud.emailLabel')} {mode === 'home' ? <span style={{ fontWeight: 400 }}>{t('cloud.emailOptional')}</span> : ''}
-                </p>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                  placeholder={mode === 'home' ? t('cloud.emailPhHome') : t('cloud.emailPhUser')}
-                  autoFocus dir="auto" className="z-input"
-                  style={{ width: '100%', height: 38, padding: '0 12px', fontSize: 13, boxSizing: 'border-box' }} />
-                <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 4 }}>
-                  {mode === 'home' ? t('cloud.helpHome') : t('cloud.helpUser')}
-                </p>
-              </div>
-
-              <div>
-                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('cloud.role')}</p>
-                <select value={role} onChange={e => setRole(e.target.value)} disabled={mode === 'home'}
-                  style={{ width: '100%', height: 38, padding: '0 12px', borderRadius: 10, border: '0.5px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', fontSize: 13, cursor: 'pointer' }}>
-                  {(mode === 'home' ? ['super_admin', 'admin'] : ROLE_ORDER).map(r => (
-                    <option key={r} value={r}>{t(ROLE_LABEL_KEY[r])}</option>
-                  ))}
-                </select>
-              </div>
-
-              {mode === 'home' && (
-                <div>
-                  <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('cloud.homeName')} <span style={{ fontWeight: 400 }}>{t('cloud.optional')}</span></p>
-                  <input value={note} onChange={e => setNote(e.target.value)} placeholder={t('cloud.homeNamePh')}
-                    dir="auto" className="z-input" style={{ width: '100%', height: 38, padding: '0 12px', fontSize: 13, boxSizing: 'border-box' }} />
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <button onClick={handleClose} className="z-btn-secondary" style={{ flex: 1, height: 38, borderRadius: 10, fontSize: 12 }}>{t('common.cancel')}</button>
-                <button onClick={handleCreate} disabled={saving} className="z-btn-primary" style={{ flex: 2, height: 38, borderRadius: 10, fontSize: 12 }}>
-                  {saving ? t('cloud.sending') : email.trim()
-                    ? mode === 'home' ? t('cloud.sendSetupEmail') : t('cloud.sendInviteEmail')
-                    : t('cloud.createInviteLink')}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+    <ModalShell onClose={handleClose} maxWidth={420}>
+      <div style={{ padding: '24px 24px 16px', borderBottom: '0.5px solid var(--line)' }}>
+        <p className="z-title3">
+          {link
+            ? (mode === 'home' ? t('cloud.modalNewHomeInvite') : t('cloud.modalUserInvited'))
+            : (mode === 'home' ? t('cloud.modalSetUpHome') : t('cloud.modalInviteUserTo', { home: homeName || t('cloud.modalFallbackHome') }))}
+        </p>
       </div>
-    </div>
+
+      <div style={{ padding: '16px 24px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {link ? (
+          <>
+            {emailSent && (
+              <div className="bg-ok-soft" style={{ display: 'flex', gap: 12, alignItems: 'flex-start', border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', padding: '12px 16px' }}>
+                <CheckCircle size={20} strokeWidth={1.75} style={{ color: 'var(--ok)', flexShrink: 0 }} />
+                <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ok-text)', fontWeight: 600 }}>
+                  {mode === 'home' ? t('cloud.setupEmailSent') : t('cloud.inviteEmailSent')} {t('cloud.emailToStrong')} <strong>{email}</strong>
+                </p>
+              </div>
+            )}
+            {emailError && (
+              <div className="bg-warn-soft" style={{ display: 'flex', gap: 12, alignItems: 'flex-start', border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', padding: '12px 16px' }}>
+                <XCircle size={20} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} />
+                <div>
+                  <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--warn-text)', fontWeight: 600, marginBottom: 2 }}>{t('cloud.emailNotSent')}</p>
+                  <p className="z-footnote">{emailError}</p>
+                </div>
+              </div>
+            )}
+            <p className="z-footnote">{t('cloud.linkExpires')}</p>
+            <div className="z-code" style={{ background: 'var(--surface-2)', border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', padding: 12, fontSize: 12, lineHeight: '18px', color: 'var(--ink)', wordBreak: 'break-all' }}>
+              {link}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={copyLink} className="z-btn-secondary" style={{ flex: 1 }}>
+                <Copy size={18} strokeWidth={1.75} /> {t('cloud.copyLink')}
+              </button>
+              <button onClick={handleClose} className="z-btn-primary">{t('cloud.doneBtn')}</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <FieldLabel>
+                {t('cloud.emailLabel')} {mode === 'home' ? <span>{t('cloud.emailOptional')}</span> : ''}
+              </FieldLabel>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                placeholder={mode === 'home' ? t('cloud.emailPhHome') : t('cloud.emailPhUser')}
+                autoFocus dir="auto" className="z-input"
+                style={{ boxSizing: 'border-box' }} />
+              <p className="z-footnote" style={{ marginTop: 4 }}>
+                {mode === 'home' ? t('cloud.helpHome') : t('cloud.helpUser')}
+              </p>
+            </div>
+
+            <div>
+              <FieldLabel>{t('cloud.role')}</FieldLabel>
+              <select value={role} onChange={e => setRole(e.target.value)} disabled={mode === 'home'}
+                className="z-input" style={{ cursor: 'pointer' }}>
+                {(mode === 'home' ? ['super_admin', 'admin'] : ROLE_ORDER).map(r => (
+                  <option key={r} value={r}>{t(ROLE_LABEL_KEY[r])}</option>
+                ))}
+              </select>
+            </div>
+
+            {mode === 'home' && (
+              <div>
+                <FieldLabel>{t('cloud.homeName')} <span>{t('cloud.optional')}</span></FieldLabel>
+                <input value={note} onChange={e => setNote(e.target.value)} placeholder={t('cloud.homeNamePh')}
+                  dir="auto" className="z-input" style={{ boxSizing: 'border-box' }} />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <button onClick={handleClose} className="z-btn-secondary" style={{ flex: 1 }}>{t('common.cancel')}</button>
+              <button onClick={handleCreate} disabled={saving} className="z-btn-primary" style={{ flex: 2 }}>
+                {saving ? t('cloud.sending') : email.trim()
+                  ? mode === 'home' ? t('cloud.sendSetupEmail') : t('cloud.sendInviteEmail')
+                  : t('cloud.createInviteLink')}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </ModalShell>
   )
 }
 
@@ -562,12 +577,12 @@ function UserRow({
     <div style={{ borderBottom: '0.5px solid var(--line)' }}>
       <div
         onClick={() => setExpanded(v => !v)}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 20px', cursor: 'pointer' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 20px', minHeight: 48, cursor: 'pointer' }}
       >
-        <div style={{ width: 28, height: 28, borderRadius: '50%', background: (ROLE_COLOR[user.role] || '#6b7280') + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: ROLE_COLOR[user.role] || '#6b7280', flexShrink: 0 }}>
+        <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: 'var(--ink)', flexShrink: 0 }}>
           {(user.username?.[0] || user.email?.[0] || '?').toUpperCase()}
         </div>
-        <span style={{ flex: 1, fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span className="z-headline" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {user.username || user.email || '?'}
         </span>
         {onRoleChange ? (
@@ -575,7 +590,8 @@ function UserRow({
             value={user.role}
             onChange={e => onRoleChange(user.username, e.target.value)}
             onClick={stopRowToggle}
-            style={{ fontSize: 11, padding: '2px 6px', borderRadius: 7, border: '0.5px solid var(--line)', background: 'var(--surface)', color: ROLE_COLOR[user.role] || 'var(--ink)', fontWeight: 600, cursor: 'pointer' }}
+            className="z-input"
+            style={{ width: 'auto', fontSize: 13, padding: '8px 12px', cursor: 'pointer' }}
           >
             {ROLE_ORDER.map(r => <option key={r} value={r}>{t(ROLE_LABEL_KEY[r])}</option>)}
           </select>
@@ -583,15 +599,20 @@ function UserRow({
         {onDeleteUser && (
           <button
             onClick={e => { stopRowToggle(e); onDeleteUser(user.username) }}
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}
+            className="z-icon-btn"
+            aria-label={t('common.remove')}
+            title={t('common.remove')}
+            style={{ color: 'var(--err)' }}
           >
-            <Trash2 size={12} />
+            <Trash2 size={20} strokeWidth={1.75} />
           </button>
         )}
-        {expanded ? <ChevronDown size={12} style={{ color: 'var(--ink-faint)' }} /> : <ChevronRight size={12} className="icon-flip-rtl" style={{ color: 'var(--ink-faint)' }} />}
+        {expanded
+          ? <ChevronDown size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
+          : <ChevronRight size={20} strokeWidth={1.75} className="icon-flip-rtl" style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />}
       </div>
       {expanded && (
-        <div style={{ padding: '10px 20px 14px', background: 'var(--bg-2)', borderTop: '0.5px solid var(--line)' }}>
+        <div style={{ padding: '12px 20px 16px', background: 'var(--bg-2)', borderTop: '0.5px solid var(--line)' }}>
           {user.email && user.email !== user.username && (
             <StatRow label={t('cloudAdmin.userEmail')} value={user.email} mono />
           )}
@@ -608,9 +629,10 @@ function UserRow({
             <a
               href={auditDeepLink}
               onClick={stopRowToggle}
-              style={{ display: 'inline-block', marginTop: 8, fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 40, marginTop: 4, fontSize: 13, fontWeight: 500, color: 'var(--ink)', textDecoration: 'underline', textUnderlineOffset: 3 }}
             >
-              {t('cloudAdmin.userViewAudit')} →
+              {t('cloudAdmin.userViewAudit')}
+              <ChevronRight size={18} strokeWidth={1.75} className="icon-flip-rtl" />
             </a>
           )}
         </div>
@@ -641,8 +663,8 @@ function MobileTab({ homeId, onDevicesLoaded }) {
   }, [homeId, onDevicesLoaded])
 
   if (state.status === 'loading') return <TabSpinner />
-  if (state.status === 'error')   return <p style={{ padding: 14, fontSize: 11, color: 'var(--warn)' }}>{t('cloudAdmin.tabLoadError')}: {state.error}</p>
-  if (state.devices.length === 0) return <p style={{ padding: 14, fontSize: 11, color: 'var(--ink-faint)' }}>{t('cloudAdmin.mobileNone')}</p>
+  if (state.status === 'error')   return <TabError>{t('cloudAdmin.tabLoadError')}: {state.error}</TabError>
+  if (state.devices.length === 0) return <TabEmpty>{t('cloudAdmin.mobileNone')}</TabEmpty>
 
   return (
     <div>
@@ -652,19 +674,22 @@ function MobileTab({ homeId, onDevicesLoaded }) {
         const lastSeen = d.last_seen_at || d.last_seen || d.last_active_at
         const hasToken = !!(d.push_token || d.apns_token || d.fcm_token || d.web_push_endpoint)
         return (
-          <div key={d.device_id || d.id} style={{ padding: '10px 20px', borderBottom: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Smartphone size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
+          <div key={d.device_id || d.id} style={{ padding: '12px 20px', minHeight: 48, borderBottom: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Smartphone size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 12, color: 'var(--ink)' }}>
-                {platformLabel}
-                {d.device_name && <span style={{ color: 'var(--ink-mute)' }}> · {d.device_name}</span>}
+              <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span>
+                  {platformLabel}
+                  {d.device_name && <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}> · {d.device_name}</span>}
+                </span>
                 {d.ws_connected && (
-                  <span style={{ marginLeft: 6, fontSize: 9, fontFamily: '"IBM Plex Mono", monospace', color: 'var(--ok)', background: 'color-mix(in srgb, var(--ok) 14%, var(--surface))', padding: '1px 5px', borderRadius: 4 }}>
+                  <span className="z-chip bg-ok-soft" style={{ color: 'var(--ok-text)', gap: 6 }}>
+                    <Dot color="var(--ok)" />
                     {t('cloudAdmin.mobileOnline')}
                   </span>
                 )}
               </p>
-              <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 1, fontFamily: '"IBM Plex Mono", monospace' }}>
+              <p className="z-footnote" style={{ marginTop: 2 }}>
                 {t('cloudAdmin.mobileLastSeen', { when: lastSeen ? timeAgoLabel(t, lastSeen) : t('cloudAdmin.never') })}
                 {' · '}
                 {hasToken ? t('cloudAdmin.mobilePushOk') : t('cloudAdmin.mobilePushMissing')}
@@ -709,64 +734,62 @@ function SupportSessionModal({ open, onClose, homeId, homeName }) {
   }
 
   return (
-    <div onClick={e => e.target === e.currentTarget && handleClose()}
-      style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ background: 'var(--surface)', borderRadius: 16, border: '0.5px solid var(--line)', width: '100%', maxWidth: 460, padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <LifeBuoy size={16} style={{ color: 'var(--accent)' }} />
-          <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', flex: 1 }}>
+    <ModalShell onClose={handleClose} maxWidth={460}>
+      <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <LifeBuoy size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
+          <p className="z-title3" style={{ flex: 1 }}>
             {result ? t('cloudAdmin.supportSessionOpenedTitle') : t('cloudAdmin.supportOpenTitle', { home: homeName || homeId })}
           </p>
         </div>
         {!result ? (
           <>
-            <p style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{t('cloudAdmin.supportOpenBlurb')}</p>
+            <p className="z-subhead">{t('cloudAdmin.supportOpenBlurb')}</p>
             <div>
-              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4 }}>{t('cloudAdmin.supportReasonLabel')}</p>
+              <FieldLabel>{t('cloudAdmin.supportReasonLabel')}</FieldLabel>
               <textarea value={reason} onChange={e => setReason(e.target.value)}
                 placeholder={t('cloudAdmin.supportReasonPh')}
                 dir="auto" className="z-input"
-                style={{ width: '100%', minHeight: 64, padding: 10, fontSize: 12, boxSizing: 'border-box', resize: 'vertical' }} />
+                style={{ minHeight: 88, padding: 12, boxSizing: 'border-box', resize: 'vertical' }} />
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-              <button onClick={handleClose} className="z-btn-secondary" style={{ flex: 1, height: 38, borderRadius: 10, fontSize: 12 }}>{t('common.cancel')}</button>
-              <button onClick={handleOpen} disabled={opening} className="z-btn-primary" style={{ flex: 2, height: 38, borderRadius: 10, fontSize: 12 }}>
+              <button onClick={handleClose} className="z-btn-secondary" style={{ flex: 1 }}>{t('common.cancel')}</button>
+              <button onClick={handleOpen} disabled={opening} className="z-btn-primary" style={{ flex: 2 }}>
                 {opening ? t('cloudAdmin.supportOpening') : t('cloudAdmin.supportOpenAction')}
               </button>
             </div>
           </>
         ) : (
           <>
-            <div style={{ padding: '10px 12px', borderRadius: 8, background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--ok) 30%, transparent)' }}>
-              <p style={{ fontSize: 11, color: 'var(--ok)', fontWeight: 600 }}>{t('cloudAdmin.supportAuditWritten', { id: result.audit_id ?? '?' })}</p>
-              <p style={{ fontSize: 10.5, color: 'var(--ink-mute)', marginTop: 4 }}>{t('cloudAdmin.supportNotificationStub')}</p>
+            <div className="bg-ok-soft" style={{ padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)' }}>
+              <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ok-text)', fontWeight: 600 }}>{t('cloudAdmin.supportAuditWritten', { id: result.audit_id ?? '?' })}</p>
+              <p className="z-footnote" style={{ marginTop: 4 }}>{t('cloudAdmin.supportNotificationStub')}</p>
             </div>
             <div>
-              <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <Terminal size={11} /> {t('cloudAdmin.supportSnippetLabel')}
+              <p className="z-footnote" style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Terminal size={16} strokeWidth={1.75} /> {t('cloudAdmin.supportSnippetLabel')}
               </p>
-              <pre dir="ltr" style={{
-                background: 'var(--bg-2)', borderRadius: 8, padding: '10px 12px',
-                fontSize: 11.5, color: 'var(--ink)', fontFamily: '"IBM Plex Mono", monospace',
-                border: '0.5px solid var(--line)', overflowX: 'auto', margin: 0,
+              <pre dir="ltr" className="z-code" style={{
+                background: 'var(--surface-2)', borderRadius: 'var(--r-ctl)', padding: 12,
+                fontSize: 12, lineHeight: '18px', color: 'var(--ink)', border: '0.5px solid var(--line)', overflowX: 'auto', margin: 0,
                 whiteSpace: 'pre-wrap', wordBreak: 'break-all',
               }}>{result.ssh_snippet}</pre>
             </div>
-            <p style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>
+            <p className="z-footnote">
               {t('cloudAdmin.supportRunbookHint')}
             </p>
             <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-              <button onClick={copySnippet} className="z-btn-secondary" style={{ flex: 1, height: 36, borderRadius: 9, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <Copy size={12} /> {t('cloudAdmin.supportCopySnippet')}
+              <button onClick={copySnippet} className="z-btn-secondary" style={{ flex: 1 }}>
+                <Copy size={18} strokeWidth={1.75} /> {t('cloudAdmin.supportCopySnippet')}
               </button>
-              <button onClick={handleClose} className="z-btn-primary" style={{ flex: 1, height: 36, borderRadius: 9, fontSize: 12 }}>
+              <button onClick={handleClose} className="z-btn-primary" style={{ flex: 1 }}>
                 {t('common.done')}
               </button>
             </div>
           </>
         )}
       </div>
-    </div>
+    </ModalShell>
   )
 }
 
@@ -793,7 +816,7 @@ function FounderSlotWidget() {
   if (state.status === 'na' || state.status === 'error') return null
   if (state.status === 'loading') {
     return (
-      <span style={{ fontSize: 10, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }}>
+      <span className="z-footnote z-mono">
         {t('cloud.founderSlotsLoading')}
       </span>
     )
@@ -801,19 +824,22 @@ function FounderSlotWidget() {
   const { remaining, total } = state
   const claimed = (total ?? 30) - (remaining ?? 0)
   const pct = total ? Math.min(100, Math.max(0, (claimed / total) * 100)) : 0
-  // Tint red as we approach the cap.
-  const tone = remaining <= 3 ? 'var(--warn)' : remaining <= 10 ? 'var(--accent)' : 'var(--ok)'
+  // The bar tints as the cap approaches: quiet while there is room, warn
+  // in the last ten, err in the last three. Status colours only — the brand
+  // accent is not a severity.
+  const tone = remaining <= 3 ? 'var(--err)' : remaining <= 10 ? 'var(--warn)' : 'var(--ok)'
 
   return (
     <div
       title={t('cloud.founderSlotsTooltip', { claimed, total })}
-      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', borderRadius: 999, border: '0.5px solid var(--line)', background: 'var(--bg-2)' }}
+      className="z-chip"
+      style={{ gap: 8, minHeight: 32 }}
     >
-      <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--ink)' }}>
+      <span className="z-mono" style={{ fontWeight: 600, color: 'var(--ink)' }}>
         {t('cloud.founderSlots', { remaining, total })}
       </span>
-      <span style={{ width: 60, height: 4, background: 'var(--line)', borderRadius: 2, overflow: 'hidden' }}>
-        <span style={{ display: 'block', height: '100%', width: `${pct}%`, background: tone, transition: 'width 0.3s' }} />
+      <span style={{ width: 60, height: 4, background: 'var(--line)', borderRadius: 999, overflow: 'hidden' }}>
+        <span style={{ display: 'block', height: '100%', width: `${pct}%`, background: tone, transition: 'width var(--dur-state) var(--ease-standard)' }} />
       </span>
     </div>
   )
@@ -870,15 +896,15 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
 
       {/* Pending invites */}
       {pending.map(inv => (
-        <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', borderBottom: '0.5px solid var(--line)', opacity: 0.7 }}>
-          <Clock size={13} style={{ color: 'var(--warn)', flexShrink: 0 }} />
-          <span style={{ flex: 1, fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 20px', minHeight: 48, borderBottom: '0.5px solid var(--line)' }}>
+          <Clock size={20} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--ink-mute)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {inv.email || t('cloud.openInviteShort')} · {ROLE_LABEL_KEY[inv.role] ? t(ROLE_LABEL_KEY[inv.role]) : inv.role}
           </span>
-          <span style={{ fontSize: 10, color: 'var(--warn)', fontWeight: 600, background: 'var(--warn)15', padding: '1px 6px', borderRadius: 6, flexShrink: 0 }}>{t('cloud.tagPending')}</span>
+          <span className="z-chip bg-warn-soft" style={{ color: 'var(--warn-text)', flexShrink: 0 }}>{t('cloud.tagPending')}</span>
           {onRevokeInvite && (
-            <button onClick={() => onRevokeInvite(inv.token)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}>
-              <Trash2 size={11} />
+            <button onClick={() => onRevokeInvite(inv.token)} className="z-icon-btn" aria-label={t('common.remove')} title={t('common.remove')} style={{ color: 'var(--err)' }}>
+              <Trash2 size={20} strokeWidth={1.75} />
             </button>
           )}
         </div>
@@ -886,42 +912,46 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
 
       {/* Invite button */}
       <div style={{ padding: '12px 20px' }}>
-        <button onClick={onInviteUser} className="z-btn-secondary" style={{ width: '100%', height: 34, borderRadius: 10, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-          <Plus size={13} /> {t('cloud.inviteUser')}
+        <button onClick={onInviteUser} className="z-btn-secondary" style={{ width: '100%' }}>
+          <Plus size={18} strokeWidth={1.75} /> {t('cloud.inviteUser')}
         </button>
       </div>
     </>
   )
 
+  const haOk = home.haConnected !== false
+
   return (
     <Card style={{ marginBottom: 12 }}>
-      {/* Home header */}
-      <button
+      {/* Home header. A div with the button role rather than a <button>: the
+          support and deprovision controls live inside it, and a button cannot
+          legally contain buttons. */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setExpanded(v => !v)}
-        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(v => !v) } }}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', minHeight: 68, cursor: 'pointer', textAlign: 'start', boxSizing: 'border-box' }}
       >
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--accent)15', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Home size={16} style={{ color: 'var(--accent)' }} />
+        <div style={{ width: 36, height: 36, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Home size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{home.name}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+            <p className="z-headline">{home.name}</p>
             {isLocal ? (
-              <span style={{
-                fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 999,
-                background: home.haConnected !== false ? 'var(--ok)18' : 'var(--warn)18',
-                color: home.haConnected !== false ? 'var(--ok)' : 'var(--warn)',
-              }}>
+              <span className={`z-chip ${haOk ? 'bg-ok-soft' : 'bg-warn-soft'}`} style={{ gap: 6, color: haOk ? 'var(--ok-text)' : 'var(--warn-text)' }}>
+                <Dot color={haOk ? 'var(--ok)' : 'var(--warn)'} />
                 {home.haConnected ? t('cloud.haOnline') : t('cloud.haOffline')}
               </span>
             ) : (
               <TrafficLightPill home={home} latestPayload={livePayload} />
             )}
-            <span style={{ fontSize: 10, color: 'var(--ink-faint)', background: 'var(--bg-2)', padding: '1px 7px', borderRadius: 999 }}>
+            <span className="z-chip">
               {home.type || t('cloud.hub')}
             </span>
           </div>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <p className="z-footnote" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {users.length} {users.length !== 1 ? t('cloud.usersWordPlural') : t('cloud.usersWord')}{pending.length > 0 ? ` · ${pending.length} ${pending.length !== 1 ? t('cloud.pendingInviteWordPlural') : t('cloud.pendingInviteWord')}` : ''}
             {home.haUrl ? ` · ${home.haUrl}` : home.tunnel_url ? ` · ${home.tunnel_url}` : ''}
           </p>
@@ -931,20 +961,23 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
             <button
               onClick={e => { e.stopPropagation(); setSupportModalOpen(true) }}
               title={t('cloudAdmin.supportOpenTooltip')}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}
+              aria-label={t('cloudAdmin.supportOpenTooltip')}
+              className="z-icon-btn"
             >
-              <LifeBuoy size={13} />
+              <LifeBuoy size={20} strokeWidth={1.75} />
             </button>
           )}
           {!isLocal && onDeprovision && (
             <button onClick={e => { e.stopPropagation(); onDeprovision() }}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 4, borderRadius: 6 }}>
-              <Trash2 size={13} />
+              className="z-icon-btn" aria-label={t('common.remove')} title={t('common.remove')} style={{ color: 'var(--err)' }}>
+              <Trash2 size={20} strokeWidth={1.75} />
             </button>
           )}
-          {expanded ? <ChevronDown size={14} style={{ color: 'var(--ink-faint)' }} /> : <ChevronRight size={14} className="icon-flip-rtl" style={{ color: 'var(--ink-faint)' }} />}
+          {expanded
+            ? <ChevronDown size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
+            : <ChevronRight size={20} strokeWidth={1.75} className="icon-flip-rtl" style={{ color: 'var(--ink-mute)' }} />}
         </div>
-      </button>
+      </div>
 
       {/* Expanded section */}
       {expanded && (
@@ -952,8 +985,9 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
           {/* Local home: no tabs (no relay-side data sources). */}
           {isLocal ? membersContent : (
             <>
-              {/* Tab strip */}
-              <div style={{ display: 'flex', borderBottom: '0.5px solid var(--line)', background: 'var(--bg-2)' }}>
+              {/* Tab strip — the active tab is ink with an ink underline; the
+                  brand accent is not a selection colour. */}
+              <div style={{ display: 'flex', borderBottom: '0.5px solid var(--line)', background: 'var(--bg-2)', overflowX: 'auto' }}>
                 {tabs.map(({ id, icon: Icon, labelKey }) => {
                   const active = tab === id
                   return (
@@ -961,14 +995,15 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
                       key={id}
                       onClick={() => setTab(id)}
                       style={{
-                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                        padding: '9px 12px', background: 'transparent', border: 'none', cursor: 'pointer',
-                        fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
-                        color: active ? 'var(--accent)' : 'var(--ink-faint)',
-                        borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        padding: '0 12px', minHeight: 40, background: 'transparent', border: 'none', cursor: 'pointer',
+                        fontFamily: 'inherit', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+                        color: active ? 'var(--ink)' : 'var(--ink-mute)',
+                        borderBottom: `2px solid ${active ? 'var(--ink)' : 'transparent'}`,
+                        transition: 'color var(--dur-press) var(--ease-standard), border-color var(--dur-press) var(--ease-standard)',
                       }}
                     >
-                      <Icon size={12} />
+                      <Icon size={18} strokeWidth={1.75} />
                       {t(labelKey)}
                     </button>
                   )
@@ -1087,45 +1122,45 @@ export default function CloudAdmin() {
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200 }}>
-      <div style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+      <Loader size={24} strokeWidth={1.75} className="z-spin" style={{ color: 'var(--ink-mute)' }} />
     </div>
   )
 
+  // One inverted button per screen. Until a relay is connected, connecting is
+  // the action that matters; afterwards it is creating a home.
+  const relayConfigured = isRelayConfigured()
+
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '28px 20px 60px' }}>
+    <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 24px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
+      <div className="z-page-head" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <Shield size={16} style={{ color: 'var(--accent)' }} />
-            <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.02em' }}>{t('cloud.title')}</h1>
-          </div>
-          <p style={{ fontSize: 12, color: 'var(--ink-faint)' }}>{t('cloud.subtitle')}</p>
+          <h1 className="z-display" style={{ margin: 0 }}>{t('cloud.title')}</h1>
+          <p className="z-footnote">{t('cloud.subtitle')}</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={load} style={{ background: 'transparent', border: '0.5px solid var(--line)', borderRadius: 8, color: 'var(--ink-faint)', padding: 7, cursor: 'pointer' }}>
-            <RefreshCw size={13} />
+          <button onClick={load} className="z-icon-btn" aria-label={t('common.refresh')} title={t('common.refresh')}>
+            <RefreshCw size={18} strokeWidth={1.75} />
           </button>
-          <button onClick={() => setModal({ mode: 'home', homeId: null, homeName: null })} className="z-btn-primary"
-            style={{ height: 34, padding: '0 14px', borderRadius: 10, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Plus size={13} /> {t('cloud.newHome')}
+          <button onClick={() => setModal({ mode: 'home', homeId: null, homeName: null })}
+            className={relayConfigured ? 'z-btn-primary' : 'z-btn-secondary'}>
+            <Plus size={18} strokeWidth={1.75} /> {t('cloud.newHome')}
           </button>
         </div>
       </div>
 
       {/* Relay status bar */}
-      {isRelayConfigured() && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, padding: '8px 14px', background: 'var(--bg-2)', borderRadius: 10, border: '0.5px solid var(--line)' }}>
+      {relayConfigured && (
+        <div className="z-card-soft" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, padding: '8px 16px', minHeight: 48, borderRadius: 'var(--r-ctl)' }}>
           {relayOnline
-            ? <><CheckCircle size={12} style={{ color: 'var(--ok)' }} /><span style={{ fontSize: 11, color: 'var(--ok)', fontWeight: 600 }}>{t('cloud.relayOnline')}</span></>
+            ? <><CheckCircle size={18} strokeWidth={1.75} style={{ color: 'var(--ok)', flexShrink: 0 }} /><span style={{ fontSize: 13, color: 'var(--ok-text)', fontWeight: 600 }}>{t('cloud.relayOnline')}</span></>
             : relayNeedsAuth
-              ? <><Shield size={12} style={{ color: 'var(--warn)' }} /><span style={{ fontSize: 11, color: 'var(--warn)', fontWeight: 600 }}>Not signed in to the relay</span></>
-              : <><WifiOff size={12} style={{ color: 'var(--warn)' }} /><span style={{ fontSize: 11, color: 'var(--warn)', fontWeight: 600 }}>{t('cloud.relayOffline')}</span></>}
-          <span style={{ fontSize: 11, color: 'var(--ink-faint)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getRelayUrl()}</span>
-          <button onClick={() => { localStorage.removeItem('ziggy_relay_url'); localStorage.removeItem('ziggy_relay_token'); window.location.reload() }}
-            style={{ fontSize: 10, color: 'var(--ink-faint)', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+              ? <><Shield size={18} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} /><span style={{ fontSize: 13, color: 'var(--warn-text)', fontWeight: 600 }}>Not signed in to the relay</span></>
+              : <><WifiOff size={18} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} /><span style={{ fontSize: 13, color: 'var(--warn-text)', fontWeight: 600 }}>{t('cloud.relayOffline')}</span></>}
+          <span className="z-code" style={{ fontSize: 12, color: 'var(--ink-mute)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getRelayUrl()}</span>
+          <Button variant="ghost" size="sm" onClick={() => { localStorage.removeItem('ziggy_relay_url'); localStorage.removeItem('ziggy_relay_token'); window.location.reload() }}>
             {t('cloud.disconnectBtn')}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -1137,25 +1172,25 @@ export default function CloudAdmin() {
           isRelayConfigured() would reproduce the bug it exists to fix — a
           working fleet rendering as a blank page because nobody had typed a URL
           into this browser. */}
-      <div style={{ marginBottom: 34 }}>
+      <div style={{ marginBottom: 32 }}>
         <FleetOps />
       </div>
 
       {/* Connect relay panel — shown above homes when not yet connected */}
-      {!isRelayConfigured() && (
-        <div style={{ marginBottom: 20, padding: '16px 20px', background: 'var(--bg-2)', border: '0.5px solid var(--line)', borderRadius: 14 }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{t('cloud.connectRelay')}</p>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginBottom: 12, lineHeight: 1.5 }}>
-            {t('cloud.connectIntro')} {t('cloud.deployHint')} <code>relay/fly.toml</code>.
+      {!relayConfigured && (
+        <div className="z-card-soft" style={{ marginBottom: 24, padding: '16px 20px' }}>
+          <p className="z-headline" style={{ marginBottom: 4 }}>{t('cloud.connectRelay')}</p>
+          <p className="z-subhead" style={{ marginBottom: 12 }}>
+            {t('cloud.connectIntro')} {t('cloud.deployHint')} <code className="z-code">relay/fly.toml</code>.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <input value={relayInput.url} onChange={e => setRelayInput(s => ({ ...s, url: e.target.value }))} placeholder={t('cloud.relayUrlPh')} dir="auto" className="z-input" style={{ height: 34, padding: '0 10px', fontSize: 12, width: '100%', boxSizing: 'border-box' }} />
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input value={relayInput.email} onChange={e => setRelayInput(s => ({ ...s, email: e.target.value }))} placeholder={t('cloud.adminEmail')} type="email" dir="auto" className="z-input" style={{ flex: 1, height: 34, padding: '0 10px', fontSize: 12 }} />
-              <input value={relayInput.password} onChange={e => setRelayInput(s => ({ ...s, password: e.target.value }))} placeholder={t('cloud.password')} type="password" dir="auto" className="z-input" style={{ flex: 1, height: 34, padding: '0 10px', fontSize: 12 }} />
+            <input value={relayInput.url} onChange={e => setRelayInput(s => ({ ...s, url: e.target.value }))} placeholder={t('cloud.relayUrlPh')} dir="auto" className="z-input" style={{ boxSizing: 'border-box' }} />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input value={relayInput.email} onChange={e => setRelayInput(s => ({ ...s, email: e.target.value }))} placeholder={t('cloud.adminEmail')} type="email" dir="auto" className="z-input" style={{ flex: '1 1 200px', width: 'auto' }} />
+              <input value={relayInput.password} onChange={e => setRelayInput(s => ({ ...s, password: e.target.value }))} placeholder={t('cloud.password')} type="password" dir="auto" className="z-input" style={{ flex: '1 1 160px', width: 'auto' }} />
               <button onClick={connectRelay} disabled={relayConnecting || !relayInput.url || !relayInput.email} className="z-btn-primary"
-                style={{ height: 34, padding: '0 14px', borderRadius: 9, fontSize: 12, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
-                {relayConnecting ? <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Wifi size={12} />}
+                style={{ whiteSpace: 'nowrap' }}>
+                {relayConnecting ? <Loader size={18} strokeWidth={1.75} className="z-spin" /> : <Wifi size={18} strokeWidth={1.75} />}
                 {relayConnecting ? t('cloud.connecting') : t('cloud.connect')}
               </button>
             </div>
@@ -1164,10 +1199,9 @@ export default function CloudAdmin() {
       )}
 
       {/* Homes */}
-      <div style={{ marginBottom: 6 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <Home size={13} style={{ color: 'var(--ink-faint)' }} />
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-faint)', flex: 1 }}>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+          <p className="z-eyebrow" style={{ flex: 1 }}>
             {t('cloud.homesHeader', { n: 1 + relayHomes.length })}
           </p>
           <FounderSlotWidget />
