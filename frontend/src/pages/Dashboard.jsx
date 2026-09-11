@@ -345,7 +345,7 @@ function RoomTileFace({ room, summary, photo, showParts }) {
     display: 'inline-flex', alignItems: 'center', gap: 4,
   }
   const chips = (summary.tempSensor || summary.humSensor || summary.occupied) && (
-    <div style={{ position: 'absolute', top: 12, insetInlineStart: 12, display: 'flex', gap: 4, alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: 4, alignItems: 'center', minWidth: 0 }}>
       {summary.occupied && (
         <span title={t('rooms.occupied')} aria-label={t('rooms.occupied')} style={{ ...chipBase, background: 'color-mix(in srgb, var(--ok) 55%, transparent)', color: photo ? '#fff' : 'var(--ink)' }}>
           <User size={14} strokeWidth={2} aria-hidden="true" />
@@ -373,21 +373,31 @@ function RoomTileFace({ room, summary, photo, showParts }) {
   // the two never disagree (a room with motion but no on-devices is active).
   const dot = (
     <span style={{
-      position: 'absolute', top: 12, insetInlineEnd: 12,
+      flexShrink: 0,
       width: 8, height: 8, borderRadius: '50%',
       background: isActiveRoom ? 'var(--ok)' : (photo ? 'rgba(255,255,255,0.3)' : 'var(--line-2)'),
       boxShadow: isActiveRoom ? '0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent)' : 'none',
     }} />
+  )
+  // One top row carries the room mark, the sensor chips and the activity dot,
+  // so nothing can land in the same corner as anything else. On a photo the
+  // room mark is the photo itself, so that slot stays empty.
+  const topRow = (mark) => (
+    <div style={{
+      position: 'absolute', top: 12, insetInline: 12,
+      display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
+    }}>
+      {mark}
+      {chips}
+      <span style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center' }}>{dot}</span>
+    </div>
   )
   const name = translateNamePhrase(room.name, lang)
 
   if (!photo) {
     return (
       <>
-        <Home size={28} strokeWidth={1.75} aria-hidden="true"
-          style={{ position: 'absolute', top: 16, insetInlineStart: 16, color: 'var(--ink-mute)' }} />
-        {chips}
-        {dot}
+        {topRow(<Home size={28} strokeWidth={1.75} aria-hidden="true" style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />)}
         <div style={{ position: 'absolute', bottom: 16, insetInline: 16 }}>
           <p dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
           <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: 0, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine}</p>
@@ -399,8 +409,7 @@ function RoomTileFace({ room, summary, photo, showParts }) {
     <>
       <img src={photo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.72) 100%)' }} />
-      {chips}
-      {dot}
+      {topRow(null)}
       <div style={{ position: 'absolute', bottom: 16, insetInline: 16 }}>
         <p dir="auto" style={{ fontSize: 17, fontWeight: 600, color: '#fff', margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
         <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', margin: 0, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine}</p>
