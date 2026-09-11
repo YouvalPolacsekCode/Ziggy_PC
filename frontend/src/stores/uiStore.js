@@ -26,10 +26,11 @@ export const useUIStore = create(
   persist(
     (set) => ({
       theme: 'light',
-      // Device icon style: 'emoji' (default, = original behavior), 'line'
-      // (flat SVG set) or '3d' (skeuomorphic PNG set). Purely presentational;
-      // switching back to 'emoji' is a full revert. See lib/deviceIcons.jsx.
-      iconStyle: 'emoji',
+      // Device icon style: 'line' (default since the HIG pass — one weight-
+      // matched vector set that renders the same on every OS), 'emoji' (the
+      // original), or '3d' (skeuomorphic PNG set). Purely presentational;
+      // Settings → Display switches it live. See lib/deviceIcons.jsx.
+      iconStyle: 'line',
       setIconStyle: (iconStyle) => set({ iconStyle }),
       toasts: [],
       toggleTheme: () =>
@@ -84,6 +85,19 @@ export const useUIStore = create(
       },
       removeToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
     }),
-    { name: 'ziggy-ui', partialize: (s) => ({ theme: s.theme, iconStyle: s.iconStyle }) }
+    {
+      name: 'ziggy-ui',
+      partialize: (s) => ({ theme: s.theme, iconStyle: s.iconStyle }),
+      // v2: the persisted default used to be 'emoji' (written on first load,
+      // so it looks like a choice even when nobody chose). Move everyone to
+      // the line set once; picking Emoji again in Settings sticks from then on.
+      version: 2,
+      migrate: (persisted, version) => {
+        if (version < 2 && persisted && persisted.iconStyle === 'emoji') {
+          return { ...persisted, iconStyle: 'line' }
+        }
+        return persisted
+      },
+    }
   )
 )

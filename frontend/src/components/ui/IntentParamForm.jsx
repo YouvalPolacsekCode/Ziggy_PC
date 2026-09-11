@@ -34,7 +34,7 @@ function JsonFallback({ value, onChange, onError }) {
 
   return (
     <div>
-      <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
+      <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>
         {t('intentForm.params')}{' '}
         <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}>{t('intentForm.paramsHint')}</span>
       </p>
@@ -47,7 +47,7 @@ function JsonFallback({ value, onChange, onError }) {
         style={{
           width: '100%', padding: '8px 12px', borderRadius: 10,
           background: 'var(--surface)', border: `0.5px solid ${err ? 'var(--accent)' : 'var(--line)'}`,
-          color: 'var(--ink)', fontFamily: '"IBM Plex Mono", monospace', fontSize: 12,
+          color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', fontSize: 12,
           outline: 'none', resize: 'none', boxSizing: 'border-box',
         }}
       />
@@ -62,7 +62,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
   const { key, label, type, options, required, placeholder, min, max, step, unit, source, domainFilter, dependsOn } = param
 
   const Label = () => (
-    <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 }}>
+    <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>
       {label}
       {!required && (
         <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}> ({t('intentForm.optional')})</span>
@@ -79,7 +79,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
     return (
       <div>
         <Label />
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           {opts.map((opt) => {
             const active = value === opt.value
             return (
@@ -88,7 +88,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
                 type="button"
                 onClick={() => onChange(opt.value)}
                 style={{
-                  flex: 1, height: 36, borderRadius: 9,
+                  flex: 1, height: 36, borderRadius: 10,
                   fontSize: 13, fontWeight: 500,
                   background: active ? 'var(--accent)' : 'var(--bg-2)',
                   color: active ? '#fff' : 'var(--ink-2)',
@@ -111,7 +111,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
       return (
         <div>
           <Label />
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {options.map((opt) => {
               const active = value === opt.value
               return (
@@ -120,7 +120,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
                   type="button"
                   onClick={() => onChange(opt.value)}
                   style={{
-                    padding: '6px 14px', borderRadius: 9, fontSize: 12, fontWeight: 500,
+                    padding: '8px 16px', borderRadius: 10, fontSize: 12, fontWeight: 500,
                     background: active ? 'var(--accent)' : 'var(--bg-2)',
                     color: active ? '#fff' : 'var(--ink-2)',
                     border: active ? '0.5px solid var(--accent)' : '0.5px solid var(--line)',
@@ -224,7 +224,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
     return (
       <div>
         <Label />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <input
             type="range"
             min={min ?? 0} max={max ?? 100} step={step || 1}
@@ -233,16 +233,15 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
             style={{ flex: 1, cursor: 'pointer' }}
           />
           <div style={{
-            minWidth: 58, height: 36, borderRadius: 9, flexShrink: 0,
+            minWidth: 58, height: 36, borderRadius: 10, flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'var(--bg-2)', border: '0.5px solid var(--line)',
             fontSize: 13, fontWeight: 500, color: 'var(--ink)',
-            fontFamily: '"IBM Plex Mono", monospace',
-          }}>
+            fontVariantNumeric: 'tabular-nums', }}>
             {numVal}{unit || ''}
           </div>
         </div>
-        <p style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 3 }}>
+        <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>
           {min}{unit} – {max}{unit}
         </p>
       </div>
@@ -325,7 +324,7 @@ export function IntentParamForm({ intent, value = {}, onChange, onError }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {params.map((param) => (
         <ParamField
           key={param.key}

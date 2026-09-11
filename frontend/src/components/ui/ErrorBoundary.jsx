@@ -62,7 +62,7 @@ export class ErrorBoundary extends Component {
         role="alert"
         style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', gap: 14, padding: 32, textAlign: 'center',
+          justifyContent: 'center', gap: 16, padding: 32, textAlign: 'center',
           minHeight: this.props.fullHeight === false ? 240 : '60vh',
         }}
       >
@@ -85,7 +85,7 @@ export class ErrorBoundary extends Component {
           type="button"
           onClick={this.handleRetry}
           style={{
-            marginTop: 4, padding: '8px 18px', fontSize: 13, fontWeight: 500,
+            marginTop: 4, padding: '8px 16px', fontSize: 13, fontWeight: 500,
             borderRadius: 10, border: '0.5px solid var(--line)',
             background: 'var(--bg-2)', color: 'var(--ink)', cursor: 'pointer',
           }}

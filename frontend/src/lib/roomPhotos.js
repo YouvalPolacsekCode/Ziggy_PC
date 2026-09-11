@@ -22,7 +22,8 @@ export const ROOM_PHOTOS = {
   attic:           'https://images.unsplash.com/photo-1600585154526-990dced4db0d?w=400&q=80', // attic with skylight
 }
 
-export const DEFAULT_PHOTO = ROOM_PHOTOS.living_room
+// Kept for the picker's "preview" slot only. Never used as a fallback.
+export const DEFAULT_PHOTO = null
 
 export const PHOTO_OPTIONS = [
   { key: 'living_room',    label: 'Living Room' },
@@ -103,16 +104,27 @@ export function resizeImageToDataUrl(file) {
   })
 }
 
+// A room has a photo only when a person chose one: their own upload, or a
+// curated picture picked in the room editor. There is no default any more —
+// every room used to fall back to the same stock sofa, which put the same
+// Unsplash photo on four of seven tiles in a typical home. Rooms without a
+// photo render as a flat surface with a room glyph (see `.z-room-plain`).
+// Returns null when there is nothing chosen.
 export function getRoomPhoto(room) {
+  if (!room) return null
   try {
     const custom = getCustomPhoto(room.id)
     if (custom) return custom
-    const overrides = JSON.parse(localStorage.getItem('ziggy_room_photos') || '{}')
-    const key = overrides[room.id] || room.id
-    return ROOM_PHOTOS[key] || DEFAULT_PHOTO
+    const overrides = JSON.parse(localStorage.getItem(OVERRIDE_KEY) || '{}')
+    const key = overrides[room.id]
+    return key ? (ROOM_PHOTOS[key] || null) : null
   } catch {
-    return ROOM_PHOTOS[room.id] || DEFAULT_PHOTO
+    return null
   }
+}
+
+export function hasRoomPhoto(room) {
+  return !!getRoomPhoto(room)
 }
 
 export function saveRoomPhoto(roomId, photoKey) {

@@ -5,9 +5,9 @@ export function Card({ className, children, onClick, soft, style, ...props }) {
       style={{
         background: soft ? 'var(--surface-2)' : 'var(--surface)',
         border: '0.5px solid var(--line)',
-        borderRadius: soft ? 16 : 18,
+        borderRadius: 'var(--r-card)',
         cursor: onClick ? 'pointer' : undefined,
-        transition: onClick ? 'border-color 0.12s' : undefined,
+        transition: onClick ? 'border-color var(--dur-press) var(--ease-standard)' : undefined,
         ...style,
       }}
       onMouseEnter={onClick ? (e => e.currentTarget.style.borderColor = 'var(--line-2)') : undefined}
@@ -24,7 +24,7 @@ export function CardHeader({ className, children, style }) {
   return (
     <div
       className={className}
-      style={{ padding: '14px 16px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', ...style }}
+      style={{ padding: '16px 16px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', ...style }}
     >
       {children}
     </div>
@@ -33,7 +33,7 @@ export function CardHeader({ className, children, style }) {
 
 export function CardBody({ className, children, style }) {
   return (
-    <div className={className} style={{ padding: '0 16px 14px', ...style }}>
+    <div className={className} style={{ padding: '0 16px 16px', ...style }}>
       {children}
     </div>
   )

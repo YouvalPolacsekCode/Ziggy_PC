@@ -147,8 +147,8 @@ export function SystemHealthBanner({ health, onRefresh }) {
       role="status"
       aria-live="polite"
       style={{
-        display: 'flex', alignItems: 'flex-start', gap: 10,
-        padding: '10px 14px', borderRadius: 12,
+        display: 'flex', alignItems: 'flex-start', gap: 12,
+        padding: '12px 16px', borderRadius: 10,
         background: pal.bg,
         border: `0.5px solid ${pal.border}`,
         fontSize: 12, color: 'var(--ink)',
@@ -177,7 +177,7 @@ export function SystemHealthBanner({ health, onRefresh }) {
         )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         {showReview && (
           <button
             onClick={handleReview}
@@ -213,13 +213,13 @@ export function SystemHealthBanner({ health, onRefresh }) {
 function btnStyle(cta, ghost) {
   return ghost
     ? {
-        padding: '4px 10px', borderRadius: 7,
+        padding: '4px 12px', borderRadius: 6,
         background: 'transparent', color: 'var(--ink)',
         border: `0.5px solid color-mix(in srgb, ${cta} 40%, transparent)`,
         cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit',
       }
     : {
-        padding: '4px 10px', borderRadius: 7,
+        padding: '4px 12px', borderRadius: 6,
         background: cta, color: 'var(--on-accent)',
         border: 'none', cursor: 'pointer',
         fontSize: 11, fontWeight: 600, fontFamily: 'inherit',

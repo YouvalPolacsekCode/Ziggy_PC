@@ -308,16 +308,16 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
                       || storeEntities.find((e) => e.entity_id === value)
 
   return (
-    <div ref={ref} className="relative flex flex-col gap-1.5">
+    <div ref={ref} className="relative flex flex-col gap-2">
       {label && (
-        <label className="text-sm font-medium text-ink-2">{label}</label>
+        <label className="text-subhead font-medium text-ink-2">{label}</label>
       )}
       <button
         type="button"
         ref={triggerRef}
         onClick={handleOpen}
         className={cn(
-          'h-10 rounded-xl px-3 text-sm text-left flex items-center gap-2',
+          'h-10 rounded-[16px] px-3 text-subhead text-left flex items-center gap-2',
           'bg-surface-2',
           'border border-line',
           'text-ink',
@@ -327,12 +327,12 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
         {selectedEntity ? (
           <>
             <span>{domainIcon(selectedEntity.domain)}</span>
-            <span className="flex-1 truncate text-sm">{entityDisplayName(selectedEntity) || selectedEntity.friendly_name || t('entitySelect.unnamedDevice')}</span>
+            <span className="flex-1 truncate text-subhead">{entityDisplayName(selectedEntity) || selectedEntity.friendly_name || t('entitySelect.unnamedDevice')}</span>
           </>
         ) : value ? (
-          <span className="flex-1 truncate text-ink-mute text-sm">{t('entitySelect.unknownDevice')}</span>
+          <span className="flex-1 truncate text-ink-mute text-subhead">{t('entitySelect.unknownDevice')}</span>
         ) : (
-          <span className="text-ink-mute text-sm">{resolvedPlaceholder}</span>
+          <span className="text-ink-mute text-subhead">{resolvedPlaceholder}</span>
         )}
         <ChevronDown size={14} className={cn('ml-auto text-ink-mute shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
@@ -347,21 +347,21 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
             width: dropdownPos.width,
             zIndex: 9999,
           }}
-          className="bg-surface rounded-xl shadow-2xl border border-line overflow-hidden"
+          className="bg-surface rounded-[16px] shadow-2xl border border-line overflow-hidden"
         >
           <div className="p-2 border-b border-line flex gap-2">
             <div className="relative flex-1">
-              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-mute" />
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-mute" />
               <input
                 ref={searchInputRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('entitySelect.search')}
-                className="w-full h-8 pl-7 pr-3 text-xs rounded-lg bg-surface-2 border-0 focus:outline-none text-ink placeholder:text-ink-mute"
+                className="w-full h-8 pl-7 pr-3 text-footnote rounded-[10px] bg-surface-2 border-0 focus:outline-none text-ink placeholder:text-ink-mute"
               />
             </div>
             <button
-              className="text-[10px] text-ink-mute hover:text-accent px-2 whitespace-nowrap transition-colors"
+              className="text-[11px] text-ink-mute hover:text-accent px-2 whitespace-nowrap transition-colors"
               onClick={() => {
                 const v = window.prompt(t('entitySelect.manualPrompt'), value || '')
                 if (v !== null) { onChange(v); setOpen(false) }
@@ -373,16 +373,16 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
 
           <div className="max-h-56 overflow-y-auto scrollbar-thin">
             {loading && (
-              <div className="text-center py-4 text-xs text-ink-mute">{t('entitySelect.loading')}</div>
+              <div className="text-center py-4 text-footnote text-ink-mute">{t('entitySelect.loading')}</div>
             )}
             {!loading && filteredEntities.length === 0 && (
-              <div className="text-center py-4 text-xs text-ink-mute">{t('entitySelect.noEntities')}</div>
+              <div className="text-center py-4 text-footnote text-ink-mute">{t('entitySelect.noEntities')}</div>
             )}
 
             {roomOrder.map((room) => (
               <div key={room}>
-                <div className="px-3 pt-2.5 pb-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+                <div className="px-3 pt-3 pb-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
                     {room === OTHER ? t('entitySelect.other') : room}
                   </span>
                 </div>
@@ -391,24 +391,24 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
                     key={e.entity_id}
                     onClick={() => { onChange(e.entity_id); setOpen(false); setSearch('') }}
                     className={cn(
-                      'w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors',
+                      'w-full flex items-center gap-3 px-3 py-2 text-left transition-colors',
                       'hover:bg-surface-2',
                       value === e.entity_id && 'bg-accent-soft'
                     )}
                   >
-                    <span className="text-base shrink-0">{domainIcon(e.domain)}</span>
+                    <span className="text-body shrink-0">{domainIcon(e.domain)}</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-ink truncate">
+                      <p className="text-footnote font-medium text-ink truncate">
                         {e.friendly_name || t('entitySelect.unnamedDevice')}
                       </p>
                     </div>
                     {e.state === 'on' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-ok-soft text-ok">
+                      <span className="text-[11px] px-2 py-0.5 rounded-full shrink-0 bg-ok-soft text-ok">
                         {t('entitySelect.stateOn')}
                       </span>
                     )}
                     {(e.state === 'unavailable' || e.state === 'unknown') && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-surface-2 text-ink-mute">
+                      <span className="text-[11px] px-2 py-0.5 rounded-full shrink-0 bg-surface-2 text-ink-mute">
                         {t('entitySelect.stateOffline')}
                       </span>
                     )}

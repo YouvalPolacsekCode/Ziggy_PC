@@ -10,6 +10,7 @@ import App from './App'
 import { WebSocketProvider } from './hooks/useWebSocket'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { initOtaWatchdog } from './lib/nativeOtaWatchdog'
+import { MotionConfig } from 'framer-motion'
 import './index.css'
 
 // In dev mode, unregister any stale SWs and wipe caches so they don't serve
@@ -35,9 +36,14 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         blank screen. AppShell's PageErrorBoundary still wraps each route
         for per-route reset semantics; this is the outer catch-all. */}
     <ErrorBoundary label="root">
-      <WebSocketProvider>
-        <App />
-      </WebSocketProvider>
+      {/* reducedMotion="user": every framer-motion animation in the app
+          honours the OS "Reduce Motion" setting. index.css already clamps
+          CSS animations; without this the 38 framer call sites ignored it. */}
+      <MotionConfig reducedMotion="user">
+        <WebSocketProvider>
+          <App />
+        </WebSocketProvider>
+      </MotionConfig>
     </ErrorBoundary>
   </React.StrictMode>
 )

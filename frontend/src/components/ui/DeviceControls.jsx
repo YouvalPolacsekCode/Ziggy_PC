@@ -94,7 +94,7 @@ function BrightnessLamp({ value, onChange, onCommit, onTap, isOn, accentColor = 
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         style={{
-          position: 'relative', width, height, borderRadius: 14,
+          position: 'relative', width, height, borderRadius: 16,
           background: 'var(--surface-3)', overflow: 'hidden',
           border: '0.5px solid var(--line)',
           cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none',
@@ -137,7 +137,7 @@ function Dial({ size = 220, value = 70, max = 100, label, sublabel, color = 'var
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
         <div style={{ fontSize: Math.round(size * 0.22), fontWeight: 700, letterSpacing: '-0.04em', color: 'var(--ink)', lineHeight: 1 }}>{label}</div>
-        {sublabel && <div className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 6, letterSpacing: '0.04em' }}>{sublabel}</div>}
+        {sublabel && <div className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 8, letterSpacing: '0.04em' }}>{sublabel}</div>}
       </div>
     </div>
   )
@@ -177,7 +177,7 @@ function GradientSlider({ value, onChange, onCommit, min = 0, max = 100, gradien
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       style={{
-        height, borderRadius: 14, position: 'relative',
+        height, borderRadius: 16, position: 'relative',
         background: gradient, border: '0.5px solid var(--line)',
         cursor: 'ew-resize', touchAction: 'none', userSelect: 'none',
         overflow: 'visible',
@@ -226,7 +226,7 @@ function MoreToggle({ expanded, onToggle, label }) {
   return (
     <button
       onClick={onToggle}
-      className="flex items-center gap-0.5 text-[10px] font-medium text-accent hover:text-accent transition-colors mt-0.5 self-start"
+      className="flex items-center gap-0.5 text-[11px] font-medium text-accent hover:text-accent transition-colors mt-0.5 self-start"
     >
       <ChevronDown
         size={11}
@@ -241,13 +241,13 @@ function ModeChips({ label, modes, current, colorActive, colorIdle, onSelect }) 
   if (!modes || modes.length === 0) return null
   return (
     <div className="flex gap-1 flex-wrap items-center">
-      {label && <span className="text-[10px] text-ink-mute mr-0.5 shrink-0">{label}</span>}
+      {label && <span className="text-[11px] text-ink-mute mr-0.5 shrink-0">{label}</span>}
       {modes.map((mode) => (
         <button
           key={mode}
           onClick={() => onSelect(mode)}
           className={cn(
-            'px-2 py-0.5 rounded-lg text-[10px] font-medium capitalize transition-colors',
+            'px-2 py-0.5 rounded-[10px] text-[11px] font-medium capitalize transition-colors',
             current === mode ? colorActive : colorIdle,
           )}
         >
@@ -299,14 +299,14 @@ function settingsMatch(preset, live) {
 }
 
 const _presetIconBtn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', cursor: 'pointer', padding: 2 }
-const _presetMenuItem = { display: 'block', width: '100%', textAlign: 'start', padding: '9px 14px', fontSize: 12.5, fontFamily: 'inherit', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink)' }
-const _presetSavePill = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 12px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', border: '1px dashed var(--line-2)', background: 'transparent', color: 'var(--ink-faint)' }
-const _presetPill = (active) => ({ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 12px 7px 8px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', border: '0.5px solid var(--line)', background: active ? 'var(--ink)' : 'var(--surface-2)', color: active ? 'var(--bg)' : 'var(--ink-mute)' })
+const _presetMenuItem = { display: 'block', width: '100%', textAlign: 'start', padding: '8px 16px', fontSize: 13, fontFamily: 'inherit', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink)' }
+const _presetSavePill = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '8px 12px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', border: '1px dashed var(--line-2)', background: 'transparent', color: 'var(--ink-faint)' }
+const _presetPill = (active) => ({ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px 8px 8px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', border: '0.5px solid var(--line)', background: active ? 'var(--ink)' : 'var(--surface-2)', color: active ? 'var(--bg)' : 'var(--ink-mute)' })
 
 function PresetGauge({ settings, active }) {
   const fill = Math.max(6, Math.min(100, settings.brightness_pct || 0))
   return (
-    <span style={{ width: 15, height: 15, borderRadius: 5, position: 'relative', overflow: 'hidden', flex: '0 0 auto',
+    <span style={{ width: 15, height: 15, borderRadius: 6, position: 'relative', overflow: 'hidden', flex: '0 0 auto',
       background: active ? 'rgba(255,255,255,0.18)' : 'var(--surface)',
       boxShadow: active ? 'inset 0 0 0 1px rgba(255,255,255,0.2)' : 'inset 0 0 0 1px rgba(0,0,0,0.08)' }}>
       <span style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: `${fill}%`, background: presetSwatchColor(settings) }} />
@@ -316,7 +316,7 @@ function PresetGauge({ settings, active }) {
 
 function PresetInput({ value, onChange, onConfirm, onCancel, t, placeholder }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 4px 3px 8px', borderRadius: 999, border: '0.5px solid var(--line)', background: 'var(--surface-2)' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 4px 4px 8px', borderRadius: 999, border: '0.5px solid var(--line)', background: 'var(--surface-2)' }}>
       <input autoFocus value={value} placeholder={placeholder || ''}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') onConfirm(); else if (e.key === 'Escape') onCancel() }}
@@ -461,7 +461,7 @@ function DevicePresetsRow({ entityId, live, isOn, suggestedName, onApply }) {
                 <PresetGauge settings={p.settings} active={active} />
                 {p.is_default && <Star size={11} fill="currentColor" style={{ opacity: 0.9 }} />}
                 <span>{p.name}</span>
-                <span style={{ fontSize: 10, opacity: 0.6, fontFamily: 'ui-monospace, monospace' }}>{p.settings.brightness_pct}%</span>
+                <span style={{ fontSize: 11, opacity: 0.6, fontFamily: 'ui-monospace, monospace' }}>{p.settings.brightness_pct}%</span>
               </button>
               {menuFor === p.id && (
                 <PresetMenu
@@ -592,7 +592,7 @@ export function LightControls({ entity, onService }) {
   const suggestedPresetName = _inColorMode ? `${brightness}%` : `${_humanize(_tempWord)} ${brightness}%`
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 4, maxWidth: 320, width: '100%', margin: '0 auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 4, maxWidth: 320, width: '100%', margin: '0 auto' }}>
       {/* Brightness lamp — tap to toggle, hold + vertical drag for brightness */}
       <div style={{ display: 'flex', justifyContent: 'center' }}>
         <BrightnessLamp
@@ -660,7 +660,7 @@ export function LightControls({ entity, onService }) {
                   title={t(p.labelKey)}
                   onClick={() => onService('turn_on', { rgb_color: rgb })}
                   style={{
-                    flex: 1, aspectRatio: '1', borderRadius: 12,
+                    flex: 1, aspectRatio: '1', borderRadius: 10,
                     background: p.hex,
                     border: isActive ? '2.5px solid var(--ink)' : '0.5px solid var(--line)',
                     cursor: 'pointer',
@@ -671,7 +671,7 @@ export function LightControls({ entity, onService }) {
                 />
               )
             })}
-            <label title={t('deviceControls.customColor')} style={{ flex: 1, aspectRatio: '1', borderRadius: 12, border: '1px dashed var(--line-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', color: 'var(--ink-faint)', fontSize: 18 }}>
+            <label title={t('deviceControls.customColor')} style={{ flex: 1, aspectRatio: '1', borderRadius: 10, border: '1px dashed var(--line-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', color: 'var(--ink-faint)', fontSize: 18 }}>
               <input type="color" style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }}
                 value={rgbToHex(currentRgb)} onChange={(e) => onService('turn_on', { rgb_color: hexToRgb(e.target.value) })} />
               +
@@ -684,10 +684,10 @@ export function LightControls({ entity, onService }) {
       {effectList.length > 0 && (
         <div>
           <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.effects')}</span>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {['none', ...effectList].map(fx => (
               <button key={fx} onClick={() => onService('turn_on', { effect: fx === 'none' ? null : fx })} style={{
-                padding: '6px 12px', borderRadius: 999, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+                padding: '8px 12px', borderRadius: 999, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
                 background: (entity.effect === fx || (!entity.effect && fx === 'none')) ? 'var(--ink)' : 'var(--surface-2)',
                 color: (entity.effect === fx || (!entity.effect && fx === 'none')) ? 'var(--bg)' : 'var(--ink-mute)',
                 border: '0.5px solid var(--line)', textTransform: 'capitalize',
@@ -701,7 +701,7 @@ export function LightControls({ entity, onService }) {
       <button
         onClick={() => onService(isOn ? 'turn_off' : 'turn_on', {})}
         style={{
-          width: '100%', padding: 14, borderRadius: 14, marginTop: 4,
+          width: '100%', padding: 16, borderRadius: 16, marginTop: 4,
           background: 'var(--ink)', color: 'var(--bg)', border: 'none',
           fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -767,26 +767,26 @@ export function ClimateControls({ entity, onService }) {
 
       {/* Temp stepper below dial */}
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 20 }}>
-        <button onClick={() => adjustTemp(-step)} style={{ width: 44, height: 44, borderRadius: 13, background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 20, color: 'var(--ink-2)' }}>−</button>
+        <button onClick={() => adjustTemp(-step)} style={{ width: 44, height: 44, borderRadius: 16, background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 20, color: 'var(--ink-2)' }}>−</button>
         <span className="z-mono" style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.04em', minWidth: 56, textAlign: 'center' }}>{displayTemp}°</span>
-        <button onClick={() => adjustTemp(step)} style={{ width: 44, height: 44, borderRadius: 13, background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 20, color: 'var(--ink-2)' }}>+</button>
+        <button onClick={() => adjustTemp(step)} style={{ width: 44, height: 44, borderRadius: 16, background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 20, color: 'var(--ink-2)' }}>+</button>
       </div>
 
       {/* HVAC mode chips */}
       {hvacModes.length > 0 && (
         <div>
           <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.mode')}</span>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
             {hvacModes.map(mode => {
               const meta = HVAC_MODE_META[mode] || { icon: '●', color: 'var(--ink-mute)' }
               const active = hvacMode === mode
               return (
                 <button key={mode} onClick={() => onService('set_hvac_mode', { hvac_mode: mode })} style={{
-                  padding: '8px 14px', borderRadius: 11, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                  padding: '8px 16px', borderRadius: 10, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
                   background: active ? 'var(--ink)' : 'var(--surface)',
                   color: active ? 'var(--bg)' : 'var(--ink-2)',
                   border: '0.5px solid var(--line)',
-                  display: 'flex', alignItems: 'center', gap: 5,
+                  display: 'flex', alignItems: 'center', gap: 4,
                 }}>
                   <span style={{ fontSize: 12 }}>{meta.icon}</span>
                   {_hvacLabel(t, mode)}
@@ -801,10 +801,10 @@ export function ClimateControls({ entity, onService }) {
       {fanModes.length > 1 && (
         <div>
           <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.fanSpeed')}</span>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
             {fanModes.map(mode => (
               <button key={mode} onClick={() => onService('set_fan_mode', { fan_mode: mode })} style={{
-                flex: 1, padding: '10px 0', borderRadius: 11, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                flex: 1, padding: '12px 0', borderRadius: 10, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
                 background: fanMode === mode ? 'var(--ink)' : 'var(--surface)',
                 color: fanMode === mode ? 'var(--bg)' : 'var(--ink-2)',
                 border: '0.5px solid var(--line)', textTransform: 'capitalize',
@@ -818,10 +818,10 @@ export function ClimateControls({ entity, onService }) {
       {swingModes.length > 1 && (
         <div>
           <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.swing')}</span>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {swingModes.map(mode => (
               <button key={mode} onClick={() => onService('set_swing_mode', { swing_mode: mode })} style={{
-                padding: '6px 12px', borderRadius: 999, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+                padding: '8px 12px', borderRadius: 999, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
                 background: swingMode === mode ? 'var(--ink)' : 'var(--surface-2)',
                 color: swingMode === mode ? 'var(--bg)' : 'var(--ink-mute)',
                 border: '0.5px solid var(--line)', textTransform: 'capitalize',
@@ -834,7 +834,7 @@ export function ClimateControls({ entity, onService }) {
       {/* On/Off */}
       <button
         onClick={() => onService(hvacMode === 'off' ? 'set_hvac_mode' : 'set_hvac_mode', { hvac_mode: hvacMode === 'off' ? (hvacModes.find(m => m !== 'off') || 'cool') : 'off' })}
-        style={{ width: '100%', padding: 14, borderRadius: 14, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+        style={{ width: '100%', padding: 16, borderRadius: 16, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
       >
         {hvacMode === 'off' ? t('deviceControls.turnOn') : t('deviceControls.turnOff')}
       </button>
@@ -884,10 +884,10 @@ export function MediaPlayerControls({ entity, onService }) {
   const nextRepeat = repeat === 'off' || !repeat ? 'all' : repeat === 'all' ? 'one' : 'off'
 
   return (
-    <div className="flex flex-col gap-2.5 mt-2 pt-2 border-t border-line">
+    <div className="flex flex-col gap-3 mt-2 pt-2 border-t border-line">
       {/* Now playing */}
       {(mediaTitle || mediaArtist) && (
-        <p className="text-[10px] text-ink-mute truncate">
+        <p className="text-[11px] text-ink-mute truncate">
           {[mediaTitle, mediaArtist].filter(Boolean).join(' · ')}
         </p>
       )}
@@ -896,7 +896,7 @@ export function MediaPlayerControls({ entity, onService }) {
       <div className="flex items-center justify-center gap-3">
         <button
           onClick={() => onService('media_previous_track', {})}
-          className="p-1.5 rounded-lg text-ink-mute hover:bg-surface-2 transition-colors"
+          className="p-2 rounded-[10px] text-ink-mute hover:bg-surface-2 transition-colors"
         >
           <SkipBack size={15} />
         </button>
@@ -910,7 +910,7 @@ export function MediaPlayerControls({ entity, onService }) {
         </button>
         <button
           onClick={() => onService('media_next_track', {})}
-          className="p-1.5 rounded-lg text-ink-mute hover:bg-surface-2 transition-colors"
+          className="p-2 rounded-[10px] text-ink-mute hover:bg-surface-2 transition-colors"
         >
           <SkipForward size={15} />
         </button>
@@ -932,7 +932,7 @@ export function MediaPlayerControls({ entity, onService }) {
             min={0} max={100}
             disabled={!volReliable}
           />
-          <span className="text-[10px] text-ink-mute w-7 text-right tabular-nums shrink-0">
+          <span className="text-[11px] text-ink-mute w-7 text-right tabular-nums shrink-0">
             {isMuted ? t('deviceControls.muted') : volReliable ? `${volume}%` : t('deviceControls.unknown')}
           </span>
         </div>
@@ -957,7 +957,7 @@ export function MediaPlayerControls({ entity, onService }) {
                   key={s}
                   onClick={() => onService('select_source', { source: s })}
                   className={cn(
-                    'px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors',
+                    'px-2 py-0.5 rounded-[10px] text-[11px] font-medium transition-colors',
                     source === s
                       ? 'bg-accent-soft text-accent'
                       : 'bg-surface-2 text-ink-mute hover:bg-line',
@@ -972,13 +972,13 @@ export function MediaPlayerControls({ entity, onService }) {
           {/* App list (distinct from source list) */}
           {appList.length > 0 && (
             <div className="flex gap-1 flex-wrap items-center">
-              <span className="text-[10px] text-ink-mute mr-0.5 shrink-0">{t('deviceControls.apps')}</span>
+              <span className="text-[11px] text-ink-mute mr-0.5 shrink-0">{t('deviceControls.apps')}</span>
               {appList.map((app) => (
                 <button
                   key={app}
                   onClick={() => onService('select_source', { source: app })}
                   className={cn(
-                    'px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors',
+                    'px-2 py-0.5 rounded-[10px] text-[11px] font-medium transition-colors',
                     source === app
                       ? 'bg-accent-soft text-accent'
                       : 'bg-surface-2 text-ink-mute hover:bg-line',
@@ -992,13 +992,13 @@ export function MediaPlayerControls({ entity, onService }) {
 
           {/* Shuffle + Repeat */}
           {(supportsShuffle || supportsRepeat) && (
-            <div className="flex gap-1.5">
+            <div className="flex gap-2">
               {supportsShuffle && (
                 <button
                   onClick={() => onService('shuffle_set', { shuffle: !shuffle })}
                   title={shuffle ? t('deviceControls.shuffleOn') : t('deviceControls.shuffleOff')}
                   className={cn(
-                    'flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors',
+                    'flex items-center gap-1 px-2 py-0.5 rounded-[10px] text-[11px] font-medium transition-colors',
                     shuffle
                       ? 'bg-accent-soft text-accent'
                       : 'bg-surface-2 text-ink-mute hover:bg-line',
@@ -1012,7 +1012,7 @@ export function MediaPlayerControls({ entity, onService }) {
                   onClick={() => onService('repeat_set', { repeat: nextRepeat })}
                   title={`${t('deviceControls.repeatLabel')}: ${repeat || 'off'}`}
                   className={cn(
-                    'flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors',
+                    'flex items-center gap-1 px-2 py-0.5 rounded-[10px] text-[11px] font-medium transition-colors',
                     repeat && repeat !== 'off'
                       ? 'bg-accent-soft text-accent'
                       : 'bg-surface-2 text-ink-mute hover:bg-line',
@@ -1045,7 +1045,7 @@ export function MediaPlayerControls({ entity, onService }) {
 // ─── Cover ────────────────────────────────────────────────────────────────────
 const ctrlBtn = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-  padding: '6px 10px', borderRadius: 9, fontSize: 11, fontWeight: 500,
+  padding: '8px 12px', borderRadius: 10, fontSize: 11, fontWeight: 500,
   background: 'var(--surface-2)', border: '0.5px solid var(--line)',
   color: 'var(--ink)', cursor: 'pointer', fontFamily: 'inherit',
 }
@@ -1059,18 +1059,18 @@ export function CoverControls({ entity, onService }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
-      <div style={{ display: 'flex', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={() => onService('open_cover', {})} style={{ ...ctrlBtn, flex: 1 }}>
           <ArrowUp size={11} /> {t('deviceControls.openCover')}
         </button>
-        <button onClick={() => onService('stop_cover', {})} style={{ ...ctrlBtn, padding: '6px 14px' }}>■</button>
+        <button onClick={() => onService('stop_cover', {})} style={{ ...ctrlBtn, padding: '8px 16px' }}>■</button>
         <button onClick={() => onService('close_cover', {})} style={{ ...ctrlBtn, flex: 1 }}>
           <ArrowDown size={11} /> {t('deviceControls.closeCover')}
         </button>
       </div>
       {position != null && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-faint)', marginBottom: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-faint)', marginBottom: 8 }}>
             <span>{t('deviceControls.position')}</span>
             <span className="z-mono">{localPos}%</span>
           </div>
@@ -1097,20 +1097,20 @@ export function FanControls({ entity, onService }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink-faint)', marginBottom: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-faint)', marginBottom: 8 }}>
           <span>{t('deviceControls.speed')}</span>
           <span className="z-mono">{pct}%</span>
         </div>
         <Slider value={pct} onValueChange={setPct} onValueCommit={(v) => onService('set_percentage', { percentage: v })} min={0} max={100} />
       </div>
       {presetModes.length > 0 && (
-        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {presetModes.map((mode) => (
             <button
               key={mode}
               onClick={() => onService('set_preset_mode', { preset_mode: mode })}
               style={{
-                padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize',
+                padding: '4px 12px', borderRadius: 999, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize',
                 background: presetMode === mode ? 'var(--ink)' : 'var(--surface-2)',
                 color: presetMode === mode ? 'var(--bg)' : 'var(--ink-mute)',
                 border: presetMode === mode ? 'none' : '0.5px solid var(--line)',
@@ -1140,25 +1140,25 @@ export function LockControls({ entity, onService }) {
   return (
     <div style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       {isPending ? (
-        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--ink-faint)', padding: '6px 0' }}>{pendingLabel}</div>
+        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--ink-faint)', padding: '8px 0' }}>{pendingLabel}</div>
       ) : !isLocked ? (
         <button
           onClick={() => onService('lock', {})}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 0', borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: `color-mix(in srgb, var(--ok) 12%, var(--surface))`, color: 'var(--ok)', border: '0.5px solid color-mix(in srgb, var(--ok) 30%, var(--line))' }}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '8px 0', borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: `color-mix(in srgb, var(--ok) 12%, var(--surface))`, color: 'var(--ok)', border: '0.5px solid color-mix(in srgb, var(--ok) 30%, var(--line))' }}
         >
           <Lock size={12} /> {t('deviceControls.lock')}
         </button>
       ) : confirming ? (
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={() => { onService('unlock', {}); setConfirming(false) }}
-            style={{ flex: 1, padding: '7px 0', borderRadius: 10, background: 'var(--err)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
+            style={{ flex: 1, padding: '8px 0', borderRadius: 10, background: 'var(--err)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
           >
             {t('deviceControls.confirmUnlock')}
           </button>
           <button
             onClick={() => setConfirming(false)}
-            style={{ padding: '7px 12px', borderRadius: 10, background: 'var(--surface-2)', color: 'var(--ink-mute)', border: '0.5px solid var(--line)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}
+            style={{ padding: '8px 12px', borderRadius: 10, background: 'var(--surface-2)', color: 'var(--ink-mute)', border: '0.5px solid var(--line)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}
           >
             ✕
           </button>
@@ -1166,7 +1166,7 @@ export function LockControls({ entity, onService }) {
       ) : (
         <button
           onClick={() => setConfirming(true)}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 0', borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: `color-mix(in srgb, var(--err) 10%, var(--surface))`, color: 'var(--err)', border: '0.5px solid color-mix(in srgb, var(--err) 30%, var(--line))' }}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '8px 0', borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', background: `color-mix(in srgb, var(--err) 10%, var(--surface))`, color: 'var(--err)', border: '0.5px solid color-mix(in srgb, var(--err) 30%, var(--line))' }}
         >
           <LockOpen size={12} /> {t('deviceControls.unlock')}
         </button>
@@ -1190,7 +1190,7 @@ export function VacuumControls({ entity, onService }) {
   })
 
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       {!isCleaning ? (
         <button onClick={() => onService('start', {})} style={vacBtn(`color-mix(in srgb, var(--accent) 10%, var(--surface))`, 'var(--accent)', `0.5px solid color-mix(in srgb, var(--accent) 30%, var(--line))`)}>
           <Play size={11} /> {t('deviceControls.startVacuum')}
@@ -1211,7 +1211,7 @@ export function VacuumControls({ entity, onService }) {
         </button>
       )}
       {isDocked && (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', fontSize: 11, color: 'var(--ok)', fontWeight: 500 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 12px', fontSize: 11, color: 'var(--ok)', fontWeight: 500 }}>
           <Home size={11} /> {t('deviceControls.docked')}
         </span>
       )}
@@ -1282,22 +1282,22 @@ export function GenericControls({ entity, onService }) {
 
       {/* Action buttons */}
       {visibleActions.length > 0 && (
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
           {visibleActions.map(([key, action]) => {
             const needsConfirm = action.confirm || meta.safetyLevel === 'double_confirm'
 
             if (needsConfirm && confirming === key) {
               return (
-                <div key={key} className="flex gap-1.5 w-full">
+                <div key={key} className="flex gap-2 w-full">
                   <button
                     onClick={() => { onService(action.service, {}); setConfirming(null) }}
-                    className="flex-1 py-1.5 rounded-lg bg-err text-on-accent text-xs font-medium hover:bg-err transition-colors"
+                    className="flex-1 py-2 rounded-[10px] bg-err text-on-accent text-footnote font-medium hover:bg-err transition-colors"
                   >
                     {t('deviceControls.confirmAction', { label: action.label })}
                   </button>
                   <button
                     onClick={() => setConfirming(null)}
-                    className="px-3 py-1.5 rounded-lg bg-surface-2 text-ink-mute text-xs hover:bg-line transition-colors"
+                    className="px-3 py-2 rounded-[10px] bg-surface-2 text-ink-mute text-footnote hover:bg-line transition-colors"
                   >
                     ✕
                   </button>
@@ -1317,7 +1317,7 @@ export function GenericControls({ entity, onService }) {
                 key={key}
                 onClick={() => needsConfirm ? setConfirming(key) : onService(action.service, {})}
                 className={cn(
-                  'flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                  'flex-1 flex items-center justify-center gap-1 py-2 rounded-[10px] text-footnote font-medium transition-colors',
                   isCurrentAction
                     ? 'bg-line text-ink-mute cursor-default'
                     : 'bg-surface-2 text-ink-2 hover:bg-line',
@@ -1333,7 +1333,7 @@ export function GenericControls({ entity, onService }) {
       {/* Position slider — gated by SET_POSITION feature bit */}
       {hasPosition && (
         <div>
-          <div className="flex justify-between text-[10px] text-ink-mute mb-1.5">
+          <div className="flex justify-between text-[11px] text-ink-mute mb-2">
             <span>{t('deviceControls.position')}</span>
             <span className="tabular-nums">{entity.current_position}%</span>
           </div>
@@ -1352,7 +1352,7 @@ export function GenericControls({ entity, onService }) {
         return (
           <div key={cd.attr}>
             {cd.label && (
-              <span className="text-[10px] text-ink-mute mr-1">{cd.label}</span>
+              <span className="text-[11px] text-ink-mute mr-1">{cd.label}</span>
             )}
             <div className="flex gap-1 flex-wrap mt-0.5">
               {opts.map((opt) => (
@@ -1360,7 +1360,7 @@ export function GenericControls({ entity, onService }) {
                   key={opt}
                   onClick={() => onService(cd.service, { [cd.param]: opt })}
                   className={cn(
-                    'px-2 py-0.5 rounded-lg text-[10px] font-medium capitalize transition-colors',
+                    'px-2 py-0.5 rounded-[10px] text-[11px] font-medium capitalize transition-colors',
                     current === opt
                       ? 'bg-accent-soft text-accent'
                       : 'bg-surface-2 text-ink-mute hover:bg-line',
@@ -1445,7 +1445,7 @@ const REMOTE_GROUPS = {
              'fan_low','fan_medium','fan_high','fan_auto','swing_on','swing_off'],
 }
 
-const BTN_BASE = 'flex items-center justify-center rounded-xl text-sm font-medium transition-colors select-none'
+const BTN_BASE = 'flex items-center justify-center rounded-[16px] text-subhead font-medium transition-colors select-none'
 const BTN_ACTIVE = 'bg-surface-2 text-ink-2 hover:bg-line active:scale-95'
 const BTN_DISABLED = 'bg-bg text-ink-faint cursor-not-allowed'
 
@@ -1456,10 +1456,10 @@ function RemoteBtn({ cmd, learned, cmds, onPress, size = 'md' }) {
   const isLearned = learned.has(cmd)
   const active = exists && isLearned
   const sz = size === 'lg'
-    ? 'w-14 h-12 text-base'
+    ? 'w-14 h-12 text-body'
     : size === 'sm'
-    ? 'w-10 h-9 text-xs'
-    : 'w-12 h-10 text-sm'
+    ? 'w-10 h-9 text-footnote'
+    : 'w-12 h-10 text-subhead'
   const baseTitle = disp.title || cmd
 
   return (
@@ -1504,11 +1504,11 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 12px', borderBottom: '0.5px solid var(--line)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button onClick={onClose} className="z-icon-btn" style={{ width: 32, height: 32, borderRadius: 10 }}><X size={14} /></button>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{irDevice.name}</div>
-            <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{irDevice.room ? `${irDevice.room} · ` : ''}{t('deviceControls.remote.commandCount', { n: learned.size })}</div>
+            <div className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{irDevice.room ? `${irDevice.room} · ` : ''}{t('deviceControls.remote.commandCount', { n: learned.size })}</div>
           </div>
         </div>
       </div>
@@ -1516,13 +1516,13 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: '20px 20px 32px', overflowY: 'auto' }}>
 
         {/* Now-playing card */}
-        <div style={{ padding: '12px 14px', borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 44, height: 44, borderRadius: 9, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-mute)' }}>
+        <div style={{ padding: '12px 16px', borderRadius: 16, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-mute)' }}>
             <Tv2 size={20} />
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{irDevice.name}</div>
-            <div className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{t('deviceControls.remote.lastCommand', { n: learned.size })}</div>
+            <div className="z-mono" style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{t('deviceControls.remote.lastCommand', { n: learned.size })}</div>
           </div>
           <span className="z-dot z-dot-on" />
         </div>
@@ -1535,9 +1535,9 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
               onClick={() => fire(b.cmd)}
               disabled={!canDo(b.cmd)}
               style={{
-                padding: '14px 0', borderRadius: 14,
+                padding: '16px 0', borderRadius: 16,
                 background: 'var(--surface)', border: '0.5px solid var(--line)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
                 cursor: canDo(b.cmd) ? 'pointer' : 'not-allowed',
                 opacity: canDo(b.cmd) ? 1 : 0.35,
                 color: b.accent || 'var(--ink-2)', fontFamily: 'inherit',
@@ -1546,7 +1546,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
               {b.cmd === 'power' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>}
               {b.cmd === 'mute' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9v6h4l5 4V5L7 9zM22 9l-6 6M16 9l6 6"/></svg>}
               {b.cmd === 'input' && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="10" r="2" fill="currentColor"/><circle cx="20" cy="14" r="2" fill="currentColor"/></svg>}
-              <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--ink-2)' }}>{b.label}</span>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--ink-2)' }}>{b.label}</span>
             </button>
           ))}
         </div>
@@ -1581,7 +1581,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
                 { dir: 'right', cmd: 'nav_right', style: { right: 14, top: '50%', transform: 'translateY(-50%)' } },
               ].map(a => (
                 <button key={a.dir} onClick={() => fire(a.cmd)} disabled={!canDo(a.cmd)}
-                  style={{ position: 'absolute', background: 'none', border: 'none', cursor: canDo(a.cmd) ? 'pointer' : 'default', color: 'var(--ink-mute)', padding: 6, opacity: canDo(a.cmd) ? 1 : 0.3, ...a.style }}>
+                  style={{ position: 'absolute', background: 'none', border: 'none', cursor: canDo(a.cmd) ? 'pointer' : 'default', color: 'var(--ink-mute)', padding: 8, opacity: canDo(a.cmd) ? 1 : 0.3, ...a.style }}>
                   <ArrowIcon dir={a.dir} />
                 </button>
               ))}
@@ -1594,7 +1594,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
             {['back','home','menu'].filter(c => c in cmds).map(cmd => (
               <button key={cmd} onClick={() => fire(cmd)} disabled={!canDo(cmd)} style={{
-                padding: '10px 16px', borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--line)',
+                padding: '12px 16px', borderRadius: 10, background: 'var(--surface)', border: '0.5px solid var(--line)',
                 fontSize: 11, fontWeight: 600, cursor: canDo(cmd) ? 'pointer' : 'default', color: 'var(--ink-2)', fontFamily: 'inherit',
                 opacity: canDo(cmd) ? 1 : 0.35,
               }}>{_remoteEntry(t, cmd).title || cmd}</button>
@@ -1605,7 +1605,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
         {/* Vol / Mic / Ch */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
           {/* Volume */}
-          <div style={{ padding: '10px 0', borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+          <div style={{ padding: '12px 0', borderRadius: 16, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
             <button onClick={() => { fire('volume_up');   setVolDisplay(v => Math.min(100, v+1)) }} style={{ background: 'none', border: 'none', color: 'var(--ink-2)', padding: 4, cursor: 'pointer' }}><ArrowIcon dir="up" /></button>
             <span className="z-mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceControls.remote.vol')} {volDisplay}</span>
             <button onClick={() => { fire('volume_down'); setVolDisplay(v => Math.max(0, v-1)) }} style={{ background: 'none', border: 'none', color: 'var(--ink-2)', padding: 4, cursor: 'pointer' }}><ArrowIcon dir="down" /></button>
@@ -1613,17 +1613,17 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
 
           {/* Mic / voice */}
           <button style={{
-            padding: '14px 0', borderRadius: 22,
+            padding: '16px 0', borderRadius: 24,
             background: 'var(--accent)', color: '#fff', border: 'none',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
             cursor: 'pointer', boxShadow: 'var(--shadow-md)',
           }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-            <span style={{ fontSize: 10, fontWeight: 600 }}>{t('deviceControls.remote.speak')}</span>
+            <span style={{ fontSize: 11, fontWeight: 600 }}>{t('deviceControls.remote.speak')}</span>
           </button>
 
           {/* Channel */}
-          <div style={{ padding: '10px 0', borderRadius: 14, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+          <div style={{ padding: '12px 0', borderRadius: 16, background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
             <button onClick={() => { fire('channel_up');   setChDisplay(v => v+1) }} style={{ background: 'none', border: 'none', color: 'var(--ink-2)', padding: 4, cursor: 'pointer' }}><ArrowIcon dir="up" /></button>
             <span className="z-mono" style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceControls.remote.ch')} {chDisplay}</span>
             <button onClick={() => { fire('channel_down'); setChDisplay(v => Math.max(1, v-1)) }} style={{ background: 'none', border: 'none', color: 'var(--ink-2)', padding: 4, cursor: 'pointer' }}><ArrowIcon dir="down" /></button>
@@ -1634,7 +1634,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
         {sourceCommands.length > 0 && (
           <div>
             <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.remote.source')}</span>
-            <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }} className="scrollbar-thin">
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }} className="scrollbar-thin">
               {sourceCommands.map(cmd => (
                 <button key={cmd} onClick={() => fire(cmd)} style={{
                   padding: '8px 12px', borderRadius: 10, flexShrink: 0,
@@ -1651,10 +1651,10 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
         {extras.length > 0 && (
           <div>
             <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.remote.more')}</span>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {extras.map(cmd => (
                 <button key={cmd} onClick={() => fire(cmd)} style={{
-                  padding: '7px 12px', borderRadius: 9, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+                  padding: '8px 12px', borderRadius: 10, fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
                   background: 'var(--surface-2)', border: '0.5px solid var(--line)', color: 'var(--ink-2)', textTransform: 'capitalize',
                 }}>{cmd.replace(/_/g, ' ')}</button>
               ))}
@@ -1701,13 +1701,13 @@ export function IRRemoteButton({ irDevice, onCommand, onChannel, open: openProp,
     <>
       {!hideTrigger && (
       <div className="mt-2 pt-2 border-t border-line flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[10px] font-medium text-ink-mute">
+        <span className="flex items-center gap-2 text-[11px] font-medium text-ink-mute">
           <Tv2 size={11} className="text-accent" />
           {t('deviceControls.remote.cmdCount', { n: learned.size, s: learned.size !== 1 ? 's' : '' })}
         </span>
         <button
           onClick={() => setOpen(true)}
-          className="text-[10px] font-medium text-accent hover:text-accent transition-colors"
+          className="text-[11px] font-medium text-accent hover:text-accent transition-colors"
         >
           {t('deviceControls.remote.openLabel')}
         </button>
