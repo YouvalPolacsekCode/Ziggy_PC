@@ -687,10 +687,11 @@ const sectionEditBtn = {
 // icon, not ours), otherwise a line glyph by kind — a bolt for a routine,
 // sparkles for a saved ask.
 function ShortcutGlyph({ type, icon, size = 18 }) {
-  if (icon) return <span style={{ fontSize: size, lineHeight: 1 }} aria-hidden="true">{icon}</span>
-  return type === 'routine'
-    ? <Zap size={size} strokeWidth={1.75} aria-hidden="true" />
-    : <Sparkles size={size} strokeWidth={1.75} aria-hidden="true" />
+  // The person's own icon wins. The fallback is the original character pair
+  // rather than a Lucide glyph, so a pinned shortcut looks the same as it
+  // always did whether or not it carries an icon.
+  const glyph = icon || (type === 'routine' ? '⚡' : '✦')
+  return <span style={{ fontSize: size, lineHeight: 1 }} aria-hidden="true">{glyph}</span>
 }
 
 // Horizontal pill — used in the Shortcuts row. Stateless surface, so
