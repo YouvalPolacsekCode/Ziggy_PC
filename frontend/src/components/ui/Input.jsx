@@ -3,12 +3,12 @@
 const fieldStyle = {
   width: '100%', boxSizing: 'border-box',
   background: 'var(--surface)', border: '0.5px solid var(--line)',
-  borderRadius: 'var(--r-ctl)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 17,
+  borderRadius: 'var(--r-ctl)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 16,
   outline: 'none', transition: 'border-color var(--dur-press) var(--ease-standard), outline var(--dur-press) var(--ease-standard)',
 }
 
 const labelStyle = {
-  display: 'block', fontSize: 15, fontWeight: 500,
+  display: 'block', fontSize: 13, fontWeight: 500,
   color: 'var(--ink-2)', marginBottom: 4,
 }
 
@@ -27,7 +27,7 @@ export function Input({ className, label, error, style, dir = 'auto', ...props }
         className={className}
         style={{
           ...fieldStyle,
-          height: 44, padding: '0 16px',
+          height: 40, padding: '0 14px',
           border: `0.5px solid ${error ? 'var(--err)' : 'var(--line)'}`,
           ...style,
         }}
@@ -38,7 +38,7 @@ export function Input({ className, label, error, style, dir = 'auto', ...props }
         }}
         {...props}
       />
-      {error && <p style={{ fontSize: 13, color: 'var(--err-text)', marginTop: 4 }}>{error}</p>}
+      {error && <p style={{ fontSize: 12, color: 'var(--err-text)', marginTop: 4 }}>{error}</p>}
     </div>
   )
 }
@@ -52,7 +52,7 @@ export function Textarea({ className, label, error, style, dir = 'auto', ...prop
         className={className}
         style={{
           ...fieldStyle,
-          padding: '12px 16px', resize: 'none', lineHeight: 1.4,
+          padding: '10px 14px', resize: 'none', lineHeight: 1.4,
           border: `0.5px solid ${error ? 'var(--err)' : 'var(--line)'}`,
           ...style,
         }}
@@ -63,7 +63,7 @@ export function Textarea({ className, label, error, style, dir = 'auto', ...prop
         }}
         {...props}
       />
-      {error && <p style={{ fontSize: 13, color: 'var(--err-text)', marginTop: 4 }}>{error}</p>}
+      {error && <p style={{ fontSize: 12, color: 'var(--err-text)', marginTop: 4 }}>{error}</p>}
     </div>
   )
 }

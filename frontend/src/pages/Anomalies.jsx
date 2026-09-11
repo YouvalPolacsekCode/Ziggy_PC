@@ -101,7 +101,7 @@ const SNOOZE_OPTIONS = [
 // Ghost text button: 44 tall, 15px, ink. The quiet sibling of the card's one
 // bordered action.
 const ghostBtn = {
-  minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-ctl)', fontSize: 15, fontWeight: 500,
+  minHeight: 40, padding: '0 12px', borderRadius: 'var(--r-ctl)', fontSize: 13, fontWeight: 500,
   background: 'transparent', color: 'var(--ink-mute)', border: 'none', cursor: 'pointer',
   fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4,
 }
@@ -156,9 +156,9 @@ function SnoozeMenu({ roomId, ruleId, onSnoozed }) {
                   key={opt.minutes}
                   onClick={() => doSnooze(opt.minutes)}
                   style={{
-                    display: 'block', width: '100%', minHeight: 44, padding: '0 16px', textAlign: 'start',
+                    display: 'block', width: '100%', minHeight: 40, padding: '0 16px', textAlign: 'start',
                     background: 'none', border: 'none', cursor: 'pointer',
-                    fontSize: 17, fontWeight: 400, color: 'var(--ink)', fontFamily: 'inherit',
+                    fontSize: 15, fontWeight: 400, color: 'var(--ink)', fontFamily: 'inherit',
                     borderBottom: i < SNOOZE_OPTIONS.length - 1 ? '0.5px solid var(--line)' : 'none',
                     transition: 'background var(--dur-press) var(--ease-standard)',
                   }}
@@ -248,14 +248,14 @@ function AnomalyCard({ anomaly, roomId, roomName, variant = 'active', onChange }
       initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}
       transition={T_ENTER}
       style={{
-        display: 'flex', gap: 12, padding: 16, borderRadius: 'var(--r-card)', minHeight: 56,
+        display: 'flex', gap: 12, padding: 12, borderRadius: 'var(--r-card)', minHeight: 48,
         background: 'var(--surface)', border: '0.5px solid var(--line)',
         borderInlineStart: `3px solid ${cleared ? 'var(--line-2)' : color}`,
       }}
     >
       {/* Tinted icon box */}
       <div style={{
-        width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+        width: 36, height: 36, borderRadius: 'var(--r-ctl)', flexShrink: 0,
         background: cleared
           ? 'var(--surface-2)'
           : `color-mix(in srgb, ${color} 10%, var(--surface-2))`,
@@ -274,7 +274,7 @@ function AnomalyCard({ anomaly, roomId, roomName, variant = 'active', onChange }
         {/* 1. Message — full width, wraps freely. A cleared entry reads in
             ink-mute instead of being dimmed through opacity. */}
         <div style={{
-          fontSize: 17, fontWeight: 600, color: cleared ? 'var(--ink-mute)' : 'var(--ink)', lineHeight: 1.3,
+          fontSize: 15, fontWeight: 600, color: cleared ? 'var(--ink-mute)' : 'var(--ink)', lineHeight: 1.3,
           overflowWrap: 'anywhere',
         }}>
           {anomaly.message}
@@ -282,7 +282,7 @@ function AnomalyCard({ anomaly, roomId, roomName, variant = 'active', onChange }
 
         {/* Optional subtitle — non-meta context like "During quiet hours" */}
         {subtitle && (
-          <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 4, lineHeight: 1.4 }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 4, lineHeight: 1.4 }}>
             {subtitle}
           </div>
         )}
@@ -290,7 +290,7 @@ function AnomalyCard({ anomaly, roomId, roomName, variant = 'active', onChange }
         {/* 2. Meta strip — one tabular row, wraps cleanly on narrow widths */}
         {metaParts.length > 0 && (
           <div className="z-mono" style={{
-            fontSize: 13, color: 'var(--ink-mute)', marginTop: 8,
+            fontSize: 12, color: 'var(--ink-mute)', marginTop: 8,
             display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
           }}>
             {metaParts.map((part, i) => (
@@ -509,9 +509,9 @@ export default function Anomalies() {
       <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--surface-2)', borderRadius: 'var(--r-ctl)', marginBottom: 16 }}>
         {tabs.map(tb => (
           <button key={tb.id} onClick={() => setTab(tb.id)} aria-pressed={tab === tb.id} style={{
-            flex: 1, minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-chip)', fontFamily: 'inherit', cursor: 'pointer',
+            flex: 1, minHeight: 40, padding: '0 8px', borderRadius: 'var(--r-chip)', fontFamily: 'inherit', cursor: 'pointer',
             background: tab === tb.id ? 'var(--surface)' : 'transparent',
-            border: 'none', fontSize: 15, fontWeight: 600,
+            border: 'none', fontSize: 13, fontWeight: 600,
             color: tab === tb.id ? 'var(--ink)' : 'var(--ink-mute)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
             boxShadow: tab === tb.id ? 'var(--shadow-sm)' : 'none',
@@ -538,8 +538,8 @@ export default function Anomalies() {
           {!loading && activeList.length === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={T_STATE} style={{ textAlign: 'center', padding: 32 }}>
               <CheckCircle2 size={32} strokeWidth={1.75} style={{ color: 'var(--ok)', marginBottom: 12 }} />
-              <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('anomaliesPage.allClear')}</p>
-              <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.5, maxWidth: 320, margin: '0 auto' }}>
+              <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('anomaliesPage.allClear')}</p>
+              <p style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5, maxWidth: 320, margin: '0 auto' }}>
                 {t('anomaliesPage.allClearHelp')}
               </p>
             </motion.div>
@@ -603,8 +603,8 @@ export default function Anomalies() {
 
           {!histLoading && history.length === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={T_STATE} style={{ textAlign: 'center', padding: 32 }}>
-              <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('anomaliesPage.noHistory')}</p>
-              <p style={{ fontSize: 15, color: 'var(--ink-mute)' }}>
+              <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('anomaliesPage.noHistory')}</p>
+              <p style={{ fontSize: 13, color: 'var(--ink-mute)' }}>
                 {t('anomaliesPage.noHistoryHelp')}
               </p>
             </motion.div>
@@ -638,10 +638,10 @@ export default function Anomalies() {
           {rules !== null && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* Overall engine toggle */}
-              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', padding: '12px 16px', minHeight: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', padding: '12px 16px', minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <div style={{ minWidth: 0 }}>
-                  <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>{t('anomalies.engineTitle')}</p>
-                  <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>{t('anomalies.engineDesc')}</p>
+                  <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{t('anomalies.engineTitle')}</p>
+                  <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{t('anomalies.engineDesc')}</p>
                 </div>
                 <Toggle
                   checked={engineEnabled}
@@ -661,14 +661,14 @@ export default function Anomalies() {
                   const sevText  = SEV_TEXT[rule.severity] || SEV_TEXT.warning
                   return (
                     <div key={rule.id} style={{ padding: '12px 16px', borderBottom: i < rules.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, marginBottom: rule.config && rule.enabled ? 8 : 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, marginBottom: rule.config && rule.enabled ? 8 : 0 }}>
                         <span className="z-dot" style={{ background: sevColor, flexShrink: 0 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: 17, fontWeight: 500, color: engineEnabled ? 'var(--ink)' : 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <p style={{ fontSize: 15, fontWeight: 500, color: engineEnabled ? 'var(--ink)' : 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             {rule.label}
                             <span className="z-chip" style={{ color: sevText }}>{rule.severity}</span>
                           </p>
-                          <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>{rule.description}</p>
+                          <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{rule.description}</p>
                         </div>
                         <Toggle
                           checked={!!rule.enabled}
@@ -679,7 +679,7 @@ export default function Anomalies() {
                       </div>
                       {rule.config && rule.enabled && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingInlineStart: 20 }}>
-                          <p style={{ fontSize: 15, color: 'var(--ink-mute)', flex: 1 }}>{rule.config.label}</p>
+                          <p style={{ fontSize: 13, color: 'var(--ink-mute)', flex: 1 }}>{rule.config.label}</p>
                           <Input
                             type="number"
                             min={1}
@@ -691,7 +691,7 @@ export default function Anomalies() {
                             aria-label={rule.config.label}
                             style={{ width: 96, textAlign: 'center', padding: '0 8px' }}
                           />
-                          <p style={{ fontSize: 15, color: 'var(--ink-mute)' }}>{rule.config.unit}</p>
+                          <p style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{rule.config.unit}</p>
                         </div>
                       )}
                     </div>
@@ -704,10 +704,10 @@ export default function Anomalies() {
                   warnings as soon as their on-time exceeds the threshold.
                   Editing happens here, persisted under
                   anomaly_engine.exemptions in settings.yaml. */}
-              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', padding: 16 }}>
+              <div style={{ background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', padding: 12 }}>
                 <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>{t('anomalies.alwaysOn')}</p>
-                  <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>
+                  <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{t('anomalies.alwaysOn')}</p>
+                  <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>
                     {t('anomalies.alwaysOnHint')}
                   </p>
                 </div>
@@ -724,8 +724,8 @@ export default function Anomalies() {
                         onClick={() => saveExemptions(exemptions.filter(x => x !== eid))}
                         style={{
                           display: 'inline-flex', alignItems: 'center', gap: 8,
-                          fontSize: 15, color: 'var(--ink-2)', fontFamily: 'inherit', cursor: 'pointer',
-                          minHeight: 44, padding: '0 12px 0 16px', borderRadius: 999,
+                          fontSize: 13, color: 'var(--ink-2)', fontFamily: 'inherit', cursor: 'pointer',
+                          minHeight: 40, padding: '0 12px 0 16px', borderRadius: 999,
                           background: 'var(--surface-2)', border: '0.5px solid var(--line)',
                         }}
                       >
@@ -752,7 +752,7 @@ export default function Anomalies() {
                   ]}
                 />
                 {exemptionPool.length === 0 && exemptions.length === 0 && (
-                  <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 8 }}>
+                  <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 8 }}>
                     No eligible switches or lights found.
                   </p>
                 )}

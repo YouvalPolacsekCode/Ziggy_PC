@@ -213,7 +213,7 @@ function SwitchRemote({ entity }) {
         <div className="z-display" style={{ color: isOn ? 'var(--ok-text)' : 'var(--ink-mute)' }}>
           {isOn ? i18nT('common.on') : i18nT('common.off')}
         </div>
-        <div style={{ fontSize: 15, marginTop: 4, color: 'var(--ink-mute)' }}>
+        <div style={{ fontSize: 13, marginTop: 4, color: 'var(--ink-mute)' }}>
           {facts.meta.label}
         </div>
       </div>

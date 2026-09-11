@@ -35,9 +35,9 @@ function SendIntentEditor({ value, onChange }) {
               {items.map(tpl => (
                 <button key={tpl} type="button" onClick={() => { onChange(tpl); setShowTemplates(false) }} dir="auto"
                   style={{
-                    display: 'block', width: '100%', minHeight: 44, padding: '8px 16px',
+                    display: 'block', width: '100%', minHeight: 40, padding: '8px 16px',
                     background: 'none', border: 'none', textAlign: 'start',
-                    fontSize: 15, color: 'var(--ink-2)', cursor: 'pointer', fontFamily: 'inherit',
+                    fontSize: 13, color: 'var(--ink-2)', cursor: 'pointer', fontFamily: 'inherit',
                     transition: 'background var(--dur-press) var(--ease-standard)',
                   }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-2)'}

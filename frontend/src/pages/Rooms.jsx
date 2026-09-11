@@ -104,8 +104,8 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
   // Chips read white-on-glass over a photo; on a plain tile they sit on
   // surface-2, so they become ink-on-surface with a hairline instead.
   const chipBase = photo
-    ? { fontSize: 13, lineHeight: '16px', color: '#fff', backdropFilter: 'blur(8px)', padding: '4px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }
-    : { fontSize: 13, lineHeight: '16px', color: 'var(--ink)', background: 'var(--surface)', border: '0.5px solid var(--line)', padding: '4px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }
+    ? { fontSize: 12, lineHeight: '16px', color: '#fff', backdropFilter: 'blur(8px)', padding: '4px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }
+    : { fontSize: 12, lineHeight: '16px', color: 'var(--ink)', background: 'var(--surface)', border: '0.5px solid var(--line)', padding: '4px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }
 
   const countLine = (
     <>
@@ -192,8 +192,8 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
         {/* Name + count — bottom. Explicit textAlign overrides the parent
             <button>'s UA-default `text-align: center`. */}
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12, textAlign: 'start' }}>
-          <p dir="auto" style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: photo ? '#fff' : 'var(--ink)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roomName}</p>
-          <p className="z-mono" style={{ fontSize: 13, lineHeight: '18px', color: photo ? 'rgba(255,255,255,0.85)' : 'var(--ink-mute)' }}>
+          <p dir="auto" style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: photo ? '#fff' : 'var(--ink)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roomName}</p>
+          <p className="z-mono" style={{ fontSize: 12, lineHeight: '18px', color: photo ? 'rgba(255,255,255,0.85)' : 'var(--ink-mute)' }}>
             {countLine}
           </p>
         </div>
@@ -208,8 +208,8 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
             <button onClick={e => { e.stopPropagation(); onEditPhoto(room) }} title={t('rooms.editRoomAria')} aria-label={t('rooms.editRoomAria')}
               className={photo ? undefined : 'z-icon-btn'}
               style={photo
-                ? { width: 36, height: 36, borderRadius: 'var(--r-ctl)', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', border: '0.5px solid rgba(255,255,255,0.2)', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }
-                : { width: 36, height: 36, color: 'var(--ink)' }}>
+                ? { width: 32, height: 32, borderRadius: 'var(--r-ctl)', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', border: '0.5px solid rgba(255,255,255,0.2)', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }
+                : { width: 32, height: 32, color: 'var(--ink)' }}>
               <Pencil size={16} strokeWidth={1.75} />
             </button>
           )}
@@ -217,8 +217,8 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
             <button onClick={e => { e.stopPropagation(); onDelete(room) }} title={t('rooms.deleteRoomAria')} aria-label={t('rooms.deleteRoomAria')}
               className={photo ? undefined : 'z-icon-btn'}
               style={photo
-                ? { width: 36, height: 36, borderRadius: 'var(--r-ctl)', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', border: '0.5px solid rgba(255,255,255,0.2)', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }
-                : { width: 36, height: 36, color: 'var(--err-text)' }}>
+                ? { width: 32, height: 32, borderRadius: 'var(--r-ctl)', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', border: '0.5px solid rgba(255,255,255,0.2)', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }
+                : { width: 32, height: 32, color: 'var(--err-text)' }}>
               <Trash2 size={16} strokeWidth={1.75} />
             </button>
           )}
@@ -289,12 +289,12 @@ export function RoomEditModal({ open, room, onClose, onSaved }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Input label={t('rooms.roomNameLabel')} dir="auto" value={roomName} onChange={e => setRoomName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave()} />
         <div>
-          <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('rooms.photo')}</p>
+          <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('rooms.photo')}</p>
           {customPhoto && (
             <div style={{ marginBottom: 12 }}>
               <div style={{ position: 'relative', borderRadius: 'var(--r-ctl)', overflow: 'hidden', height: 120, marginBottom: 8 }}>
                 <img src={customPhoto} alt={t('rooms.customAlt')} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                <button type="button" onClick={() => setCustomPhoto(null)} aria-label={t('common.remove')} style={{ position: 'absolute', top: 8, insetInlineEnd: 8, width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)', color: '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                <button type="button" onClick={() => setCustomPhoto(null)} aria-label={t('common.remove')} style={{ position: 'absolute', top: 8, insetInlineEnd: 8, width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)', color: '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
                   <X size={18} strokeWidth={1.75} />
                 </button>
               </div>
@@ -324,11 +324,11 @@ export function RoomEditModal({ open, room, onClose, onSaved }) {
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-ctl)', border: '1px dashed var(--line-2)', fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 40, padding: '8px 12px', borderRadius: 'var(--r-ctl)', border: '1px dashed var(--line-2)', fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
               {t('rooms.takePhoto')}
               <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUpload} />
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-ctl)', border: '1px dashed var(--line-2)', fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 40, padding: '8px 12px', borderRadius: 'var(--r-ctl)', border: '1px dashed var(--line-2)', fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
               {t('rooms.chooseFile')}
               <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUpload} />
             </label>
@@ -348,16 +348,16 @@ const DESTRUCTIVE_BTN = {
   background: 'color-mix(in srgb, var(--err) 10%, var(--surface))',
   color: 'var(--err-text)',
   border: '0.5px solid color-mix(in srgb, var(--err) 40%, var(--line))',
-  borderRadius: 'var(--r-ctl)', padding: '12px 20px', minHeight: 44,
-  fontFamily: 'inherit', fontSize: 17, fontWeight: 600, cursor: 'pointer',
+  borderRadius: 'var(--r-ctl)', padding: '12px 20px', minHeight: 40,
+  fontFamily: 'inherit', fontSize: 15, fontWeight: 600, cursor: 'pointer',
 }
 
 // Popover menu item — 44px rows, 17px text, 18px glyph. Hover is a CSS
 // transition on background; the JS handlers only flip the colour.
 const MENU_ITEM = {
-  display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '8px 12px',
+  display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, padding: '8px 12px',
   borderRadius: 'var(--r-ctl)', background: 'transparent', border: 'none', cursor: 'pointer',
-  fontFamily: 'inherit', fontSize: 17, color: 'var(--ink)', textAlign: 'start', width: '100%',
+  fontFamily: 'inherit', fontSize: 15, color: 'var(--ink)', textAlign: 'start', width: '100%',
   transition: 'background var(--dur-press) var(--ease-standard)',
 }
 const menuHover = (bg) => ({
@@ -407,7 +407,7 @@ function RoomReorderRow({ room }) {
       transition={T_STATE}
       style={{
         display: 'flex', alignItems: 'center', gap: 12,
-        padding: '8px 12px 8px 8px', minHeight: 56,
+        padding: '8px 12px 8px 8px', minHeight: 48,
         background: 'var(--surface)',
         border: '0.5px solid var(--line)',
         borderRadius: 'var(--r-card)',
@@ -419,7 +419,7 @@ function RoomReorderRow({ room }) {
         userSelect: 'none',
       }}
     >
-      <div className={photo ? undefined : 'z-room-plain'} style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', overflow: 'hidden', flexShrink: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-mute)' }}>
+      <div className={photo ? undefined : 'z-room-plain'} style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', overflow: 'hidden', flexShrink: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-mute)' }}>
         {photo
           ? <img src={photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
           : <Home size={20} strokeWidth={1.75} aria-hidden />}
@@ -430,7 +430,7 @@ function RoomReorderRow({ room }) {
         }} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p dir="auto" style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roomName}</p>
+        <p dir="auto" style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roomName}</p>
         <p className="z-subhead z-mono" style={{ marginTop: 2 }}>
           {room.entityCount === 1 ? t('rooms.deviceCountSingular', { n: room.entityCount }) : t('rooms.deviceCount', { n: room.entityCount })}
           {hasActive && <span style={{ color: 'var(--ok-text)', marginInlineStart: 4 }}>· {t('rooms.someOn', { n: room.activeCount })}</span>}
@@ -679,7 +679,7 @@ export function RoomsList() {
       {/* Empty state — only when truly empty, not during a background refresh */}
       {rooms.length === 0 && unassigned.length === 0 && !loading && (
         <div style={{ textAlign: 'center', padding: 32 }}>
-          <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('rooms.empty')}</p>
+          <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('rooms.empty')}</p>
           <p className="z-subhead" style={{ marginBottom: 16 }}>{t('rooms.emptyHint')}</p>
           <button onClick={() => setShowAdd(true)} className="z-btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <Plus size={18} strokeWidth={1.75} /> {t('rooms.addFirstRoom')}
@@ -689,7 +689,7 @@ export function RoomsList() {
 
       {/* Search with no matches — one line, nothing else */}
       {!reorderMode && !loading && search && rooms.length > 0 && filteredRooms.length === 0 && (
-        <p style={{ fontSize: 17, color: 'var(--ink-mute)', textAlign: 'center', padding: 32, margin: 0 }} dir="auto">
+        <p style={{ fontSize: 15, color: 'var(--ink-mute)', textAlign: 'center', padding: 32, margin: 0 }} dir="auto">
           {t('rooms.noMatches')}
         </p>
       )}
@@ -747,14 +747,14 @@ export function RoomsList() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
           {unassigned.length > 0 && (
             <Link to="/devices?filter=unassigned" style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: 16, minHeight: 56,
+              display: 'flex', alignItems: 'center', gap: 12, padding: 12, minHeight: 48,
               borderRadius: 'var(--r-card)', textDecoration: 'none',
               border: '1px dashed color-mix(in srgb, var(--warn) 50%, var(--line))',
               background: 'color-mix(in srgb, var(--warn) 6%, var(--surface))',
             }}>
               <Package size={22} strokeWidth={1.75} aria-hidden style={{ color: 'var(--warn)', flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--warn-text)', marginBottom: 2 }}>{unassigned.length === 1 ? t('rooms.unassignedDeviceCountSingular', { n: unassigned.length }) : t('rooms.unassignedDevicesCount', { n: unassigned.length })}</p>
+                <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--warn-text)', marginBottom: 2 }}>{unassigned.length === 1 ? t('rooms.unassignedDeviceCountSingular', { n: unassigned.length }) : t('rooms.unassignedDevicesCount', { n: unassigned.length })}</p>
                 <p className="z-subhead">{t('rooms.tapToAssign')}</p>
               </div>
               <ChevronRight size={16} strokeWidth={1.75} className="icon-flip-rtl" style={{ color: 'var(--warn)', flexShrink: 0 }} />
@@ -762,13 +762,13 @@ export function RoomsList() {
           )}
           {noRoomDevices.length > 0 && (
             <Link to="/devices?filter=noroom" style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: 16, minHeight: 56,
+              display: 'flex', alignItems: 'center', gap: 12, padding: 12, minHeight: 48,
               borderRadius: 'var(--r-card)', textDecoration: 'none',
               border: '0.5px solid var(--line)', background: 'var(--surface)',
             }}>
               <Home size={22} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{noRoomDevices.length === 1 ? t('rooms.noRoomDeviceCountSingular', { n: noRoomDevices.length }) : t('rooms.noRoomDevicesCount', { n: noRoomDevices.length })}</p>
+                <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{noRoomDevices.length === 1 ? t('rooms.noRoomDeviceCountSingular', { n: noRoomDevices.length }) : t('rooms.noRoomDevicesCount', { n: noRoomDevices.length })}</p>
                 <p className="z-subhead">{t('rooms.intentionalNoRoom')}</p>
               </div>
               <ChevronRight size={16} strokeWidth={1.75} className="icon-flip-rtl" style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
@@ -782,7 +782,7 @@ export function RoomsList() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Input label={t('rooms.roomNameLabel')} placeholder={t('rooms.namePlaceholderExamples')} dir="auto" value={newRoomName} onChange={e => setNewRoomName(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && handleAddRoom()} />
           <div>
-            <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('rooms.photo')}</p>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('rooms.photo')}</p>
             <div style={{ height: 252, overflowY: 'scroll', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)' }} className="scrollbar-thin">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, padding: 8 }}>
                 {PHOTO_OPTIONS.map(({ key, label }) => {
@@ -802,7 +802,7 @@ export function RoomsList() {
                         objectFit: 'cover', display: 'block',
                       }} />
                       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.72) 0%, transparent 50%)' }} />
-                      <span style={{ position: 'absolute', bottom: 4, left: 0, right: 0, textAlign: 'center', fontSize: 13, color: '#fff', fontWeight: 600 }}>{label}</span>
+                      <span style={{ position: 'absolute', bottom: 4, left: 0, right: 0, textAlign: 'center', fontSize: 12, color: '#fff', fontWeight: 600 }}>{label}</span>
                     </button>
                   )
                 })}
@@ -891,13 +891,13 @@ function VirtualDeviceRow({ device, onTrigger, triggering }) {
   const t = useT()
   const isTriggering = triggering === device.id
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px', minHeight: 56, borderBottom: '0.5px solid var(--line)' }}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px', minHeight: 48, borderBottom: '0.5px solid var(--line)' }}
       className="last:border-b-0">
-      <div style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--info)', background: 'color-mix(in srgb, var(--info) 10%, var(--surface))', flexShrink: 0 }}>
+      <div style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--info)', background: 'color-mix(in srgb, var(--info) 10%, var(--surface))', flexShrink: 0 }}>
         <Zap size={20} strokeWidth={1.75} aria-hidden />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p dir="auto" style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.name}</p>
+        <p dir="auto" style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.name}</p>
         <p dir="auto" className="z-subhead" style={{ marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.capability}</p>
       </div>
       <button onClick={() => onTrigger(device)} disabled={isTriggering} title={t('rooms.run')} aria-label={t('rooms.run')}
@@ -985,7 +985,7 @@ function SensorsStrip({ devices }) {
           onClick={() => entityId && navigate(`/devices/${encodeURIComponent(entityId)}`)}
           style={{
             textAlign: 'start', font: 'inherit', cursor: entityId ? 'pointer' : 'default',
-            padding: 12, minHeight: 44, borderRadius: 'var(--r-card)', background: 'var(--surface)',
+            padding: 12, minHeight: 40, borderRadius: 'var(--r-card)', background: 'var(--surface)',
             border: '0.5px solid var(--line)', minWidth: 0,
             transition: 'background var(--dur-press) var(--ease-standard)',
           }}
@@ -993,7 +993,7 @@ function SensorsStrip({ devices }) {
           onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--surface)' }}
         >
           <div style={{ color: 'var(--ink-faint)', marginBottom: 8, display: 'flex' }}><RoomZIcon name={icon} size={18} /></div>
-          <div className="z-mono" style={{ fontSize: 22, lineHeight: '28px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val}</div>
+          <div className="z-mono" style={{ fontSize: 20, lineHeight: '28px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val}</div>
           <div dir="auto" className="z-footnote" style={{ marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
         </button>
       ))}
@@ -1308,7 +1308,7 @@ export function RoomDetail() {
         </div>
       )
     }
-    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, color: 'var(--ink-mute)', fontSize: 17 }}>{t('rooms.notFound')}</div>
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, color: 'var(--ink-mute)', fontSize: 15 }}>{t('rooms.notFound')}</div>
   }
 
   const photo = getRoomPhoto(room)
@@ -1316,7 +1316,7 @@ export function RoomDetail() {
   const heroInk  = photo ? '#fff' : 'var(--ink)'
   const heroMute = photo ? 'rgba(255,255,255,0.85)' : 'var(--ink-mute)'
   const heroBtn  = photo
-    ? { width: 44, height: 44, borderRadius: 'var(--r-ctl)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(20px)', border: 'none', color: '#fff', cursor: 'pointer', padding: 0 }
+    ? { width: 40, height: 40, borderRadius: 'var(--r-ctl)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.16)', backdropFilter: 'blur(20px)', border: 'none', color: '#fff', cursor: 'pointer', padding: 0 }
     : undefined
   // One 15px line: occupied · temp · humidity · N on · M total · N offline
   const heroFacts = [
@@ -1383,7 +1383,7 @@ export function RoomDetail() {
                   <Radar size={18} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} aria-hidden />
                   <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('rooms.smartPresence.menu')}</span>
                   {roomPresences.length > 0 && (
-                    <span className="z-mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-mute)', flexShrink: 0 }}>{roomPresences.length}</span>
+                    <span className="z-mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-mute)', flexShrink: 0 }}>{roomPresences.length}</span>
                   )}
                 </button>
                 <button
@@ -1410,7 +1410,7 @@ export function RoomDetail() {
         {/* Title block — name, then one line of facts */}
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '0 20px 16px', color: heroInk }}>
           <h1 dir="auto" className="z-display" style={{ margin: 0, color: heroInk, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roomName}</h1>
-          <p className="z-mono" style={{ fontSize: 15, lineHeight: '20px', color: heroMute, margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <p className="z-mono" style={{ fontSize: 13, lineHeight: '20px', color: heroMute, margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {heroFacts.join(' · ')}
           </p>
         </div>
@@ -1420,10 +1420,10 @@ export function RoomDetail() {
         {/* Room-level control: every light in the room, one switch. Skipped
             when the room has no reachable lights. */}
         {roomLights.length > 0 && (
-          <div className="z-card" style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 16px' }}>
+          <div className="z-card" style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 16px' }}>
             <Lightbulb size={20} strokeWidth={1.75} aria-hidden style={{ color: lightsOnCount > 0 ? 'var(--ink)' : 'var(--ink-mute)', flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{t('rooms.lights')}</p>
+              <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{t('rooms.lights')}</p>
               <p className="z-subhead z-mono" style={{ margin: 0 }}>
                 {lightsOnCount > 0 ? t('rooms.someOn', { n: lightsOnCount }) : t('rooms.nOff', { n: roomLights.length })}
               </p>
@@ -1452,7 +1452,7 @@ export function RoomDetail() {
                 <p className="z-eyebrow">{t('rooms.devices')}</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {hiddenCount > 0 && (
-                    <button onClick={() => setShowHiddenDevices(v => !v)} style={{ fontSize: 15, color: 'var(--ink-mute)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', minHeight: 44, padding: '0 12px' }}>
+                    <button onClick={() => setShowHiddenDevices(v => !v)} style={{ fontSize: 13, color: 'var(--ink-mute)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', minHeight: 40, padding: '0 12px' }}>
                       {showHiddenDevices ? t('rooms.hideHidden', { n: hiddenCount }) : t('rooms.hiddenCount', { n: hiddenCount })}
                     </button>
                   )}
@@ -1463,7 +1463,7 @@ export function RoomDetail() {
               </div>
 
               {deviceGroups.length === 0 && (
-                <div className="z-card" style={{ padding: 32, textAlign: 'center', color: 'var(--ink-mute)', fontSize: 17 }}>
+                <div className="z-card" style={{ padding: 32, textAlign: 'center', color: 'var(--ink-mute)', fontSize: 15 }}>
                   {roomDevices.length === 0 ? t('rooms.noDevicesInRoom') : t('rooms.allDevicesHidden')}
                 </div>
               )}
@@ -1498,18 +1498,18 @@ export function RoomDetail() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <p className="z-eyebrow">{t('rooms.automations')}</p>
-              <button onClick={() => navigate('/actions')} style={{ fontSize: 15, color: 'var(--ink-mute)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', minHeight: 44, padding: '0 12px' }}>{t('rooms.viewAll')}</button>
+              <button onClick={() => navigate('/actions')} style={{ fontSize: 13, color: 'var(--ink-mute)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', minHeight: 40, padding: '0 12px' }}>{t('rooms.viewAll')}</button>
             </div>
             <div className="z-card" style={{ overflow: 'hidden' }}>
               {roomAutomations.map((a, i) => (
                 <div key={a.id} style={{ borderBottom: i < roomAutomations.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 8px 16px', minHeight: 56 }}>
-                    <button onClick={() => navigate('/actions')} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, minHeight: 44, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', padding: 0, color: 'inherit' }}>
-                      <div style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: a.enabled ? 'var(--info)' : 'var(--ink-faint)', background: a.enabled ? 'color-mix(in srgb, var(--info) 12%, var(--surface))' : 'var(--surface-2)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 8px 16px', minHeight: 48 }}>
+                    <button onClick={() => navigate('/actions')} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, minHeight: 40, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', padding: 0, color: 'inherit' }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: a.enabled ? 'var(--info)' : 'var(--ink-faint)', background: a.enabled ? 'color-mix(in srgb, var(--info) 12%, var(--surface))' : 'var(--surface-2)' }}>
                         <Zap size={20} strokeWidth={1.75} aria-hidden />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p dir="auto" style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</p>
+                        <p dir="auto" style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</p>
                         {a.description && <p dir="auto" className="z-subhead" style={{ marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.description}</p>}
                       </div>
                     </button>
@@ -1545,16 +1545,16 @@ export function RoomDetail() {
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
           {roomPresences.length === 0 ? (
-            <p style={{ fontSize: 17, color: 'var(--ink-mute)', textAlign: 'center', padding: '16px 0', margin: 0 }}>
+            <p style={{ fontSize: 15, color: 'var(--ink-mute)', textAlign: 'center', padding: '16px 0', margin: 0 }}>
               {t('rooms.smartPresence.none')}
             </p>
           ) : roomPresences.map((s) => {
             const isZone = (s.key || s.room) !== s.room
             return (
-              <div key={s.entity_id} className="z-card-soft" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', minHeight: 56 }}>
+              <div key={s.entity_id} className="z-card-soft" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', minHeight: 48 }}>
                 <Radar size={20} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{s.name || t('automations.smartRoom.wiz.mergedSensor')}</div>
+                  <div style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{s.name || t('automations.smartRoom.wiz.mergedSensor')}</div>
                   <div className="z-subhead">
                     {t('rooms.smartPresence.sources', { n: (s.sensors || []).length })}{isZone ? ` · ${t('rooms.smartPresence.zone')}` : ''}
                   </div>

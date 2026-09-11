@@ -103,11 +103,11 @@ function CountdownDial({ remainingMin, totalMin, isHeating, predicted }) {
         gap: 4, color: isHeating ? 'var(--err)' : 'var(--ink-mute)',
       }}>
         <Flame size={26} strokeWidth={1.75} />
-        <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
           {isHeating ? i18nT('remote.heatingLabel') : i18nT('remote.heatingOff')}
         </div>
         {remainingMin != null && isHeating && (
-          <div className="z-mono" style={{ fontSize: 22, lineHeight: '28px', color: 'var(--ink)', fontWeight: 600 }}>
+          <div className="z-mono" style={{ fontSize: 20, lineHeight: '28px', color: 'var(--ink)', fontWeight: 600 }}>
             {formatMmss(remainingMin)}
           </div>
         )}
@@ -339,7 +339,7 @@ export default function BoilerRemote({ entity }) {
       {/* ── Timer presets — additive ── */}
       {timerCmd && (
         <>
-          <div style={{ fontSize: 15, color: 'var(--ink-mute)' }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-mute)' }}>
             {i18nT('remote.heatForFixed')}
           </div>
           <div style={{
@@ -356,10 +356,10 @@ export default function BoilerRemote({ entity }) {
                   disabled={busy != null}
                   aria-pressed={selected}
                   style={{
-                    minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-ctl)', boxSizing: 'border-box',
+                    minHeight: 40, padding: '0 8px', borderRadius: 'var(--r-ctl)', boxSizing: 'border-box',
                     background: selected ? 'var(--surface-2)' : 'var(--surface)',
                     border: selected ? '2px solid var(--ink)' : '0.5px solid var(--line)',
-                    fontSize: 15, fontWeight: 600, fontFamily: 'inherit',
+                    fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
                     color: 'var(--ink)',
                     cursor: 'pointer',
                     opacity: busy != null && busy !== m ? 0.4 : 1,

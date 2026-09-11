@@ -30,7 +30,7 @@ function StatusChip({ status }) {
 
 // Borderless 44×44 target for a row-level icon action.
 const ghostIcon = {
-  width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'transparent',
+  width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'transparent',
   border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center',
   justifyContent: 'center', flexShrink: 0, padding: 0,
   transition: 'background var(--dur-press) var(--ease-standard)',
@@ -77,21 +77,21 @@ function DeleteConfirm({ blaster, onConfirm, onCancel }) {
   const deviceCount = blaster.device_count || 0
   return (
     <div style={{
-      marginTop: 8, padding: 16, borderRadius: 'var(--r-ctl)',
+      marginTop: 8, padding: 12, borderRadius: 'var(--r-ctl)',
       background: 'color-mix(in srgb, var(--err) 8%, var(--surface-2))',
       border: '0.5px solid color-mix(in srgb, var(--err) 30%, var(--line))',
     }}>
-      <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
+      <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
         Delete "{blaster.name}"?
       </p>
-      <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.5, marginBottom: 12 }}>
+      <p style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5, marginBottom: 12 }}>
         {deviceCount > 0
           ? `${deviceCount} IR device${deviceCount === 1 ? '' : 's'} currently route through this blaster.`
           : 'No IR devices are attached.'}
       </p>
       {deviceCount > 0 && (
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12, minHeight: 44,
-                        fontSize: 15, color: 'var(--ink-2)', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12, minHeight: 40,
+                        fontSize: 13, color: 'var(--ink-2)', cursor: 'pointer' }}>
           <input type="checkbox" checked={cascade} onChange={(e) => setCascade(e.target.checked)}
                  style={{ marginTop: 2, width: 20, height: 20, flexShrink: 0 }} />
           <span>
@@ -122,9 +122,9 @@ function BlasterRow({ blaster, onRename, onDelete }) {
   const macShort = (blaster.mac || '').slice(-4).toUpperCase()
   return (
     <div style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--line)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48 }}>
         <div style={{
-          width: 40, height: 40, borderRadius: 'var(--r-ctl)',
+          width: 36, height: 36, borderRadius: 'var(--r-ctl)',
           background: 'var(--surface-2)', color: 'var(--ink-mute)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         }}>
@@ -140,14 +140,14 @@ function BlasterRow({ blaster, onRename, onDelete }) {
         ) : (
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <p dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)',
+              <p dir="auto" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)',
                                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                      minWidth: 0 }}>
                 {blaster.name}
               </p>
               <StatusChip status={blaster.status} />
             </div>
-            <p className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2,
+            <p className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2,
                                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {[
                 blaster.model,
@@ -261,10 +261,10 @@ export default function BlastersSection() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
                       padding: '12px 16px', borderBottom: '0.5px solid var(--line)' }}>
           <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>
+            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
               {blasters.length === 0 ? 'No blasters' : `${blasters.length} blaster${blasters.length === 1 ? '' : 's'}`}
             </p>
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>
               IR-blaster hardware paired to Ziggy. Status refreshes every 30s.
             </p>
           </div>
@@ -282,15 +282,15 @@ export default function BlastersSection() {
 
         {/* List */}
         {loading ? (
-          <div style={{ padding: 32, textAlign: 'center', fontSize: 15, color: 'var(--ink-mute)' }}>
+          <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: 'var(--ink-mute)' }}>
             Loading…
           </div>
         ) : blasters.length === 0 ? (
           <div style={{ padding: 32, textAlign: 'center' }}>
-            <p style={{ fontSize: 17, color: 'var(--ink)', marginBottom: 4 }}>
+            <p style={{ fontSize: 15, color: 'var(--ink)', marginBottom: 4 }}>
               No blasters paired yet.
             </p>
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
               Pair a Broadlink RM4 (or compatible) via the IR Wizard on the Devices page.
               Once paired, it'll show up here.
             </p>

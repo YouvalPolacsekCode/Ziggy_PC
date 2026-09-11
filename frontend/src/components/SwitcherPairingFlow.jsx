@@ -21,14 +21,14 @@ function MiniField({ field, value, onChange }) {
 
   if (field.kind === 'boolean') {
     return (
-      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 12, minHeight: 44 }}>
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 12, minHeight: 40 }}>
         <input
           type="checkbox"
           checked={Boolean(value ?? field.default ?? false)}
           onChange={(e) => onChange(e.target.checked)}
           style={{ width: 20, height: 20 }}
         />
-        <span style={{ fontSize: 17, lineHeight: '22px', color: 'var(--ink)' }}>{field.label}</span>
+        <span style={{ fontSize: 15, lineHeight: '22px', color: 'var(--ink)' }}>{field.label}</span>
       </label>
     )
   }
@@ -223,7 +223,7 @@ export default function SwitcherPairingFlow({ onDone, onCancel }) {
         <XCircle size={32} strokeWidth={1.75} style={{ color: 'var(--err)', margin: '0 auto 12px' }} aria-hidden />
         {isTrace ? (
           <pre className="z-code" style={{
-            color: 'var(--ink)', fontSize: 13, lineHeight: '18px',
+            color: 'var(--ink)', fontSize: 12, lineHeight: '18px',
             marginBottom: 16, textAlign: 'start',
             background: 'var(--surface-2)', borderRadius: 'var(--r-ctl)', padding: 12,
             maxHeight: 280, overflowY: 'auto', whiteSpace: 'pre-wrap',
@@ -246,11 +246,11 @@ export default function SwitcherPairingFlow({ onDone, onCancel }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', marginBottom: 12 }}>
               {(diagnostic.ports || []).map((p) => (
                 <>
-                  <span key={`l-${p.port}`} className="z-code" style={{ fontSize: 13 }}>
+                  <span key={`l-${p.port}`} className="z-code" style={{ fontSize: 12 }}>
                     UDP {p.port}
                   </span>
                   <span key={`r-${p.port}`} style={{
-                    fontSize: 13, lineHeight: '18px',
+                    fontSize: 12, lineHeight: '18px',
                     color: p.free ? 'var(--ok-text)' : 'var(--err-text)',
                   }}>
                     {p.free
@@ -271,7 +271,7 @@ export default function SwitcherPairingFlow({ onDone, onCancel }) {
               </p>
             )}
             <pre className="z-code" style={{
-              fontSize: 13, lineHeight: '18px',
+              fontSize: 12, lineHeight: '18px',
               background: 'var(--surface)', padding: 8, borderRadius: 'var(--r-chip)',
               margin: 0, overflowX: 'auto',
             }}>
@@ -308,7 +308,7 @@ sudo ss -ulnp 'sport = :20002 or sport = :10002 or sport = :20003 or sport = :10
   const needsAccount = step?.status === 'form' && step?.needs_account && !step?.account_connected
   if (needsAccount) {
     return (
-      <div style={{ padding: 16 }}>
+      <div style={{ padding: 12 }}>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12,
           color: 'var(--ink)',
@@ -318,7 +318,7 @@ sudo ss -ulnp 'sport = :20002 or sport = :10002 or sport = :20003 or sport = :10
         </div>
 
         <div style={{
-          background: 'var(--surface-2)', borderRadius: 'var(--r-ctl)', padding: 16, marginBottom: 16,
+          background: 'var(--surface-2)', borderRadius: 'var(--r-ctl)', padding: 12, marginBottom: 16,
         }}>
           <p className="z-subhead" style={{ margin: 0 }}>
             {t('wizard.switcher.needsAccountBody')}
@@ -332,8 +332,8 @@ sudo ss -ulnp 'sport = :20002 or sport = :10002 or sport = :20003 or sport = :10
           <a
             href="https://www.home-assistant.io/integrations/switcher_kis/"
             target="_blank" rel="noreferrer"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44,
-              fontSize: 15, lineHeight: '20px', fontWeight: 500, color: 'var(--ink)', marginTop: 4, textDecoration: 'underline' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 40,
+              fontSize: 13, lineHeight: '20px', fontWeight: 500, color: 'var(--ink)', marginTop: 4, textDecoration: 'underline' }}
           >
             {t('wizard.switcher.openInstructions')} <ExternalLink size={16} strokeWidth={1.75} aria-hidden />
           </a>
@@ -341,7 +341,7 @@ sudo ss -ulnp 'sport = :20002 or sport = :10002 or sport = :20003 or sport = :10
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)' }}>{t('wizard.switcher.accountEmail')}</span>
+            <span style={{ fontSize: 13, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)' }}>{t('wizard.switcher.accountEmail')}</span>
             <input
               type="email"
               value={acctEmail}
@@ -353,7 +353,7 @@ sudo ss -ulnp 'sport = :20002 or sport = :10002 or sport = :20003 or sport = :10
             />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)' }}>{t('wizard.switcher.token')}</span>
+            <span style={{ fontSize: 13, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)' }}>{t('wizard.switcher.token')}</span>
             <textarea
               value={acctToken}
               onChange={(e) => setAcctToken(e.target.value)}
@@ -362,13 +362,13 @@ sudo ss -ulnp 'sport = :20002 or sport = :10002 or sport = :20003 or sport = :10
               spellCheck={false}
               dir="ltr"
               className="z-input z-code"
-              style={{ fontSize: 15, resize: 'vertical' }}
+              style={{ fontSize: 13, resize: 'vertical' }}
             />
           </div>
         </div>
 
         {acctErr && (
-          <p role="alert" style={{ marginTop: 12, fontSize: 15, lineHeight: '20px', color: 'var(--err-text)' }}>{acctErr}</p>
+          <p role="alert" style={{ marginTop: 12, fontSize: 13, lineHeight: '20px', color: 'var(--err-text)' }}>{acctErr}</p>
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
@@ -440,7 +440,7 @@ sudo ss -ulnp 'sport = :20002 or sport = :10002 or sport = :20003 or sport = :10
 
   if (step.status === 'menu') {
     return (
-      <div style={{ padding: 16 }}>
+      <div style={{ padding: 12 }}>
         <h3 className="z-title" style={{ marginBottom: 16 }}>{t('wizard.switcher.choose')}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {step.options.map((opt) => {
@@ -461,7 +461,7 @@ sudo ss -ulnp 'sport = :20002 or sport = :10002 or sport = :20003 or sport = :10
                   }
                 }}
                 className="z-btn-secondary z-button"
-                style={{ width: '100%', minHeight: 56 }}
+                style={{ width: '100%', minHeight: 48 }}
               >
                 {label}
               </button>
@@ -478,7 +478,7 @@ sudo ss -ulnp 'sport = :20002 or sport = :10002 or sport = :20003 or sport = :10
   // Default: form
   const fields = step.fields || []
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ padding: 12 }}>
       <h3 className="z-title" style={{ marginBottom: 4 }}>
         {fields.length === 0 ? t('wizard.switcher.confirm') : t('wizard.switcher.setupDevice')}
       </h3>
@@ -490,7 +490,7 @@ sudo ss -ulnp 'sport = :20002 or sport = :10002 or sport = :20003 or sport = :10
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
         {fields.map((f) => (
           <div key={f.name} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)' }}>
+            <span style={{ fontSize: 13, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)' }}>
               {f.label}{f.required ? ' *' : ''}
             </span>
             <MiniField
@@ -502,7 +502,7 @@ sudo ss -ulnp 'sport = :20002 or sport = :10002 or sport = :20003 or sport = :10
         ))}
       </div>
       {Object.keys(step.errors || {}).length > 0 && (
-        <p role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)', marginBottom: 12 }}>
+        <p role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)', marginBottom: 12 }}>
           {Object.values(step.errors).join(' · ')}
         </p>
       )}

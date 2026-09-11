@@ -213,7 +213,7 @@ export function ACRemote({ entity, automations, suggestion }) {
 // surface-2 fill + ink text + 0.5px ink line — never inverted, never accent.
 function chipStyle({ active = false, enabled = true } = {}) {
   return {
-    minHeight: 44, padding: '0 16px', boxSizing: 'border-box',
+    minHeight: 40, padding: '0 16px', boxSizing: 'border-box',
     background: 'var(--surface-2)',
     color: active ? 'var(--ink)' : 'var(--ink-2)',
     border: '0.5px solid ' + (active ? 'var(--ink)' : 'var(--line)'),
@@ -324,7 +324,7 @@ function TempStepper({ temp, hvacLabel, currentTemp, upOk, downOk, accent, onUp,
         <div className="z-display z-mono" style={{ color: 'var(--ink)' }}>
           {temp != null ? `${Math.round(temp)}°` : '—'}
         </div>
-        <div className="z-mono" style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 4 }}>
+        <div className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 4 }}>
           {hvacLabel}
           {currentTemp != null ? ` · ${Math.round(currentTemp)}°${i18nT('remote.now')}` : ''}
         </div>
@@ -395,23 +395,23 @@ function ScheduleCard({ automation }) {
       className="z-card"
       style={{
         width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-        minHeight: 56, padding: '8px 16px',
+        minHeight: 48, padding: '8px 16px',
         textDecoration: 'none', cursor: 'pointer',
       }}
     >
       <div style={{
-        width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+        width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
         background: 'var(--surface-2)',
         color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         <Zap size={20} strokeWidth={1.75} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)',
+        <div dir="auto" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {trigger || automation.name}
         </div>
-        <div dir="auto" style={{ fontSize: 15, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{automation.name}</div>
+        <div dir="auto" style={{ fontSize: 13, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{automation.name}</div>
       </div>
       <ChevronRight size={18} strokeWidth={1.75} className="icon-flip-rtl" style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
     </a>
@@ -432,14 +432,14 @@ function SuggestionCard({ suggestion }) {
       }}
     >
       <div style={{
-        width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+        width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
         background: 'var(--surface)', border: '0.5px solid var(--line)',
         color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         <Sparkles size={20} strokeWidth={1.75} />
       </div>
       <div style={{ flex: 1, minWidth: 0, alignSelf: 'center' }}>
-        <div dir="auto" style={{ fontSize: 17, color: 'var(--ink)', lineHeight: 1.3 }}>
+        <div dir="auto" style={{ fontSize: 15, color: 'var(--ink)', lineHeight: 1.3 }}>
           {suggestion.user_message}
           {suggestion.status === 'pending' && (
             <span style={{ fontWeight: 600 }}>{i18nT('remote.makeRoutine')}</span>

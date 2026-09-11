@@ -106,12 +106,12 @@ function presenceStateColor(p) {
 //   ghostIcon — borderless 44×44 target for a row-level icon action
 //   ghostText — borderless 44-tall 15px text action in ink ("Edit", "use…")
 const ghostIcon = {
-  width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'transparent', border: 'none',
+  width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'transparent', border: 'none',
   cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
 }
 const ghostText = {
-  minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-ctl)', background: 'transparent', border: 'none',
-  cursor: 'pointer', color: 'var(--ink)', fontSize: 15, fontWeight: 500, fontFamily: 'inherit',
+  minHeight: 40, padding: '0 12px', borderRadius: 'var(--r-ctl)', background: 'transparent', border: 'none',
+  cursor: 'pointer', color: 'var(--ink)', fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
   display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
 }
 const spinnerStyle = {
@@ -139,12 +139,12 @@ function SectionTitle({ icon: Icon, children }) {
 
 function SettingRow({ icon: Icon, label, subtitle, children }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 56, padding: '8px 16px', gap: 12 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 48, padding: '8px 16px', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
         {Icon && <Icon size={20} strokeWidth={1.75} style={{ flexShrink: 0, color: 'var(--ink-mute)' }} />}
         <div style={{ minWidth: 0 }}>
-          <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{label}</p>
-          {subtitle && <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</p>}
+          <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{label}</p>
+          {subtitle && <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</p>}
         </div>
       </div>
       {children}
@@ -167,9 +167,9 @@ function SettingsPageWrapper({ title, eyebrow, children }) {
         onClick={() => navigate('/settings')}
         style={{
           background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-          color: 'var(--ink-mute)', fontSize: 15, fontWeight: 500,
+          color: 'var(--ink-mute)', fontSize: 13, fontWeight: 500,
           display: 'inline-flex', alignItems: 'center', gap: 4,
-          minHeight: 44, padding: 0, marginBottom: 8,
+          minHeight: 40, padding: 0, marginBottom: 8,
         }}
       >
         <ArrowLeft size={18} className="icon-flip-rtl" />
@@ -194,7 +194,7 @@ function HubCard({ icon: Icon, title, subtitle, to, badge }) {
       to={to}
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-        padding: 16, minHeight: 56, textDecoration: 'none', color: 'var(--ink)',
+        padding: 12, minHeight: 48, textDecoration: 'none', color: 'var(--ink)',
         background: 'var(--surface)', borderRadius: 'var(--r-card)',
         border: '0.5px solid var(--line)',
         transition: 'border-color var(--dur-press) var(--ease-standard)',
@@ -205,7 +205,7 @@ function HubCard({ icon: Icon, title, subtitle, to, badge }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
         {Icon && (
           <div style={{
-            width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+            width: 36, height: 36, borderRadius: 'var(--r-ctl)', flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'var(--surface-2)',
           }}>
@@ -213,12 +213,12 @@ function HubCard({ icon: Icon, title, subtitle, to, badge }) {
           </div>
         )}
         <div style={{ minWidth: 0 }}>
-          <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {title}
             {badge && <span className="z-chip">{badge}</span>}
           </p>
           {subtitle && (
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {subtitle}
             </p>
           )}
@@ -233,10 +233,10 @@ function HubCard({ icon: Icon, title, subtitle, to, badge }) {
 
 function StatusRow({ icon: Icon, label, value, valueColor }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '8px 16px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, padding: '8px 16px' }}>
       <Icon size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-      <span style={{ fontSize: 17, color: 'var(--ink)', flex: 1, minWidth: 0 }}>{label}</span>
-      <span style={{ fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: valueColor || 'var(--ink-2)', textAlign: 'end' }}>
+      <span style={{ fontSize: 15, color: 'var(--ink)', flex: 1, minWidth: 0 }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: valueColor || 'var(--ink-2)', textAlign: 'end' }}>
         {value}
       </span>
     </div>
@@ -278,7 +278,7 @@ function SystemStatusCard() {
 
   const bridgeOk     = health?.ha_connected ?? false
   const offlineCount = health?.offline_count ?? 0
-  const linkStyle    = { color: 'inherit', textDecoration: 'none', fontWeight: 600, fontVariantNumeric: 'tabular-nums', fontSize: 15, minHeight: 44, display: 'inline-flex', alignItems: 'center' }
+  const linkStyle    = { color: 'inherit', textDecoration: 'none', fontWeight: 600, fontVariantNumeric: 'tabular-nums', fontSize: 13, minHeight: 40, display: 'inline-flex', alignItems: 'center' }
   const sh           = health?.system_health
   const coordState   = sh?.zigbee?.coordinator_state || null
   const coordRawTitle = sh?.zigbee?.coordinator_raw_title || null
@@ -300,9 +300,9 @@ function SystemStatusCard() {
           <StatusRow icon={Activity} label={t('systemStatus.lastRecovery')} value={`${timeAgo(new Date(lastRecovery * 1000).toISOString())}${recoveryResult ? ' · ' + recoveryResult : ''}`} valueColor={recoveryResult === 'success' ? 'var(--ok-text)' : 'var(--ink-mute)'} />
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '0 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, padding: '0 16px' }}>
           <Radio size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-          <span style={{ fontSize: 17, color: 'var(--ink)', flex: 1, minWidth: 0 }}>{t('systemStatus.zigbeeLabel')}</span>
+          <span style={{ fontSize: 15, color: 'var(--ink)', flex: 1, minWidth: 0 }}>{t('systemStatus.zigbeeLabel')}</span>
           {deviceCount !== null ? (
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Link to="/devices" style={{ ...linkStyle, color: 'var(--ink-2)' }}>
@@ -310,7 +310,7 @@ function SystemStatusCard() {
               </Link>
               {offlineCount > 0 && (
                 <>
-                  <span style={{ fontSize: 15, color: 'var(--ink-faint)' }}>·</span>
+                  <span style={{ fontSize: 13, color: 'var(--ink-faint)' }}>·</span>
                   <Link to="/devices?filter=offline" style={{ ...linkStyle, color: 'var(--warn-text)' }}>
                     {t('systemStatus.offlineCount', { n: offlineCount })}
                   </Link>
@@ -318,7 +318,7 @@ function SystemStatusCard() {
               )}
             </span>
           ) : (
-            <span style={{ fontSize: 15, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{t('systemStatus.unavailable')}</span>
+            <span style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{t('systemStatus.unavailable')}</span>
           )}
         </div>
 
@@ -378,12 +378,12 @@ function ZigbeeBridgeSection({ isAdmin }) {
     <Card>
       <div className="divide-y divide-line">
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 56, padding: '8px 16px', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 48, padding: '8px 16px', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
             <Wifi size={20} strokeWidth={1.75} style={{ color: connected ? 'var(--ok)' : 'var(--ink-mute)', flexShrink: 0 }} />
             <div style={{ minWidth: 0 }}>
-              <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.coordinatorLabel')}</p>
-              <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }} dir="auto">
+              <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.coordinatorLabel')}</p>
+              <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }} dir="auto">
                 {coordinatorName ?? t('zigbeeBridge.notDetected')}
               </p>
             </div>
@@ -393,28 +393,28 @@ function ZigbeeBridgeSection({ isAdmin }) {
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 44, padding: '0 16px', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 40, padding: '0 16px', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
             <Radio size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-            <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.devicesOnNetwork')}</p>
+            <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.devicesOnNetwork')}</p>
           </div>
           {deviceCount !== null ? (
-            <Link to="/devices" style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', color: 'var(--ink-2)', textDecoration: 'none', fontWeight: 600, minHeight: 44, display: 'inline-flex', alignItems: 'center' }}>
+            <Link to="/devices" style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums', color: 'var(--ink-2)', textDecoration: 'none', fontWeight: 600, minHeight: 40, display: 'inline-flex', alignItems: 'center' }}>
               {deviceCount}
             </Link>
           ) : (
-            <span style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', color: 'var(--ink-mute)' }}>—</span>
+            <span style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums', color: 'var(--ink-mute)' }}>—</span>
           )}
         </div>
 
         {isAdmin && (
-          <div style={{ minHeight: 56, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ minHeight: 48, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
               {/* The one accent element on this screen, and only while pairing means something. */}
               <Zap size={20} strokeWidth={1.75} style={{ color: pairingActive ? 'var(--accent)' : 'var(--ink-mute)', flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.pairingMode')}</p>
-                <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
+                <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.pairingMode')}</p>
+                <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
                   {pairingActive
                     ? t('zigbeeBridge.pairingActive', { n: countdown })
                     : t('zigbeeBridge.pairingIdle')}
@@ -644,10 +644,10 @@ function PresenceSection() {
 
       {/* Track my location card */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 56, padding: '8px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 48, padding: '8px 16px' }}>
           <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.trackMe.title')}</p>
-            <p style={{ fontSize: 15, color: trackMe ? 'var(--ok-text)' : 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
+            <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.trackMe.title')}</p>
+            <p style={{ fontSize: 13, color: trackMe ? 'var(--ok-text)' : 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
               {trackMe
                 ? (trackMeStatus === 'home'  ? `${t('homeSensing.trackMe.activeHome')}${trackMePerson ? ' · ' + trackMePerson.name : ''}`
                   : trackMeStatus === 'away'  ? `${t('homeSensing.trackMe.activeAway')}${trackMePerson ? ' · ' + trackMePerson.name : ''}`
@@ -666,10 +666,10 @@ function PresenceSection() {
 
       {/* Phone-at-home (LAN reachability) card */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div>
-            <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.phoneAtHome.title')}</p>
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2, lineHeight: 1.5 }} dir="auto">
+            <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.phoneAtHome.title')}</p>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, lineHeight: 1.5 }} dir="auto">
               {t('homeSensing.phoneAtHome.desc')}
             </p>
           </div>
@@ -694,7 +694,7 @@ function PresenceSection() {
               {t('homeSensing.phoneAtHome.useSuggestion', { ip: lanSuggestion })}
             </button>
           )}
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.5 }} dir="auto">
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5 }} dir="auto">
             {t('homeSensing.phoneAtHome.tip')}
           </p>
         </div>
@@ -702,10 +702,10 @@ function PresenceSection() {
 
       {/* Home zone card */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', minHeight: 56, padding: '8px 16px', borderBottom: zoneEdit ? '0.5px solid var(--line)' : 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', minHeight: 48, padding: '8px 16px', borderBottom: zoneEdit ? '0.5px solid var(--line)' : 'none' }}>
           <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.homeZone.title')}</p>
-            <p style={{ fontSize: 15, color: zone?.configured ? 'var(--ok-text)' : 'var(--warn-text)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }} dir="auto">
+            <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.homeZone.title')}</p>
+            <p style={{ fontSize: 13, color: zone?.configured ? 'var(--ok-text)' : 'var(--warn-text)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }} dir="auto">
               {zone?.configured
                 ? t('homeSensing.homeZone.summary', { lat: zone.lat?.toFixed(4), lon: zone.lon?.toFixed(4), radius: zone.radius })
                 : zone?.lat != null
@@ -725,7 +725,7 @@ function PresenceSection() {
           </div>
         </div>
         {zoneEdit && (
-          <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 120 }}>
                 <Input label={t('homeSensing.latitude')} value={zoneDraft.lat} onChange={e => setZoneDraft(d => ({ ...d, lat: e.target.value }))} dir="ltr" placeholder="32.0853" />
@@ -745,7 +745,7 @@ function PresenceSection() {
                 {t('homeSensing.cancel')}
               </button>
             </div>
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
               {t('homeSensing.zoneTip')}
             </p>
           </div>
@@ -754,9 +754,9 @@ function PresenceSection() {
 
       {/* Additional zones card */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
-        <div style={{ padding: 16, borderBottom: extraZones.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
-          <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.extraZones.title')}</p>
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>
+        <div style={{ padding: 12, borderBottom: extraZones.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
+          <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.extraZones.title')}</p>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>
             {t('homeSensing.extraZones.desc')}
           </p>
         </div>
@@ -786,10 +786,10 @@ function PresenceSection() {
                 </div>
               </div>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 56 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 48 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }} dir="auto">{z.name}</p>
-                  <p style={{ fontSize: 15, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
+                  <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }} dir="auto">{z.name}</p>
+                  <p style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
                     {z.lat?.toFixed(4)}, {z.lon?.toFixed(4)} · {z.radius_m}m
                   </p>
                 </div>
@@ -801,7 +801,7 @@ function PresenceSection() {
             )}
           </div>
         ))}
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8, borderTop: extraZones.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
+        <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, borderTop: extraZones.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 160 }}>
               <Input value={zoneNewName} onChange={e => setZoneNewName(e.target.value)} dir="auto"
@@ -816,7 +816,7 @@ function PresenceSection() {
               {zoneAdding ? '…' : t('homeSensing.extraZones.add')}
             </button>
           </div>
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
             {t('homeSensing.extraZones.help')}
           </p>
         </div>
@@ -852,7 +852,7 @@ function PresenceDebugCard() {
 
   if (!debug) {
     return (
-      <div style={{ padding: 16, fontSize: 15, color: 'var(--ink-mute)' }}>{t('common.loading')}</div>
+      <div style={{ padding: 12, fontSize: 13, color: 'var(--ink-mute)' }}>{t('common.loading')}</div>
     )
   }
 
@@ -864,9 +864,9 @@ function PresenceDebugCard() {
   })
 
   return (
-    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Tunables: a two-column 13/13 tabular grid — key in mute, value in ink. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px 16px', fontSize: 13, lineHeight: '18px', color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px 16px', fontSize: 12, lineHeight: '18px', color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
         {Object.entries(debug.tunables || {}).map(([k, v]) => (
           <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k}</span>
@@ -876,19 +876,19 @@ function PresenceDebugCard() {
       </div>
       {merged.map(p => (
         <div key={p.id} style={{ borderTop: '0.5px solid var(--line)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 15, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{p.name || p.id}</span>
             <span style={{ fontVariantNumeric: 'tabular-nums', color: presenceStateColor(p) }}>
               {presenceStateLabel(p)} · {p.last_distance_m != null ? `${p.last_distance_m}m` : '—'} · acc {p.last_accuracy != null ? `${Math.round(p.last_accuracy)}m` : '—'}
             </span>
           </div>
-          <div style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
+          <div style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
             cand: {p.candidate_state ?? '—'} since {p.candidate_since ? new Date(p.candidate_since).toLocaleTimeString() : '—'}
             {' · '}
             last txn: {p.last_transition_to ?? '—'} at {p.last_transition_at ? new Date(p.last_transition_at).toLocaleTimeString() : '—'}
           </div>
           {(p.history ?? []).slice().reverse().slice(0, 6).map((h, idx) => (
-            <div key={idx} style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div key={idx} style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {new Date(h.ts).toLocaleTimeString()} · {h.src} · raw={h.raw} · d={h.dist ?? '—'}m · {h.result} · {h.reason}
             </div>
           ))}
@@ -966,8 +966,8 @@ function UsersAndAccessSection({ currentUsername }) {
           const roleInfo = ROLE_LABELS[u.role] || ROLE_LABELS.user
           const isSelf = u.username.toLowerCase() === currentUsername?.toLowerCase()
           return (
-            <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 56, padding: '8px 16px' }}>
-              <span style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+            <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 48, padding: '8px 16px' }}>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</span>
                 {isSelf && <span className="z-chip" style={{ flexShrink: 0 }}>YOU</span>}
               </span>
@@ -993,8 +993,8 @@ function UsersAndAccessSection({ currentUsername }) {
         })}
 
         {invites.map(inv => (
-          <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 56, padding: '8px 16px' }}>
-            <span style={{ flex: 1, fontSize: 15, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
+          <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 48, padding: '8px 16px' }}>
+            <span style={{ flex: 1, fontSize: 13, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
               {inv.email || '(open invite)'} · {ROLE_OPT_LABELS[inv.role] || inv.role}
             </span>
             <span className="z-chip" style={{ color: 'var(--warn-text)', flexShrink: 0 }}>{t('members.pending')}</span>
@@ -1007,14 +1007,14 @@ function UsersAndAccessSection({ currentUsername }) {
           </div>
         ))}
 
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('members.inviteUser')}</p>
           {inviteLink ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <p style={{ fontSize: 15, color: 'var(--ink-mute)' }}>{t('members.linkShare')}</p>
+              <p style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{t('members.linkShare')}</p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: 160, background: 'var(--bg-2)', borderRadius: 'var(--r-ctl)', padding: '0 16px', minHeight: 44, display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
-                  <span className="z-code" style={{ fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inviteLink}</span>
+                <div style={{ flex: 1, minWidth: 160, background: 'var(--bg-2)', borderRadius: 'var(--r-ctl)', padding: '0 16px', minHeight: 40, display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+                  <span className="z-code" style={{ fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inviteLink}</span>
                 </div>
                 <button onClick={() => { navigator.clipboard.writeText(inviteLink).catch(() => {}); addToast(t('members.copied'), 'success') }} className="z-btn-secondary">
                   <Copy size={18} /> {t('members.copy')}
@@ -1114,8 +1114,8 @@ function DeleteAccountModal({ open, onClose, logout }) {
   // Destructive = the err family, via the shared Button (tinted fill +
   // err-text). Never a solid red with white text, never the brand accent.
   const full = { width: '100%' }
-  const body = { fontSize: 17, color: 'var(--ink-2)', margin: 0, lineHeight: 1.45 }
-  const errLine = { fontSize: 15, color: 'var(--err-text)', margin: 0 }
+  const body = { fontSize: 15, color: 'var(--ink-2)', margin: 0, lineHeight: 1.45 }
+  const errLine = { fontSize: 13, color: 'var(--err-text)', margin: 0 }
 
   const title = ({
     'confirm': t('settings.deleteAccountConfirmTitle'),
@@ -1191,7 +1191,7 @@ function DeleteAccountModal({ open, onClose, logout }) {
       {stage === 'done' && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '8px 0' }}>
           <CheckCircle2 size={32} strokeWidth={1.75} style={{ color: 'var(--ok)' }} />
-          <p style={{ fontSize: 17, color: 'var(--ink)', margin: 0, textAlign: 'center' }}>
+          <p style={{ fontSize: 15, color: 'var(--ink)', margin: 0, textAlign: 'center' }}>
             {t('common.signOut')}…
           </p>
         </div>
@@ -1245,13 +1245,13 @@ function AccountForms({ username, role, logout }) {
 
         <div style={{ borderTop: '0.5px solid var(--line)' }}>
           <button
-            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 56, padding: '8px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 48, padding: '8px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}
             onClick={() => { setShowChangePw(v => !v); setPwError('') }}
             aria-expanded={showChangePw}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Lock size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-              <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('settings.changePassword')}</p>
+              <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('settings.changePassword')}</p>
             </div>
             <ChevronDown size={18} style={{ color: 'var(--ink-faint)', flexShrink: 0, transform: showChangePw ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)' }} />
           </button>
@@ -1272,9 +1272,9 @@ function AccountForms({ username, role, logout }) {
         </div>
 
         <div style={{ borderTop: '0.5px solid var(--line)' }}>
-          <button onClick={logout} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--err-text)', textAlign: 'start' }}>
+          <button onClick={logout} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--err-text)', textAlign: 'start' }}>
             <LogOut size={20} strokeWidth={1.75} style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: 17, fontWeight: 500 }}>{t('common.signOut')}</span>
+            <span style={{ fontSize: 15, fontWeight: 500 }}>{t('common.signOut')}</span>
           </button>
         </div>
 
@@ -1282,10 +1282,10 @@ function AccountForms({ username, role, logout }) {
         <div style={{ borderTop: '0.5px solid var(--line)' }}>
           <button
             onClick={() => setDeleteOpen(true)}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--err-text)', textAlign: 'start' }}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 16px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--err-text)', textAlign: 'start' }}
           >
             <Trash2 size={20} strokeWidth={1.75} style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: 17, fontWeight: 500 }}>{t('settings.deleteAccount')}</span>
+            <span style={{ fontSize: 15, fontWeight: 500 }}>{t('settings.deleteAccount')}</span>
           </button>
         </div>
       </div>
@@ -1431,7 +1431,7 @@ export function UsersPage() {
   if (!hasRole(role, 'super_admin')) {
     return (
       <SettingsPageWrapper title={t('settings.usersAndAccess')}>
-        <p style={{ fontSize: 15, color: 'var(--ink-mute)', padding: 16 }}>{t('adminSettings.superAdminOnly')}</p>
+        <p style={{ fontSize: 13, color: 'var(--ink-mute)', padding: 12 }}>{t('adminSettings.superAdminOnly')}</p>
       </SettingsPageWrapper>
     )
   }
@@ -1446,7 +1446,7 @@ export function MemoryPage() {
   const t = useT()
   return (
     <SettingsPageWrapper title={t('settings.memory')}>
-      <div style={{ borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', padding: 16 }}>
+      <div style={{ borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', padding: 12 }}>
         <MemoryPanel />
       </div>
     </SettingsPageWrapper>
@@ -1557,15 +1557,15 @@ function ExternalAssistantsSection() {
   }
 
   // Real code (a URL, a token) — .z-code carries the family + ltr isolation.
-  const code = { fontSize: 15, overflowWrap: 'anywhere' }
+  const code = { fontSize: 13, overflowWrap: 'anywhere' }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <p style={{ fontSize: 17, color: 'var(--ink-2)', lineHeight: 1.45, margin: 0 }}>{t('settings.assistants.intro')}</p>
+      <p style={{ fontSize: 15, color: 'var(--ink-2)', lineHeight: 1.45, margin: 0 }}>{t('settings.assistants.intro')}</p>
 
       {/* Connection address */}
       <Card>
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <p className="z-eyebrow" style={{ margin: 0 }}>{t('settings.assistants.mcpUrl')}</p>
           {mcpUrl ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -1573,11 +1573,11 @@ function ExternalAssistantsSection() {
               <CopyButton text={mcpUrl} label={t('common.copy')} copiedLabel={t('common.copied')} />
             </div>
           ) : (
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', margin: 0 }}>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: 0 }}>
               {loadState === 'loading' ? '…' : t('settings.assistants.mcpUrlUnavailable')}
             </p>
           )}
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', margin: 0 }}>{t('settings.assistants.howTo')}</p>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: 0 }}>{t('settings.assistants.howTo')}</p>
         </div>
       </Card>
 
@@ -1585,13 +1585,13 @@ function ExternalAssistantsSection() {
       <AnimatePresence>
         {fresh && (
           <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={T_ENTER}>
-            <div style={{ borderRadius: 'var(--r-card)', padding: 16, background: 'var(--surface)', border: '0.5px solid color-mix(in srgb, var(--warn) 55%, var(--line))', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{t('settings.assistants.newTokenTitle', { name: fresh.name })}</p>
+            <div style={{ borderRadius: 'var(--r-card)', padding: 12, background: 'var(--surface)', border: '0.5px solid color-mix(in srgb, var(--warn) 55%, var(--line))', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{t('settings.assistants.newTokenTitle', { name: fresh.name })}</p>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                 <span className="z-code" style={{ ...code, color: 'var(--ink)', minWidth: 0, background: 'var(--surface-2)', padding: '12px 16px', borderRadius: 'var(--r-ctl)', flex: 1 }}>{fresh.token || '—'}</span>
                 {fresh.token && <CopyButton text={fresh.token} label={t('common.copy')} copiedLabel={t('common.copied')} />}
               </div>
-              <p style={{ fontSize: 15, color: 'var(--warn-text)', margin: 0 }}>{t('settings.assistants.newTokenWarn')}</p>
+              <p style={{ fontSize: 13, color: 'var(--warn-text)', margin: 0 }}>{t('settings.assistants.newTokenWarn')}</p>
               <button type="button" onClick={() => setFresh(null)} className="z-btn-secondary" style={{ alignSelf: 'flex-start' }}>
                 {t('common.done')}
               </button>
@@ -1607,26 +1607,26 @@ function ExternalAssistantsSection() {
         </div>
         {loadState === 'error' && (
           <div style={{ padding: '0 16px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <p style={{ fontSize: 15, color: 'var(--err-text)', margin: 0 }}>{t('settings.assistants.loadFailed')}</p>
+            <p style={{ fontSize: 13, color: 'var(--err-text)', margin: 0 }}>{t('settings.assistants.loadFailed')}</p>
             <button type="button" onClick={load} className="z-btn-secondary">{t('common.tryAgain')}</button>
           </div>
         )}
         {loadState === 'ok' && tokens.length === 0 && (
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', padding: '0 16px 16px', margin: 0 }}>{t('settings.assistants.noTokens')}</p>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', padding: '0 16px 16px', margin: 0 }}>{t('settings.assistants.noTokens')}</p>
         )}
         {tokens.map((tok) => {
           const revoked = !!(tok.revoked || tok.revoked_at)
           const created = _when(tok.created_at ?? tok.created)
           const used = _when(tok.last_used_at ?? tok.last_used)
           return (
-            <div key={tok.id || tok.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 56, padding: '8px 16px', borderBlockStart: '0.5px solid var(--line)' }}>
+            <div key={tok.id || tok.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 48, padding: '8px 16px', borderBlockStart: '0.5px solid var(--line)' }}>
               <div style={{ minWidth: 0 }}>
                 {/* A revoked token reads in ink-mute rather than being dimmed with opacity. */}
-                <p dir="auto" style={{ fontSize: 17, fontWeight: 500, color: revoked ? 'var(--ink-mute)' : 'var(--ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <p dir="auto" style={{ fontSize: 15, fontWeight: 500, color: revoked ? 'var(--ink-mute)' : 'var(--ink)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {tok.name || '—'}
-                  {revoked && <span style={{ fontSize: 15, color: 'var(--ink-mute)', fontWeight: 400 }}> · {t('settings.assistants.revoked')}</span>}
+                  {revoked && <span style={{ fontSize: 13, color: 'var(--ink-mute)', fontWeight: 400 }}> · {t('settings.assistants.revoked')}</span>}
                 </p>
-                <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: '2px 0 0', fontVariantNumeric: 'tabular-nums' }}>
+                <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: '2px 0 0', fontVariantNumeric: 'tabular-nums' }}>
                   {[created && t('settings.assistants.created', { when: created }),
                     used ? t('settings.assistants.lastUsed', { when: used }) : t('settings.assistants.neverUsed')]
                     .filter(Boolean).join(' · ')}
@@ -1651,7 +1651,7 @@ function ExternalAssistantsSection() {
 
       {/* Create */}
       <Card>
-        <form onSubmit={create} style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <form onSubmit={create} style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
           <p className="z-eyebrow" style={{ margin: 0 }}>{t('settings.assistants.create')}</p>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 180 }}>
@@ -1736,19 +1736,19 @@ function WallModeCard() {
   const [on, setOn] = useState(() => isWallMode())
   const navigate = useNavigate()
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, minHeight: 56,
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, minHeight: 48,
                   background: 'var(--surface)', border: '0.5px solid var(--line)',
                   borderRadius: 'var(--r-card)' }}>
       <div style={{
-        width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+        width: 36, height: 36, borderRadius: 'var(--r-ctl)', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: 'var(--surface-2)',
       }}>
         <Monitor size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>Use as wall dashboard</div>
-        <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>Use as wall dashboard</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>
           This device opens straight into the wall view. Use the exit button in the
           wall header (or long-press the Ziggy mark) to come back.
         </div>
@@ -1825,7 +1825,7 @@ export default function Settings() {
       {isSuperAdmin && (
         <div style={{ marginTop: 24 }}>
           <SectionTitle icon={Shield}>{t('settings.advanced')}</SectionTitle>
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 12 }}>{t('settings.advancedHint')}</p>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 12 }}>{t('settings.advancedHint')}</p>
           <HubCard icon={Shield} title={t('nav.opsConsole')} to="/ops" />
         </div>
       )}

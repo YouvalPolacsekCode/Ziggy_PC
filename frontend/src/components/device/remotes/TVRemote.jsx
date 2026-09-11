@@ -325,7 +325,7 @@ function stripBolt(s) {
 // inverted control.
 function chipStyle({ active = false, enabled = true } = {}) {
   return {
-    minHeight: 44, padding: '0 16px', boxSizing: 'border-box',
+    minHeight: 40, padding: '0 16px', boxSizing: 'border-box',
     background: 'var(--surface-2)',
     color: active ? 'var(--ink)' : 'var(--ink-2)',
     border: '0.5px solid ' + (active ? 'var(--ink)' : 'var(--line)'),
@@ -342,20 +342,20 @@ function NowPlayingCard({ facts }) {
   const subtitle = facts.mediaArtist || (facts.isOn ? facts.stateLabel : i18nT('common.off'))
   return (
     <div className="z-card" style={{
-      padding: '8px 16px', minHeight: 56, display: 'flex', alignItems: 'center', gap: 12,
+      padding: '8px 16px', minHeight: 48, display: 'flex', alignItems: 'center', gap: 12,
     }}>
       <div style={{
-        width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', flexShrink: 0,
+        width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-mute)',
       }}>
         <Tv2 size={20} strokeWidth={1.75} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)',
+        <div dir="auto" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {title}
         </div>
-        <div dir="auto" style={{ fontSize: 15, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div dir="auto" style={{ fontSize: 13, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {subtitle}{facts.isIr ? i18nT('remote.metaIr') : facts.linkedIr ? i18nT('remote.metaIrWifi') : ''}
         </div>
       </div>
@@ -373,7 +373,7 @@ function BigButton({ children, label, onClick, tone, disabled }) {
       disabled={disabled}
       className="z-card"
       style={{
-        minHeight: 44, padding: '16px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+        minHeight: 40, padding: '16px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
         background: 'var(--surface)',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.35 : 1,
@@ -383,7 +383,7 @@ function BigButton({ children, label, onClick, tone, disabled }) {
       }}
     >
       {children}
-      <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>{label}</span>
     </button>
   )
 }
@@ -515,7 +515,7 @@ function DPad({ entity, fire, pairedRemoteId, addToast }) {
             position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
             width: 108, height: 108, borderRadius: '50%',
             background: 'var(--ink)', color: 'var(--bg)', border: 'none',
-            fontSize: 17, fontWeight: 700, letterSpacing: '0.02em', fontFamily: 'inherit',
+            fontSize: 15, fontWeight: 700, letterSpacing: '0.02em', fontFamily: 'inherit',
             boxShadow: okOk ? 'var(--shadow-md)' : 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: okOk ? 'pointer' : 'not-allowed',
@@ -536,7 +536,7 @@ function DPad({ entity, fire, pairedRemoteId, addToast }) {
             title={ok ? '' : i18nT('remote.notAvailable', { name: label })}
             style={{
               position: 'absolute', background: 'none', border: 'none',
-              width: 44, height: 44, borderRadius: '50%', padding: 0, lineHeight: 0,
+              width: 40, height: 40, borderRadius: '50%', padding: 0, lineHeight: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: 'var(--ink-mute)',
               cursor: ok ? 'pointer' : 'not-allowed',
@@ -570,7 +570,7 @@ function NumPad({ fireSmart, entity, fire }) {
         height: 56, borderRadius: 'var(--r-card)',
         background: 'var(--surface)', color: 'var(--ink)',
         border: '0.5px solid var(--line)',
-        fontSize: 22, fontWeight: 600, fontFamily: 'inherit',
+        fontSize: 20, fontWeight: 600, fontFamily: 'inherit',
         cursor: 'pointer',
       }}
     >{n}</button>
@@ -604,7 +604,7 @@ function NumPad({ fireSmart, entity, fire }) {
             height: 56, borderRadius: 'var(--r-card)',
             background: 'var(--ink)', color: 'var(--bg)',
             border: 'none', cursor: 'pointer',
-            fontSize: 17, fontWeight: 700, letterSpacing: '0.02em',
+            fontSize: 15, fontWeight: 700, letterSpacing: '0.02em',
             fontFamily: 'inherit',
           }}
         >{i18nT('remote.ok')}</button>
@@ -620,7 +620,7 @@ function PillBtn({ children, onClick, active, disabled }) {
     <button onClick={onClick} disabled={disabled} aria-pressed={active ? true : undefined}
       className="z-btn-secondary"
       style={{
-        padding: '0 16px', fontSize: 15,
+        padding: '0 16px', fontSize: 13,
         background: active ? 'var(--surface-2)' : undefined,
         borderColor: active ? 'var(--ink)' : undefined,
         cursor: disabled ? 'not-allowed' : 'pointer',
@@ -643,7 +643,7 @@ function Spinner({ label, value, onUp, onDown, upOk = true, downOk = true }) {
         aria-label={i18nT('remote.volumeUpAria', { label })}>
         <ChevronUp size={20} strokeWidth={1.75} />
       </button>
-      <span className="z-mono" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>
+      <span className="z-mono" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
         {label}{value != null ? ` ${value}` : ''}
       </span>
       <button onClick={() => downOk && onDown()} disabled={!downOk} style={spinnerBtn(!downOk)}
@@ -657,7 +657,7 @@ function Spinner({ label, value, onUp, onDown, upOk = true, downOk = true }) {
 function spinnerBtn(disabled) {
   return {
     background: 'none', border: 'none', color: disabled ? 'var(--ink-faint)' : 'var(--ink-2)',
-    width: 44, height: 44, padding: 0, borderRadius: 'var(--r-ctl)',
+    width: 40, height: 40, padding: 0, borderRadius: 'var(--r-ctl)',
     cursor: disabled ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
     opacity: disabled ? 0.4 : 1,
   }

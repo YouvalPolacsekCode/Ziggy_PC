@@ -85,7 +85,7 @@ export function QuickControlsPicker({ open, onClose }) {
 
   return (
     <Modal open={open} onClose={onClose} title={t('quickControls.editTitle')}>
-      <p style={{ fontSize: 15, color: 'var(--ink-mute)', margin: '0 0 16px', lineHeight: 1.4 }}>
+      <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: '0 0 16px', lineHeight: 1.4 }}>
         {t('quickControls.help', { n: QUICK_CONTROLS_MAX })}
       </p>
 
@@ -131,7 +131,7 @@ export function QuickControlsPicker({ open, onClose }) {
               >
                 <span className="z-eyebrow" style={{ minWidth: 16, margin: 0 }}>{idx + 1}</span>
                 <Plus size={18} strokeWidth={1.75} aria-hidden="true" />
-                <span style={{ fontSize: 15, fontWeight: 500 }}>{t('quickControls.addDevice')}</span>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>{t('quickControls.addDevice')}</span>
               </button>
             )
           }
@@ -144,11 +144,11 @@ export function QuickControlsPicker({ open, onClose }) {
                   <DeviceIcon kind={facts.kind} size={22} />
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)',
+                  <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {facts.name}
                   </div>
-                  <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 4,
+                  <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 4,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {facts.meta.label} · {facts.stateLabel}
                   </div>
@@ -188,12 +188,12 @@ export function QuickControlsPicker({ open, onClose }) {
 
 const slotStyle = {
   display: 'flex', alignItems: 'center', gap: 12,
-  padding: '12px 16px', minHeight: 56, borderRadius: 'var(--r-ctl)',
+  padding: '12px 16px', minHeight: 48, borderRadius: 'var(--r-ctl)',
   background: 'var(--surface)', border: '0.5px solid var(--line)',
 }
 
 const iconBox = {
-  width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+  width: 36, height: 36, borderRadius: 'var(--r-ctl)', flexShrink: 0,
   background: 'var(--surface-2)', color: 'var(--ink-2)',
   display: 'flex', alignItems: 'center', justifyContent: 'center',
 }

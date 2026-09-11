@@ -70,7 +70,7 @@ function PairDialog({ onClose, onPaired }) {
           className="z-code"
           value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
           style={{ fontSize: 34, fontWeight: 700, lineHeight: '41px', letterSpacing: '0.2em', textAlign: 'center',
-                   padding: '12px 16px', minHeight: 44, borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)',
+                   padding: '12px 16px', minHeight: 40, borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)',
                    background: 'var(--surface)', color: 'var(--ink)', outline: 'none', width: '100%', boxSizing: 'border-box' }}
         />
         <Input
@@ -83,7 +83,7 @@ function PairDialog({ onClose, onPaired }) {
           placeholder={t('hub.pair.roomPlaceholder')}
           value={room} onChange={e => setRoom(e.target.value)}
         />
-        {error && <div role="alert" style={{ color: 'var(--err-text)', fontSize: 15, lineHeight: '20px' }}>{error}</div>}
+        {error && <div role="alert" style={{ color: 'var(--err-text)', fontSize: 13, lineHeight: '20px' }}>{error}</div>}
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onClose} disabled={busy} className="z-btn-secondary z-button">
             {t('common.cancel')}
@@ -118,7 +118,7 @@ function PairBanner({ onOpen }) {
 const stripBtn = {
   background: 'var(--surface)', color: 'var(--ink)', border: '0.5px solid var(--line)',
   borderRadius: 'var(--r-ctl)', padding: '8px 16px', minHeight: 36,
-  fontSize: 15, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer',
+  fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer',
 }
 const stripBtnPrimary = { ...stripBtn, background: 'var(--ink)', color: 'var(--bg)', border: 'none', fontWeight: 600 }
 
@@ -128,8 +128,8 @@ function StatusStrip({ layoutName, error, onRetry, tabletId, editing, onEdit, on
     <div className="z-hub-strip">
       <div className="z-hub-strip-left">
         <div>
-          <div className="z-hub-strip-sub" style={{ fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--ink-mute)' }}>{t('hub.strip.brand')}</div>
-          <div className="z-hub-strip-title" style={{ fontSize: 17, lineHeight: '22px' }}>{editing ? t('hub.strip.editing') : (layoutName || t('common.loading'))}</div>
+          <div className="z-hub-strip-sub" style={{ fontSize: 12, lineHeight: '18px', fontWeight: 600, color: 'var(--ink-mute)' }}>{t('hub.strip.brand')}</div>
+          <div className="z-hub-strip-title" style={{ fontSize: 15, lineHeight: '22px' }}>{editing ? t('hub.strip.editing') : (layoutName || t('common.loading'))}</div>
         </div>
       </div>
       <div className="z-hub-strip-right">

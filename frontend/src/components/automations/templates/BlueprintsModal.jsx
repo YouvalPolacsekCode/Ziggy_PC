@@ -181,15 +181,15 @@ function BlueprintsModal({ open, onClose, onCreated, initialBlueprintId = null }
                   return (
                     <button key={tpl.id} onClick={() => setSelected(tpl)} style={{
                       textAlign: 'start', cursor: 'pointer', fontFamily: 'inherit',
-                      minHeight: 64, padding: 16, borderRadius: 'var(--r-card)',
+                      minHeight: 56, padding: 12, borderRadius: 'var(--r-card)',
                       background: 'var(--surface)', border: '0.5px solid var(--line)', color: 'var(--ink)',
                       display: 'flex', alignItems: 'flex-start', gap: 16, width: '100%',
                       transition: 'background var(--dur-press) var(--ease-standard)',
                     }} dir="auto">
                       <div aria-hidden="true" style={{
-                        width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+                        width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: 'var(--surface-2)', color: 'var(--ink-2)', fontSize: 22, lineHeight: 1,
+                        background: 'var(--surface-2)', color: 'var(--ink-2)', fontSize: 20, lineHeight: 1,
                       }}>{tpl.icon || <Puzzle size={22} strokeWidth={1.75} />}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p className="z-headline" style={{ margin: '0 0 2px' }} dir="auto">{name}</p>
@@ -296,7 +296,7 @@ function BlueprintInputField({ input, value, onChange, isHe }) {
     )
   } else if (kind === 'boolean') {
     control = (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 44 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 40 }}>
         <span className="z-body" dir="auto">{label}</span>
         <Toggle checked={!!value} onCheckedChange={onChange} aria-label={label} />
       </div>

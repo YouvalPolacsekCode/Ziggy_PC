@@ -9,8 +9,8 @@ import { useT } from '../../lib/i18n'
 // real touch target even though it reads as a chip.
 function chipStyle(active) {
   return {
-    minHeight: 44, padding: '0 16px', borderRadius: 999,
-    fontSize: 15, fontWeight: active ? 600 : 500, fontFamily: 'inherit',
+    minHeight: 40, padding: '0 16px', borderRadius: 999,
+    fontSize: 13, fontWeight: active ? 600 : 500, fontFamily: 'inherit',
     background: active ? 'var(--surface-2)' : 'var(--surface)',
     color: active ? 'var(--ink)' : 'var(--ink-mute)',
     border: `0.5px solid ${active ? 'var(--line-2)' : 'var(--line)'}`,
@@ -49,7 +49,7 @@ function JsonFallback({ value, onChange, onError }) {
 
   return (
     <div>
-      <p style={{ fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+      <p style={{ fontSize: 13, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
         {t('intentForm.params')}{' '}
         <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}>{t('intentForm.paramsHint')}</span>
       </p>
@@ -61,14 +61,14 @@ function JsonFallback({ value, onChange, onError }) {
         placeholder='{"room": "office"}'
         className="z-code"
         style={{
-          width: '100%', padding: '12px 16px', borderRadius: 'var(--r-ctl)', minHeight: 44,
+          width: '100%', padding: '12px 16px', borderRadius: 'var(--r-ctl)', minHeight: 40,
           background: 'var(--surface)', border: `0.5px solid ${err ? 'var(--err)' : 'var(--line)'}`,
-          color: 'var(--ink)', fontSize: 15, lineHeight: '20px',
+          color: 'var(--ink)', fontSize: 13, lineHeight: '20px',
           outline: 'none', resize: 'none', boxSizing: 'border-box',
           transition: 'border-color var(--dur-press) var(--ease-standard)',
         }}
       />
-      {err && <p style={{ fontSize: 13, lineHeight: '18px', color: 'var(--err-text)', marginTop: 4 }}>{err}</p>}
+      {err && <p style={{ fontSize: 12, lineHeight: '18px', color: 'var(--err-text)', marginTop: 4 }}>{err}</p>}
     </div>
   )
 }
@@ -79,7 +79,7 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
   const { key, label, type, options, required, placeholder, min, max, step, unit, source, domainFilter, dependsOn } = param
 
   const Label = () => (
-    <p style={{ fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+    <p style={{ fontSize: 13, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
       {label}
       {!required && (
         <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}> ({t('intentForm.optional')})</span>
@@ -242,12 +242,12 @@ function ParamField({ param, value, onChange, rooms, entities, allValues }) {
             minWidth: 64, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0, padding: '0 12px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'var(--surface-2)', border: '0.5px solid var(--line)',
-            fontSize: 17, fontWeight: 500, color: 'var(--ink)',
+            fontSize: 15, fontWeight: 500, color: 'var(--ink)',
           }}>
             {numVal}{unit || ''}
           </div>
         </div>
-        <p className="z-mono" style={{ fontSize: 13, lineHeight: '18px', color: 'var(--ink-mute)', marginTop: 4 }}>
+        <p className="z-mono" style={{ fontSize: 12, lineHeight: '18px', color: 'var(--ink-mute)', marginTop: 4 }}>
           {min}{unit} – {max}{unit}
         </p>
       </div>
@@ -314,7 +314,7 @@ export function IntentParamForm({ intent, value = {}, onChange, onError }) {
 
   if (params.length === 0) {
     return (
-      <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)', padding: '4px 0' }}>
+      <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ink-mute)', padding: '4px 0' }}>
         {t('intentForm.noParams')}
       </p>
     )

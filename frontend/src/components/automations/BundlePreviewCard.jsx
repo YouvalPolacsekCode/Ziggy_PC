@@ -137,7 +137,7 @@ function OccupancyRow({ sensor, t }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      gap: 12, minHeight: 44, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
+      gap: 12, minHeight: 40, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
       border: '0.5px solid var(--line)', background: 'var(--surface)',
     }}>
       <span className="z-subhead" style={{ color: 'var(--ink)', fontWeight: 500 }} dir="auto">
@@ -159,7 +159,7 @@ function ModeRow({ kv }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      gap: 12, minHeight: 44, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
+      gap: 12, minHeight: 40, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
       border: '0.5px solid var(--line)', background: 'var(--surface)',
     }}>
       <span className="z-subhead z-code" style={{ color: 'var(--ink)' }}>
@@ -213,7 +213,7 @@ function VoiceIntentRow({ vi, t }) {
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', gap: 2,
-      minHeight: 44, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
+      minHeight: 40, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
       border: '0.5px dashed var(--line)', background: 'var(--surface-2)',
     }}>
       <span className="z-subhead" style={{ color: 'var(--ink)', fontWeight: 500 }} dir="auto">
@@ -233,7 +233,7 @@ function ResultRow({ kind, label, error }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'flex-start', gap: 12,
-      minHeight: 44, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
+      minHeight: 40, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
       border: '0.5px solid var(--line)',
       background: isErr
         ? 'color-mix(in srgb, var(--err) 6%, var(--surface))'
@@ -426,7 +426,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
     const e = getEdit(kind, idx)
     // Include/exclude is a filter chip: surface-2 + ink when on, never inverted.
     const pill = (on) => ({
-      minHeight: 44, padding: '8px 16px', borderRadius: 999, fontSize: 15, fontWeight: 500,
+      minHeight: 40, padding: '8px 16px', borderRadius: 999, fontSize: 13, fontWeight: 500,
       display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: 'inherit', cursor: 'pointer',
       border: `0.5px solid ${on ? 'var(--line-2)' : 'var(--line)'}`,
       background: on ? 'var(--surface-2)' : 'var(--surface)',
@@ -473,7 +473,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
       initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={T_ENTER}
       style={{
         display: 'flex', flexDirection: 'column', gap: 12,
-        padding: 16, borderRadius: 'var(--r-card)',
+        padding: 12, borderRadius: 'var(--r-card)',
         background: 'var(--surface)', border: '0.5px solid var(--line)',
         boxShadow: 'var(--shadow-sm)',
         // textAlign honors the bundle's own direction so EN bundles in an
@@ -522,7 +522,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
           padding: '16px 12px', textAlign: 'center',
         }}>
           <span aria-hidden="true" style={{
-            width: 44, height: 44, borderRadius: '50%',
+            width: 40, height: 40, borderRadius: '50%',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'var(--surface-2)', color: 'var(--ink-mute)',
           }}>

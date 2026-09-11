@@ -314,7 +314,7 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
       {label && (
         <label className="text-subhead font-medium text-ink-2">{label}</label>
       )}
-      {/* Trigger reads as an input: 44px min, 17px (no iOS zoom), r-ctl.
+      {/* Trigger reads as an input: 40px min, 17px (no iOS zoom), r-ctl.
           Line icon for the selected device — never an emoji glyph. */}
       <button
         type="button"
@@ -322,7 +322,7 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
         onClick={handleOpen}
         aria-expanded={open}
         className={cn(
-          'min-h-[44px] rounded-[10px] px-3 text-body text-start flex items-center gap-2',
+          'min-h-[40px] rounded-[10px] px-3 text-body text-start flex items-center gap-2',
           'bg-surface-2',
           'border border-line',
           'text-ink',
@@ -362,12 +362,12 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('entitySelect.search')}
-                className="w-full min-h-[44px] ps-10 pe-3 text-body rounded-[10px] bg-surface-2 border-0 focus:outline-none text-ink placeholder:text-ink-mute"
+                className="w-full min-h-[40px] ps-10 pe-3 text-body rounded-[10px] bg-surface-2 border-0 focus:outline-none text-ink placeholder:text-ink-mute"
               />
             </div>
             <button
               type="button"
-              className="min-h-[44px] px-3 text-footnote font-medium text-ink-mute hover:text-ink whitespace-nowrap transition-colors"
+              className="min-h-[40px] px-3 text-footnote font-medium text-ink-mute hover:text-ink whitespace-nowrap transition-colors"
               onClick={() => {
                 const v = window.prompt(t('entitySelect.manualPrompt'), value || '')
                 if (v !== null) { onChange(v); setOpen(false) }
@@ -400,7 +400,7 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
                       type="button"
                       onClick={() => { onChange(e.entity_id); setOpen(false); setSearch('') }}
                       className={cn(
-                        'w-full flex items-center gap-3 px-4 min-h-[44px] text-start transition-colors',
+                        'w-full flex items-center gap-3 px-4 min-h-[40px] text-start transition-colors',
                         'hover:bg-surface-2',
                         selected && 'bg-surface-2'
                       )}

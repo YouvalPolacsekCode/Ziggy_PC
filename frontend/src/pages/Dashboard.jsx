@@ -163,7 +163,7 @@ function AlertRow({ anomaly, onOpen, hover = false }) {
       onClick={onOpen}
       style={{
         display: 'flex', alignItems: 'center', gap: 12,
-        minHeight: 44, padding: '8px 8px', borderRadius: 'var(--r-ctl)',
+        minHeight: 40, padding: '8px 8px', borderRadius: 'var(--r-ctl)',
         background: 'transparent', border: 'none', cursor: 'pointer',
         fontFamily: 'inherit', textAlign: 'start', width: '100%',
         transition: 'background var(--dur-press) var(--ease-standard)',
@@ -172,7 +172,7 @@ function AlertRow({ anomaly, onOpen, hover = false }) {
       onMouseLeave={hover ? (e => { e.currentTarget.style.background = 'transparent' }) : undefined}
     >
       <span className="z-dot" style={{ background: dotColor, flexShrink: 0 }} />
-      <span style={{ flex: 1, minWidth: 0, fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{anomaly.message}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{anomaly.message}</span>
       <ZIcon name="fwd" size={16} color="var(--ink-faint)" />
     </button>
   )
@@ -183,10 +183,10 @@ function AlertRow({ anomaly, onOpen, hover = false }) {
 // and err only for a recent failure — see formatActivity.
 function ActivityRow({ label, timeStr, ok }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '0 4px', flexShrink: 0 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, padding: '0 4px', flexShrink: 0 }}>
       <span className="z-dot" style={{ background: ok ? 'var(--info)' : 'var(--err)', flexShrink: 0 }} />
-      <span style={{ fontSize: 15, color: 'var(--ink-2)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-      <span style={{ fontSize: 13, color: 'var(--ink-mute)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
+      <span style={{ fontSize: 13, color: 'var(--ink-2)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      <span style={{ fontSize: 12, color: 'var(--ink-mute)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
     </div>
   )
 }
@@ -256,33 +256,33 @@ function QuickControlTile({ entity }) {
       onClick={handleClick}
       style={{
         position: 'relative',
-        padding: 16, borderRadius: 'var(--r-card)', minHeight: 112,
+        padding: 12, borderRadius: 'var(--r-card)', minHeight: 96,
         background: tileBg, color: tileFg,
         border: '0.5px solid var(--line)',
-        display: 'flex', flexDirection: 'column', gap: 16,
+        display: 'flex', flexDirection: 'column', gap: 12,
         textAlign: 'start', fontFamily: 'inherit', cursor: 'pointer',
         transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
         opacity: pending ? 0.7 : 1,
       }}
     >
       <span style={{
-        width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+        width: 32, height: 32, borderRadius: 'var(--r-ctl)', flexShrink: 0,
         background: iconBg, color: iconColor,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         lineHeight: 1,
       }} aria-hidden="true">
-        <DeviceIcon kind={facts.kind} size={22} fill />
+        <DeviceIcon kind={facts.kind} size={18} fill />
       </span>
 
       <div style={{ minWidth: 0 }}>
         <div style={{
-          fontSize: 17, fontWeight: 600, lineHeight: 1.2,
+          fontSize: 13, fontWeight: 600, lineHeight: 1.2,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {facts.name}
         </div>
         <div style={{
-          fontSize: 15, marginTop: 4, color: subColor,
+          fontSize: 13, marginTop: 4, color: subColor,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {sub}
@@ -307,7 +307,7 @@ function QuickControlTile({ entity }) {
           cursor: 'pointer',
         }}
       >
-        <ChevronRight size={18} className="icon-flip-rtl" />
+        <ChevronRight size={14} className="icon-flip-rtl" />
       </span>
     </button>
   )
@@ -339,7 +339,7 @@ function RoomTileFace({ room, summary, photo, showParts }) {
   const chipNeutralBg = photo ? 'rgba(0,0,0,0.32)' : 'var(--surface)'
   const chipFg        = photo ? '#fff' : 'var(--ink)'
   const chipBase = {
-    fontSize: 13, lineHeight: '16px', color: chipFg, fontVariantNumeric: 'tabular-nums',
+    fontSize: 12, lineHeight: '16px', color: chipFg, fontVariantNumeric: 'tabular-nums',
     padding: '4px 8px', borderRadius: 999, backdropFilter: 'blur(8px)',
     border: photo ? 'none' : '0.5px solid var(--line)',
     display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -399,8 +399,8 @@ function RoomTileFace({ room, summary, photo, showParts }) {
       <>
         {topRow(<Home size={28} strokeWidth={1.75} aria-hidden="true" style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />)}
         <div style={{ position: 'absolute', bottom: 16, insetInline: 16 }}>
-          <p dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
-          <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: 0, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine}</p>
+          <p dir="auto" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: 0, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine}</p>
         </div>
       </>
     )
@@ -411,8 +411,8 @@ function RoomTileFace({ room, summary, photo, showParts }) {
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.72) 100%)' }} />
       {topRow(null)}
       <div style={{ position: 'absolute', bottom: 16, insetInline: 16 }}>
-        <p dir="auto" style={{ fontSize: 17, fontWeight: 600, color: '#fff', margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', margin: 0, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine}</p>
+        <p dir="auto" style={{ fontSize: 15, fontWeight: 600, color: '#fff', margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
+        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', margin: 0, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine}</p>
       </div>
     </>
   )
@@ -678,9 +678,9 @@ function ShortcutsSection({ pinnedShortcuts, routines, asks, onFireRoutine, onFi
 // Section-header edit link: a 44px-tall text button so the tap target is
 // real, with the glyph and label in ink-mute (it is not the screen's action).
 const sectionEditBtn = {
-  display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44,
+  display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 40,
   background: 'none', border: 'none', cursor: 'pointer',
-  fontSize: 15, color: 'var(--ink-mute)', fontFamily: 'inherit', padding: '0 4px',
+  fontSize: 13, color: 'var(--ink-mute)', fontFamily: 'inherit', padding: '0 4px',
 }
 
 // Shortcut glyph: the person's own emoji when they chose one (it is their
@@ -714,12 +714,12 @@ function ShortcutPill({ type, record, onFire }) {
       aria-label={label}
       style={{
         flexShrink: 0,
-        padding: '12px 16px', minHeight: 44, borderRadius: 'var(--r-card)',
+        padding: '12px 16px', minHeight: 40, borderRadius: 'var(--r-card)',
         background: pending ? 'var(--ink)' : 'var(--surface)',
         color:      pending ? 'var(--bg)'  : 'var(--ink)',
         border: '0.5px solid var(--line)',
         display: 'inline-flex', alignItems: 'center', gap: 8,
-        fontSize: 15, fontWeight: 500, fontFamily: 'inherit',
+        fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
         cursor: 'pointer',
         transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
       }}
@@ -753,7 +753,7 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
         aria-pressed={isPinned}
         style={{
           display: 'flex', alignItems: 'center', gap: 12, width: '100%',
-          padding: '12px 16px', minHeight: 56, borderRadius: 'var(--r-ctl)', cursor: disabled ? 'not-allowed' : 'pointer',
+          padding: '12px 16px', minHeight: 48, borderRadius: 'var(--r-ctl)', cursor: disabled ? 'not-allowed' : 'pointer',
           background: isPinned ? 'color-mix(in srgb, var(--ok) 8%, var(--surface))' : 'var(--surface)',
           border: '0.5px solid ' + (isPinned ? 'color-mix(in srgb, var(--ok) 30%, var(--line))' : 'var(--line)'),
           opacity: disabled ? 0.4 : 1, fontFamily: 'inherit', textAlign: 'start',
@@ -762,7 +762,7 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
         <span style={{ display: 'inline-flex', justifyContent: 'center', width: 24, color: 'var(--ink-mute)', flexShrink: 0 }}>
           <ShortcutGlyph type={type} icon={record.icon} />
         </span>
-        <span style={{ flex: 1, fontSize: 17, fontWeight: 500, color: 'var(--ink)',
+        <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: 'var(--ink)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {label}
         </span>
@@ -775,14 +775,14 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
       <Icon size={16} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} aria-hidden="true" />
       <p className="z-eyebrow" style={{ margin: 0 }}>{label}</p>
-      <span style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{count}</span>
+      <span style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{count}</span>
     </div>
   )
 
   return (
     <Modal open={open} onClose={onClose} title={t('dashboard.editShortcutsTitle')}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <p style={{ fontSize: 15, color: 'var(--ink-mute)', margin: 0 }}>
+        <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: 0 }}>
           {t('dashboard.pinnedSlash', { n: pinnedShortcuts.length, max: SHORTCUTS_MAX })}
         </p>
 
@@ -790,7 +790,7 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
         <div>
           {sectionHead(Play, t('dashboard.routines'), routines.length)}
           {routines.length === 0 ? (
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', padding: '8px 4px', margin: 0 }}>{t('dashboard.routinesEmpty')}</p>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', padding: '8px 4px', margin: 0 }}>{t('dashboard.routinesEmpty')}</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {routines.map(r => renderRow('routine', r))}
@@ -802,7 +802,7 @@ function ShortcutsPicker({ open, onClose, routines, asks, pinnedShortcuts, toggl
         <div>
           {sectionHead(Sparkles, t('dashboard.quickAsks'), asks.length)}
           {asks.length === 0 ? (
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', padding: '8px 4px', margin: 0 }}>{t('dashboard.asksEmpty')}</p>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', padding: '8px 4px', margin: 0 }}>{t('dashboard.asksEmpty')}</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {asks.map(a => renderRow('ask', a))}
@@ -1065,7 +1065,7 @@ export default function Dashboard() {
           {activeRooms.length > 0
             ? <span className="z-dot z-dot-on" style={{ flexShrink: 0 }} />
             : <span className="z-dot" style={{ background: 'var(--line-2)', flexShrink: 0 }} />}
-          <span style={{ fontSize: 15, color: 'var(--ink-mute)' }}>
+          <span style={{ fontSize: 13, color: 'var(--ink-mute)' }}>
             {activeRooms.length > 0
               ? (activeRooms.length === 1
                   ? t('dashboard.roomsActiveOne', { n: activeRooms.length })
@@ -1074,12 +1074,12 @@ export default function Dashboard() {
           </span>
           {homePersons.length > 0 && (
             <>
-              <span style={{ color: 'var(--ink-faint)', fontSize: 15 }} aria-hidden="true">·</span>
+              <span style={{ color: 'var(--ink-faint)', fontSize: 13 }} aria-hidden="true">·</span>
               <button
                 onClick={() => navigate('/settings#presence')}
                 style={{
-                  background: 'none', border: 'none', padding: 0, minHeight: 44,
-                  fontSize: 15, color: 'var(--ink-mute)',
+                  background: 'none', border: 'none', padding: 0, minHeight: 40,
+                  fontSize: 13, color: 'var(--ink-mute)',
                   fontFamily: 'inherit', cursor: 'pointer',
                 }}
               >
@@ -1162,7 +1162,7 @@ export default function Dashboard() {
         <button
           onClick={() => setShowShortcutsPicker(true)}
           className="z-btn-secondary"
-          style={{ width: '100%', borderStyle: 'dashed', fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)' }}
+          style={{ width: '100%', borderStyle: 'dashed', fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)' }}
         >
           <Pencil size={16} strokeWidth={1.75} aria-hidden="true" /> {t('dashboard.pinShortcutsHint')}
         </button>
@@ -1180,7 +1180,7 @@ export default function Dashboard() {
           <button
             onClick={() => setShowQuickPicker(true)}
             className="z-btn-secondary"
-            style={{ width: '100%', borderStyle: 'dashed', fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)' }}
+            style={{ width: '100%', borderStyle: 'dashed', fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)' }}
           >
             {t('dashboard.pinUpTo4')}
           </button>
@@ -1238,21 +1238,21 @@ export default function Dashboard() {
           onClick={() => navigate('/tasks')}
           style={{
             display: 'flex', alignItems: 'center', gap: 12,
-            padding: 16, borderRadius: 'var(--r-card)',
+            padding: 12, borderRadius: 'var(--r-card)',
             background: 'var(--surface)', border: '0.5px solid var(--line)',
             cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', width: '100%',
           }}
         >
-          <div style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0, background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 36, height: 36, borderRadius: 'var(--r-ctl)', flexShrink: 0, background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <ZIcon name="check" size={20} stroke={2} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
               {pendingTasks.length === 1
                 ? t('dashboard.tasksTodayOne', { n: pendingTasks.length })
                 : t('dashboard.tasksTodayMany', { n: pendingTasks.length })}
             </div>
-            <div style={{ fontSize: 15, color: overdueTasks.length > 0 ? 'var(--err-text)' : 'var(--ink-mute)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 13, color: overdueTasks.length > 0 ? 'var(--err-text)' : 'var(--ink-mute)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {overdueTasks.length > 0
                 ? t('dashboard.overdueN', { n: overdueTasks.length })
                 : t('dashboard.pendingN', { n: pendingTasks.length })}
@@ -1280,7 +1280,7 @@ export default function Dashboard() {
             onClick={() => setRecentOpen(o => !o)}
             aria-expanded={recentOpen}
             style={{
-              background: 'none', border: 'none', padding: 0, marginBottom: 4, minHeight: 44,
+              background: 'none', border: 'none', padding: 0, marginBottom: 4, minHeight: 40,
               width: '100%', display: 'flex', alignItems: 'center', gap: 8,
               cursor: 'pointer', color: 'var(--ink-mute)', fontFamily: 'inherit',
             }}
@@ -1289,7 +1289,7 @@ export default function Dashboard() {
               ? <ChevronDown size={16} strokeWidth={1.75} aria-hidden="true" />
               : <ChevronRight size={16} strokeWidth={1.75} className="icon-flip-rtl" aria-hidden="true" />}
             <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.justNow')}</p>
-            <span style={{ fontSize: 13, color: 'var(--ink-mute)', marginInlineStart: 'auto', fontVariantNumeric: 'tabular-nums' }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-mute)', marginInlineStart: 'auto', fontVariantNumeric: 'tabular-nums' }}>
               {activity.length}
             </span>
           </button>
@@ -1371,7 +1371,7 @@ export default function Dashboard() {
               <p className="z-eyebrow" style={{ margin: 0, color: 'var(--accent-text)' }}>{t('dashboard.suggestedLabel')}</p>
             </div>
             <p style={{
-              fontSize: 17, lineHeight: 1.4, color: 'var(--ink)',
+              fontSize: 15, lineHeight: 1.4, color: 'var(--ink)',
               margin: '0 0 16px',
               display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 4,
               overflow: 'hidden',
@@ -1409,7 +1409,7 @@ export default function Dashboard() {
           <div className="z-card" style={{ padding: '16px 16px 8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <p className="z-eyebrow" style={{ margin: 0 }}>{t('dashboard.recentActivity')}</p>
-              <span style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{activity.length}</span>
+              <span style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{activity.length}</span>
             </div>
             {/* Rows are 44px; six fit before the list scrolls (6 × 44 = 264)
                 so the cut-off row is a visible scroll affordance. */}

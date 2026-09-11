@@ -152,7 +152,7 @@ export function SystemHealthBanner({ health, onRefresh }) {
       aria-live="polite"
       style={{
         display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap',
-        padding: 16, borderRadius: 'var(--r-card)',
+        padding: 12, borderRadius: 'var(--r-card)',
         background: pal.bg,
         border: `0.5px solid ${pal.border}`,
         color: 'var(--ink)',
@@ -165,10 +165,10 @@ export function SystemHealthBanner({ health, onRefresh }) {
       />
 
       <div style={{ flex: '1 1 240px', minWidth: 0 }}>
-        <div style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600 }}>{copy.title}</div>
-        <div style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)', marginTop: 4 }}>{copy.body}</div>
+        <div style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600 }}>{copy.title}</div>
+        <div style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ink-mute)', marginTop: 4 }}>{copy.body}</div>
         {errMsg && (
-          <div style={{ fontSize: 13, lineHeight: '18px', color: 'var(--err-text)', marginTop: 4 }}>{errMsg}</div>
+          <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--err-text)', marginTop: 4 }}>{errMsg}</div>
         )}
       </div>
 

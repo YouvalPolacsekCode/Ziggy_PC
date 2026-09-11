@@ -140,7 +140,7 @@ function QuickAskForm({ initial, onSave, onCancel, saving }) {
               aria-pressed={form.icon === e}
               aria-label={e}
               style={{
-                width: 44, height: 44, borderRadius: 'var(--r-ctl)', fontSize: 20, lineHeight: 1,
+                width: 40, height: 40, borderRadius: 'var(--r-ctl)', fontSize: 18, lineHeight: 1,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: form.icon === e ? 'var(--surface-2)' : 'var(--surface)',
                 border: form.icon === e ? '1.5px solid var(--ink)' : '0.5px solid var(--line)',
@@ -234,7 +234,7 @@ export default function QuickAsks({ embedded = false }) {
           <h1 className="z-display" style={{ margin: 0 }}>{t('quickAsks.title')}</h1>
           <p className="z-subhead" style={{ marginTop: 4 }}>{t('quickAsks.tagline')}</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="z-btn-primary" aria-label={t('quickAsks.newTitle')} title={t('quickAsks.newTitle')} style={{ width: 44, height: 44, padding: 0, flexShrink: 0 }}>
+        <button onClick={() => setShowCreate(true)} className="z-btn-primary" aria-label={t('quickAsks.newTitle')} title={t('quickAsks.newTitle')} style={{ width: 40, height: 40, padding: 0, flexShrink: 0 }}>
           <Plus size={20} strokeWidth={2} aria-hidden="true" />
         </button>
       </div>)}
@@ -280,14 +280,14 @@ export default function QuickAsks({ embedded = false }) {
                 initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}
                 transition={T_ENTER}
                 style={{
-                  padding: 16, borderRadius: 'var(--r-card)',
+                  padding: 12, borderRadius: 'var(--r-card)',
                   background: 'var(--surface)', border: '0.5px solid var(--line)',
                   display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
                   gap: 12, minHeight: 120, cursor: 'pointer',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                  <span style={{ fontSize: 22, lineHeight: 1 }} aria-hidden="true">{qa.icon || '⚡'}</span>
+                  <span style={{ fontSize: 20, lineHeight: 1 }} aria-hidden="true">{qa.icon || '⚡'}</span>
                   <span className="z-chip">{kindLabel}</span>
                 </div>
                 <p dir="auto" className="z-body" style={{ fontWeight: 500, margin: 0 }}>

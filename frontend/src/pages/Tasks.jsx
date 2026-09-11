@@ -34,7 +34,7 @@ function ZIcon({ name, size = 18 }) {
 
 // Borderless 44×44 target for a row-level icon action.
 const ghostIcon = {
-  width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'none', border: 'none',
+  width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'none', border: 'none',
   cursor: 'pointer', color: 'var(--ink-mute)', padding: 0, flexShrink: 0,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
 }
@@ -48,7 +48,7 @@ function SubItem({ item, onToggle }) {
       dir={rtl ? 'rtl' : 'ltr'}
       style={{
         display: 'flex', alignItems: 'center', gap: 12,
-        width: '100%', minHeight: 44, padding: '4px 0', background: 'none', border: 'none', cursor: 'pointer',
+        width: '100%', minHeight: 40, padding: '4px 0', background: 'none', border: 'none', cursor: 'pointer',
         textAlign: 'start', fontFamily: 'inherit',
       }}
     >
@@ -56,7 +56,7 @@ function SubItem({ item, onToggle }) {
         <ZIcon name={item.done ? 'check-c' : 'square'} size={20} />
       </span>
       <span style={{
-        fontSize: 15, color: item.done ? 'var(--ink-mute)' : 'var(--ink-2)',
+        fontSize: 13, color: item.done ? 'var(--ink-mute)' : 'var(--ink-2)',
         textDecoration: item.done ? 'line-through' : 'none',
       }}>
         {item.text}
@@ -86,7 +86,7 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
       transition={T_ENTER}
       style={{
         display: 'flex', flexDirection: 'column',
-        padding: '8px 16px 8px 12px', borderRadius: 'var(--r-card)', minHeight: 56,
+        padding: '8px 16px 8px 12px', borderRadius: 'var(--r-card)', minHeight: 48,
         background: 'var(--surface)',
         border: '0.5px solid var(--line)',
         borderInlineStart: isOverdue ? '3px solid var(--err)' : '0.5px solid var(--line)',
@@ -99,7 +99,7 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
           aria-label={isDone ? t('tasks.filterDone') : t('tasks.filterPending')}
           aria-pressed={!!isDone}
           style={{
-            width: 44, height: 44, flexShrink: 0, background: 'none', border: 'none', padding: 0,
+            width: 40, height: 40, flexShrink: 0, background: 'none', border: 'none', padding: 0,
             cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
@@ -119,7 +119,7 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
           <p
             dir="auto"
             style={{
-              fontSize: 17, fontWeight: task.priority === 'high' && !isDone ? 600 : 500,
+              fontSize: 15, fontWeight: task.priority === 'high' && !isDone ? 600 : 500,
               color: isDone ? 'var(--ink-mute)' : 'var(--ink)',
               lineHeight: 1.3,
               textDecoration: isDone ? 'line-through' : 'none',
@@ -131,7 +131,7 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
               {task.due && (
                 <span style={{
-                  fontSize: 13, color: isOverdue ? 'var(--err-text)' : 'var(--ink-mute)',
+                  fontSize: 12, color: isOverdue ? 'var(--err-text)' : 'var(--ink-mute)',
                   fontVariantNumeric: 'tabular-nums', display: 'flex', alignItems: 'center', gap: 4,
                 }}>
                   <ZIcon name="cal" size={14} />
@@ -140,7 +140,7 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
               )}
               {task.reminder && (
                 <span style={{
-                  fontSize: 13, color: 'var(--ink-mute)',
+                  fontSize: 12, color: 'var(--ink-mute)',
                   fontVariantNumeric: 'tabular-nums', display: 'flex', alignItems: 'center', gap: 4,
                 }}>
                   <ZIcon name="clock" size={14} />
@@ -148,7 +148,7 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
                 </span>
               )}
               {items.length > 0 && (
-                <span style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
+                <span style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
                   {doneItems}/{items.length}
                 </span>
               )}
@@ -186,7 +186,7 @@ const TaskRow = forwardRef(function TaskRow({ task, onToggle, onUpdateItems, onD
               {task.description && (
                 <p
                   dir={isHebrew(task.description) ? 'rtl' : 'ltr'}
-                  style={{ fontSize: 15, color: 'var(--ink-mute)', lineHeight: 1.5, marginBottom: 4 }}
+                  style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5, marginBottom: 4 }}
                 >
                   {task.description}
                 </p>
@@ -225,7 +225,7 @@ function TaskForm({ values, onChange }) {
       <Select label={t('tasks.priorityLabel')} value={priority} onChange={e => onChange({ priority: e.target.value })} options={[{ value: 'high', label: t('tasks.priorityHigh') }, { value: 'medium', label: t('tasks.priorityMedium') }, { value: 'low', label: t('tasks.priorityLow') }]} />
 
       <div>
-        <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 4 }}>{t('tasks.checklistItems')}</p>
+        <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 4 }}>{t('tasks.checklistItems')}</p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Input
@@ -241,11 +241,11 @@ function TaskForm({ values, onChange }) {
         {items.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 180, overflowY: 'auto' }}>
             {items.map((item, idx) => (
-              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 44 }}>
+              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 40 }}>
                 <button onClick={() => toggleItem(idx)} style={{ ...ghostIcon, color: item.done ? 'var(--ok)' : 'var(--ink-faint)' }} aria-pressed={!!item.done} aria-label={item.text}>
                   <ZIcon name={item.done ? 'check-c' : 'square'} size={20} />
                 </button>
-                <span dir={isHebrew(item.text) ? 'rtl' : 'ltr'} style={{ flex: 1, fontSize: 15, color: item.done ? 'var(--ink-mute)' : 'var(--ink-2)', textDecoration: item.done ? 'line-through' : 'none' }}>{item.text}</span>
+                <span dir={isHebrew(item.text) ? 'rtl' : 'ltr'} style={{ flex: 1, fontSize: 13, color: item.done ? 'var(--ink-mute)' : 'var(--ink-2)', textDecoration: item.done ? 'line-through' : 'none' }}>{item.text}</span>
                 <button onClick={() => removeItem(idx)} style={ghostIcon} aria-label={t('common.remove')}>
                   <ZIcon name="x" size={18} />
                 </button>
@@ -314,7 +314,7 @@ function TaskGroup({ label, count, tint, tasks, ...rowProps }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span style={{ width: 4, height: 14, borderRadius: 2, background: tint, flexShrink: 0 }} />
         <p className="z-eyebrow">{label}</p>
-        <span style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', marginInlineStart: 'auto' }}>{count}</span>
+        <span style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', marginInlineStart: 'auto' }}>{count}</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <AnimatePresence mode="popLayout">
@@ -398,9 +398,9 @@ export default function Tasks() {
       <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--surface-2)', borderRadius: 'var(--r-ctl)', marginBottom: 24 }}>
         {FILTERS.map(f => (
           <button key={f.id} onClick={() => setFilter(f.id)} aria-pressed={filter === f.id} style={{
-            flex: 1, minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-chip)', fontFamily: 'inherit', cursor: 'pointer',
+            flex: 1, minHeight: 40, padding: '0 8px', borderRadius: 'var(--r-chip)', fontFamily: 'inherit', cursor: 'pointer',
             background: filter === f.id ? 'var(--surface)' : 'transparent',
-            border: 'none', fontSize: 15, fontWeight: 600,
+            border: 'none', fontSize: 13, fontWeight: 600,
             color: filter === f.id ? 'var(--ink)' : 'var(--ink-mute)',
             boxShadow: filter === f.id ? 'var(--shadow-sm)' : 'none',
             transition: 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard)',
@@ -422,7 +422,7 @@ export default function Tasks() {
       {/* Empty state */}
       {!loading && filtered.length === 0 && (
         <div style={{ textAlign: 'center', padding: 32 }}>
-          <p style={{ fontSize: 17, color: 'var(--ink)', marginBottom: 16 }}>
+          <p style={{ fontSize: 15, color: 'var(--ink)', marginBottom: 16 }}>
             {filter === 'pending' ? t('tasks.allCaughtUp') : t('tasks.nothingHere')}
           </p>
           <button onClick={() => setShowAdd(true)} className="z-btn-secondary">{t('tasks.newTask')}</button>

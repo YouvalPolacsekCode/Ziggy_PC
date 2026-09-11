@@ -292,7 +292,7 @@ function LangTile({ flag, label, selected, onSelect }) {
       aria-pressed={selected}
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-        minHeight: 64, padding: '20px 12px', borderRadius: 'var(--r-card)',
+        minHeight: 56, padding: '20px 12px', borderRadius: 'var(--r-card)',
         background: selected ? 'var(--surface-2)' : 'var(--surface)',
         border: `0.5px solid ${selected ? 'var(--line-2)' : 'var(--line)'}`,
         cursor: 'pointer', fontFamily: 'inherit',
@@ -301,7 +301,7 @@ function LangTile({ flag, label, selected, onSelect }) {
     >
       {/* Country flags are the one emoji allowed as a glyph. */}
       <span style={{ fontSize: 34, lineHeight: '41px' }} aria-hidden>{flag}</span>
-      <span style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{label}</span>
+      <span style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{label}</span>
     </button>
   )
 }
@@ -564,7 +564,7 @@ function StepCoordinator({ onNext, onBack, t }) {
       title={t('onboarding.coord.title') || 'Zigbee coordinator'}
       subtitle={t('onboarding.coord.subtitle') || 'Optional — needed only for Zigbee devices (sensors, bulbs, switches).'}
     >
-      <div className="z-card" style={{ padding: 16 }}>
+      <div className="z-card" style={{ padding: 12 }}>
         {loading ? (
           <Loader2 size={20} className="z-spin" style={{ color: 'var(--ink-mute)' }} />
         ) : !haOnline ? (
@@ -747,7 +747,7 @@ function StepRooms({ onNext, onBack, addToast, t }) {
               onClick={() => toggle(name)}
               aria-pressed={on}
               style={{
-                display: 'flex', alignItems: 'center', gap: 12, minHeight: 56,
+                display: 'flex', alignItems: 'center', gap: 12, minHeight: 48,
                 padding: '12px 16px', borderRadius: 'var(--r-ctl)',
                 background: on ? 'var(--surface-2)' : 'var(--surface)',
                 border: `0.5px solid ${on ? 'var(--line-2)' : 'var(--line)'}`,
@@ -756,7 +756,7 @@ function StepRooms({ onNext, onBack, addToast, t }) {
               }}
             >
               <RoomIcon size={24} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-2)', flexShrink: 0 }} />
-              <span style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', flex: 1, minWidth: 0 }}>{name}</span>
+              <span style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', flex: 1, minWidth: 0 }}>{name}</span>
               {on && <Check size={20} strokeWidth={2} style={{ color: 'var(--ink)', flexShrink: 0 }} />}
             </button>
           )
@@ -823,7 +823,7 @@ function StepDeviceCategories({ onNext, onBack, draft, onDraftChange, t }) {
               aria-pressed={on}
               style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                minHeight: 64, padding: '20px 12px', borderRadius: 'var(--r-card)',
+                minHeight: 56, padding: '20px 12px', borderRadius: 'var(--r-card)',
                 background: on ? 'var(--surface-2)' : 'var(--surface)',
                 border: `0.5px solid ${on ? 'var(--line-2)' : 'var(--line)'}`,
                 cursor: 'pointer', fontFamily: 'inherit',
@@ -832,8 +832,8 @@ function StepDeviceCategories({ onNext, onBack, draft, onDraftChange, t }) {
             >
               {CatIcon
                 ? <CatIcon size={24} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-2)' }} />
-                : <span style={{ fontSize: 22, lineHeight: '24px' }} aria-hidden>{c.flag}</span>}
-              <span style={{ fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', textAlign: 'center' }}>
+                : <span style={{ fontSize: 20, lineHeight: '24px' }} aria-hidden>{c.flag}</span>}
+              <span style={{ fontSize: 13, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', textAlign: 'center' }}>
                 {t(c.key) || c.defaultLabel}
               </span>
             </button>
@@ -923,7 +923,7 @@ function StepNotifications({ onNext, onBack, addToast, t }) {
       subtitle={t('onboarding.notif.subtitle') || 'Get push alerts for motion, doors, leaks, and offline devices.'}
       icon={Bell}
     >
-      <div className="z-card" style={{ padding: 16, marginBottom: 16 }}>
+      <div className="z-card" style={{ padding: 12, marginBottom: 16 }}>
         <p className="z-body">
           {status === 'granted'
             ? (t('onboarding.notif.allowed') || 'Notifications allowed ✓')
@@ -969,12 +969,12 @@ function StepSuggestedAutomations({ onNext, onBack, t }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {items.map(it => (
             <div key={it.id || it.name} className="z-card-sm" style={{
-              minHeight: 56, padding: '12px 16px',
+              minHeight: 48, padding: '12px 16px',
               display: 'flex', alignItems: 'center', gap: 12,
             }}>
               <Zap size={24} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-2)', flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{it.name}</p>
+                <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{it.name}</p>
                 <p className="z-subhead" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {it.description}
                 </p>
@@ -1044,7 +1044,7 @@ function ChoiceCard({ title, body, selected, onClick }) {
       onClick={onClick}
       aria-pressed={selected}
       style={{
-        width: '100%', textAlign: 'start', minHeight: 64,
+        width: '100%', textAlign: 'start', minHeight: 56,
         padding: '12px 16px', borderRadius: 'var(--r-card)',
         background: selected ? 'var(--surface-2)' : 'var(--surface)',
         border: `0.5px solid ${selected ? 'var(--line-2)' : 'var(--line)'}`,
@@ -1054,7 +1054,7 @@ function ChoiceCard({ title, body, selected, onClick }) {
       }}
     >
       <div style={{ minWidth: 0 }}>
-        <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{title}</p>
+        <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{title}</p>
         <p className="z-subhead" style={{ marginTop: 2 }}>{body}</p>
       </div>
       {selected && <Check size={20} strokeWidth={2} style={{ color: 'var(--ink)', flexShrink: 0 }} />}
@@ -1117,7 +1117,7 @@ function StepLayout({ title, subtitle, icon: Icon, children }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <header style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
         {Icon && (
-          <div style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
             <Icon size={20} strokeWidth={1.75} style={{ color: 'var(--ink-2)' }} aria-hidden />
           </div>
         )}
@@ -1132,7 +1132,7 @@ function StepLayout({ title, subtitle, icon: Icon, children }) {
 function FormField({ label, hint, children, style }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, ...(style || {}) }}>
-      <label style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink)', fontWeight: 600 }}>{label}</label>
+      <label style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ink)', fontWeight: 600 }}>{label}</label>
       {children}
       {hint && <p className="z-footnote" style={{ marginTop: 2 }}>{hint}</p>}
     </div>
@@ -1144,7 +1144,7 @@ function Row({ children }) {
 }
 
 function ErrorText({ children }) {
-  return <p role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)', margin: '4px 0 0' }}>{children}</p>
+  return <p role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)', margin: '4px 0 0' }}>{children}</p>
 }
 
 // The one inverted (ink-on-bg) element per step; `.z-button` supplies the
@@ -1166,10 +1166,10 @@ function SecondaryBtn({ children, style, className, ...rest }) {
 }
 
 const inputStyle = {
-  width: '100%', boxSizing: 'border-box', minHeight: 44,
+  width: '100%', boxSizing: 'border-box', minHeight: 40,
   padding: '12px 16px', borderRadius: 'var(--r-ctl)',
   border: '0.5px solid var(--line)', background: 'var(--surface)',
-  color: 'var(--ink)', fontSize: 17, lineHeight: 1.3, fontFamily: 'inherit',
+  color: 'var(--ink)', fontSize: 15, lineHeight: 1.3, fontFamily: 'inherit',
   outline: 'none',
 }
 
@@ -1177,7 +1177,7 @@ const successBox = {
   display: 'flex', alignItems: 'center', gap: 8,
   padding: '12px 16px', borderRadius: 'var(--r-ctl)',
   background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))',
-  color: 'var(--ok-text)', fontSize: 15, lineHeight: '20px', fontWeight: 500,
+  color: 'var(--ok-text)', fontSize: 13, lineHeight: '20px', fontWeight: 500,
 }
 
 const shellStyles = {
@@ -1202,7 +1202,7 @@ const shellStyles = {
   },
   skipBtn: {
     background: 'transparent', border: 'none',
-    color: 'var(--ink-mute)', fontSize: 15, fontWeight: 500, minHeight: 44,
+    color: 'var(--ink-mute)', fontSize: 13, fontWeight: 500, minHeight: 40,
     cursor: 'pointer', fontFamily: 'inherit',
     padding: '8px 16px',
   },

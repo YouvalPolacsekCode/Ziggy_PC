@@ -32,7 +32,7 @@ function ClimateGroupRow({ status, onToggle, onSync, onView, onEdit, onDelete })
 
   return (
     <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={T_ENTER}>
-      <div style={{ padding: 16, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+      <div style={{ padding: 12, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 16 }}>
         <button onClick={onView} title={t('automations.smartClimate.view')} aria-label={t('automations.smartClimate.view')}
           style={{ ...cardIconBtn(enabled ? 'var(--ink-2)' : 'var(--ink-faint)'), background: 'var(--surface-2)' }}>
           <Thermometer size={22} strokeWidth={1.75} />

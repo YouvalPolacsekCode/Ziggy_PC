@@ -89,7 +89,7 @@ function CameraCard({ camera, onExpand, motionEvents }) {
             width: '100%', height: '100%',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexDirection: 'column', gap: 8,
-            color: 'var(--ink-mute)', fontSize: 15, lineHeight: '20px',
+            color: 'var(--ink-mute)', fontSize: 13, lineHeight: '20px',
           }}>
             <CameraOff size={28} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-faint)' }} />
             <span>{i18nT('cameras.noFeed')}</span>
@@ -102,7 +102,7 @@ function CameraCard({ camera, onExpand, motionEvents }) {
             onClick={e => { e.stopPropagation(); onExpand(camera) }}
             style={{
               position: 'absolute', top: 8, insetInlineEnd: 8,
-              width: 44, height: 44, borderRadius: 'var(--r-ctl)',
+              width: 40, height: 40, borderRadius: 'var(--r-ctl)',
               background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
               border: 'none', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -129,9 +129,9 @@ function CameraCard({ camera, onExpand, motionEvents }) {
       </div>
 
       {/* Caption */}
-      <div style={{ padding: '8px 8px 8px 16px', minHeight: 56, display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ padding: '8px 8px 8px 16px', minHeight: 48, display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {camera.name}
           </p>
           <p className="z-footnote z-mono" style={{ marginTop: 2 }}>
@@ -206,7 +206,7 @@ function LiveModal({ camera, onClose }) {
             borderRadius: 'var(--r-card) var(--r-card) 0 0',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-              <span style={{ color: '#fff', fontSize: 17, lineHeight: '22px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{camera.name}</span>
+              <span style={{ color: '#fff', fontSize: 15, lineHeight: '22px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{camera.name}</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 999, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, lineHeight: '13px', fontWeight: 500, flexShrink: 0 }}>
                 <span className="z-dot" style={{ background: 'var(--err)' }} />
                 {i18nT('cameras.liveBadge')}
@@ -215,7 +215,7 @@ function LiveModal({ camera, onClose }) {
             <button
               onClick={onClose}
               aria-label={i18nT('common.close')}
-              style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'rgba(0,0,0,0.6)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+              style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'rgba(0,0,0,0.6)', border: 'none', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
             >
               <X size={20} strokeWidth={1.75} />
             </button>
@@ -243,12 +243,12 @@ function MotionLog({ events }) {
           key={`${ev.entity_id}-${ev.timestamp}-${i}`}
           style={{
             display: 'flex', alignItems: 'center', gap: 12,
-            minHeight: 44, padding: '8px 0',
+            minHeight: 40, padding: '8px 0',
             borderBottom: i < Math.min(events.length, 50) - 1 ? '0.5px solid var(--line)' : 'none',
           }}
         >
           <span className="z-dot" style={{ flexShrink: 0, background: ev.type === 'camera' ? 'var(--info)' : 'var(--err)' }} />
-          <span style={{ flex: 1, fontSize: 15, lineHeight: '20px', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ flex: 1, fontSize: 13, lineHeight: '20px', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {ev.name || friendlyName(ev.entity_id)}
           </span>
           <span className="z-footnote z-mono" style={{ flexShrink: 0 }}>
@@ -332,7 +332,7 @@ export default function Cameras() {
       )}
 
       {/* Motion log */}
-      <div className="z-card" style={{ padding: 16 }}>
+      <div className="z-card" style={{ padding: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <p className="z-eyebrow">{i18nT('cameras.motionLog24h')}</p>
           <span className="z-footnote z-mono">

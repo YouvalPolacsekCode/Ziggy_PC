@@ -18,7 +18,7 @@ import { getCameras } from '../../lib/api'
 function Field({ label, hint, children }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)' }}>{label}</span>
+      <span style={{ fontSize: 13, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)' }}>{label}</span>
       {children}
       {hint && <span className="z-footnote">{hint}</span>}
     </label>
@@ -119,12 +119,12 @@ function CommandButtonForm({ config, onChange }) {
       <Field label="Params (JSON)" hint='e.g. {"room": "living_room"}'>
         <textarea
           className="z-input z-code"
-          style={{ minHeight: 88, fontSize: 13, lineHeight: '18px', resize: 'vertical' }}
+          style={{ minHeight: 88, fontSize: 12, lineHeight: '18px', resize: 'vertical' }}
           value={paramsText}
           onChange={e => setParamsText(e.target.value)}
           onBlur={onParamsBlur}
         />
-        {paramsErr && <span style={{ fontSize: 13, color: 'var(--err-text)' }}>{paramsErr}</span>}
+        {paramsErr && <span style={{ fontSize: 12, color: 'var(--err-text)' }}>{paramsErr}</span>}
       </Field>
     </>
   )
@@ -204,7 +204,7 @@ export function SectionConfigSheet({ section, onClose }) {
             </p>
           )}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, padding: 16, borderTop: '0.5px solid var(--line)' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, padding: 12, borderTop: '0.5px solid var(--line)' }}>
           <button onClick={onClose} className="z-btn-secondary">Cancel</button>
           <button onClick={save} className="z-btn-primary">Save</button>
         </div>

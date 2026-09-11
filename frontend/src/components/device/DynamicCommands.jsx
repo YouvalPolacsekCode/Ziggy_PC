@@ -50,21 +50,21 @@ function FieldInput({ field, value, onChange }) {
             className="z-input z-mono"
             style={{ width: 104, textAlign: 'end' }}
           />
-          {unit && <span style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{unit.trim()}</span>}
+          {unit && <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{unit.trim()}</span>}
         </div>
       )
     }
 
     case 'boolean':
       return (
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 12, minHeight: 44, cursor: 'pointer' }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 12, minHeight: 40, cursor: 'pointer' }}>
           <input
             type="checkbox"
             checked={Boolean(value ?? field.default ?? false)}
             onChange={(e) => onChange(e.target.checked)}
             style={{ width: 20, height: 20, accentColor: 'var(--ink)' }}
           />
-          <span style={{ fontSize: 17, color: 'var(--ink)' }}>{field.label}</span>
+          <span style={{ fontSize: 15, color: 'var(--ink)' }}>{field.label}</span>
         </label>
       )
 
@@ -107,7 +107,7 @@ function FieldInput({ field, value, onChange }) {
             className="z-input z-mono"
             style={{ width: 104, textAlign: 'end' }}
           />
-          <span style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{i18nT('dynCmd.minutes')}</span>
+          <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{i18nT('dynCmd.minutes')}</span>
         </div>
       )
     }
@@ -184,11 +184,11 @@ function CommandRow({ entityId, cmd, onExecuted }) {
           display: 'flex', flexDirection: 'column', gap: 12,
         }}>
           {cmd.description && (
-            <div style={{ fontSize: 15, color: 'var(--ink-mute)' }}>{cmd.description}</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{cmd.description}</div>
           )}
           {cmd.fields.map((f) => (
             <div key={f.name} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ fontSize: 13, color: 'var(--ink-mute)' }}>
+              <span style={{ fontSize: 12, color: 'var(--ink-mute)' }}>
                 {f.label}{f.required ? ' *' : ''}
               </span>
               <FieldInput
@@ -211,7 +211,7 @@ function CommandRow({ entityId, cmd, onExecuted }) {
 
       {result && (
         <div style={{
-          marginTop: 8, fontSize: 13,
+          marginTop: 8, fontSize: 12,
           color: result.ok ? 'var(--ok-text)' : 'var(--err-text)',
         }}>
           {result.message}
@@ -273,7 +273,7 @@ export default function DynamicCommands({ entityId, hideVerbs }) {
         aria-expanded={expanded}
         className="z-headline"
         style={{
-          width: '100%', minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          width: '100%', minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: 0, background: 'transparent', border: 'none',
           cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start',
         }}

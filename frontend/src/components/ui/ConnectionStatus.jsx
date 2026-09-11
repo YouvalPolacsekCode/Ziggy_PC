@@ -48,7 +48,7 @@ export function ConnectionStatus() {
       style={{
         position: 'sticky', top: 0, zIndex: 10,
         background: bg, color: 'var(--on-accent)',
-        fontSize: 15, fontWeight: 500, textAlign: 'center', padding: '8px 16px',
+        fontSize: 13, fontWeight: 500, textAlign: 'center', padding: '8px 16px',
         animation: 'ziggy-banner-in var(--dur-enter) var(--ease-enter)',
       }}
     >

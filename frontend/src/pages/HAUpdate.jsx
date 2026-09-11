@@ -57,12 +57,12 @@ function RiskCard({ risk }) {
       <button
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
-        style={{ width: '100%', minHeight: 56, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start', color: 'var(--ink)' }}
+        style={{ width: '100%', minHeight: 48, display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start', color: 'var(--ink)' }}
       >
         <span className="z-dot" style={{ background: weightColor, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{risk.feature}</p>
-          <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: open ? 'normal' : 'nowrap' }}>{risk.message}</p>
+          <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{risk.feature}</p>
+          <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: open ? 'normal' : 'nowrap' }}>{risk.message}</p>
         </div>
         {!risk.verifiable && (
           <span className="z-caption" style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-chip)', padding: '2px 8px', flexShrink: 0 }}>{t('haUpdate.unverified')}</span>
@@ -86,7 +86,7 @@ function RiskCard({ risk }) {
             )}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '12px 16px', borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
               <Info size={20} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-              <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink)', margin: 0 }}>{risk.action}</p>
+              <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ink)', margin: 0 }}>{risk.action}</p>
             </div>
           </div>
         </div>
@@ -102,10 +102,10 @@ function HistoryItem({ entry }) {
   const date = new Date(entry.detected_at)
   const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '8px 0', borderBottom: '0.5px solid var(--line)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, padding: '8px 0', borderBottom: '0.5px solid var(--line)' }}>
       <span className="z-dot" style={{ background: cfg.color, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span className="z-code">{entry.current_version}</span>
           <ArrowRight size={16} strokeWidth={1.75} className="icon-flip-rtl" aria-hidden style={{ color: 'var(--ink-faint)' }} />
           <span className="z-code">{entry.latest_version}</span>
@@ -163,7 +163,7 @@ export default function HAUpdate() {
     ? new Date(status.checked_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : null
 
-  const card = { padding: 16, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)' }
+  const card = { padding: 12, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)' }
 
   return (
     <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -204,7 +204,7 @@ export default function HAUpdate() {
           {/* ── Status banner ── */}
           <div style={{ ...card, background: cfg.bg, border: `0.5px solid ${cfg.border}` }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: `color-mix(in srgb, ${cfg.color} 15%, var(--surface))`, color: cfg.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: `color-mix(in srgb, ${cfg.color} 15%, var(--surface))`, color: cfg.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Icon name={cfg.icon} size={24} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -218,14 +218,14 @@ export default function HAUpdate() {
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
                   <div>
                     <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('haUpdate.current')}</p>
-                    <p className="z-code" style={{ fontSize: 22, lineHeight: '28px', color: 'var(--ink)', fontWeight: 600 }}>{status.current_version || '—'}</p>
+                    <p className="z-code" style={{ fontSize: 20, lineHeight: '28px', color: 'var(--ink)', fontWeight: 600 }}>{status.current_version || '—'}</p>
                   </div>
                   {status.update_available && (
                     <>
                       <ArrowRight size={24} strokeWidth={1.75} className="icon-flip-rtl" aria-hidden style={{ color: 'var(--ink-faint)', marginBottom: 2 }} />
                       <div>
                         <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('haUpdate.newVersion')}</p>
-                        <p className="z-code" style={{ fontSize: 22, lineHeight: '28px', color: cfg.text, fontWeight: 600 }}>{status.latest_version}</p>
+                        <p className="z-code" style={{ fontSize: 20, lineHeight: '28px', color: cfg.text, fontWeight: 600 }}>{status.latest_version}</p>
                       </div>
                     </>
                   )}
@@ -284,10 +284,10 @@ export default function HAUpdate() {
 
           {/* ── Backup reminder ── */}
           {status.update_available && status.backup_reminder && (
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 16, borderRadius: 'var(--r-card)', background: 'color-mix(in srgb, var(--warn) 8%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--warn) 25%, var(--line))' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 12, borderRadius: 'var(--r-card)', background: 'color-mix(in srgb, var(--warn) 8%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--warn) 25%, var(--line))' }}>
               <Archive size={20} strokeWidth={1.75} aria-hidden style={{ color: 'var(--warn)', flexShrink: 0, marginTop: 1 }} />
               <div>
-                <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{t('haUpdate.backupBefore')}</p>
+                <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)' }}>{t('haUpdate.backupBefore')}</p>
                 <p className="z-subhead" style={{ marginTop: 2 }}>{t('haUpdate.backupWhere')}</p>
               </div>
             </div>
@@ -338,7 +338,7 @@ export default function HAUpdate() {
                   if (val === undefined) return null
                   return (
                     <div key={key} className="z-card-sm" style={{ padding: '12px 16px', background: 'var(--surface-2)' }}>
-                      <p className="z-mono" style={{ fontSize: 22, lineHeight: '28px', fontWeight: 600, color: val > 0 ? 'var(--ink)' : 'var(--ink-faint)' }}>{val}</p>
+                      <p className="z-mono" style={{ fontSize: 20, lineHeight: '28px', fontWeight: 600, color: val > 0 ? 'var(--ink)' : 'var(--ink-faint)' }}>{val}</p>
                       <p className="z-footnote" style={{ marginTop: 2 }}>{t(labelKey)}</p>
                     </div>
                   )
@@ -369,7 +369,7 @@ export default function HAUpdate() {
               <button
                 onClick={() => setShowRaw(v => !v)}
                 aria-expanded={showRaw}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', minHeight: 44, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', minHeight: 40, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
               >
                 <p className="z-eyebrow" style={{ margin: 0 }}>{t('haUpdate.rawBreaking')}</p>
                 <ChevronRight size={20} strokeWidth={1.75} className="icon-flip-rtl" aria-hidden
@@ -401,7 +401,7 @@ export default function HAUpdate() {
       )}
 
       {/* ── Safety note ── */}
-      <div className="z-footnote" style={{ padding: 16, borderRadius: 'var(--r-card)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
+      <div className="z-footnote" style={{ padding: 12, borderRadius: 'var(--r-card)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
         <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{t('haUpdate.safetyLabel')}</strong> {t('haUpdate.safetyText')}
       </div>
     </div>

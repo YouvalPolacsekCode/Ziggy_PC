@@ -74,7 +74,7 @@ html, body, #root {
 
   /* Room tile height — bumped on desktop via media query below so anchor
      cards don't look like phone thumbs stretched wide. */
-  --rooms-tile-h: 160px;
+  --rooms-tile-h: 136px;
 
   /* ── Spacing + shape + motion tokens ────────────────────────────────────
      4px grid, 8px rhythm. Four corner radii. Three durations, two curves.
@@ -100,7 +100,7 @@ html, body, #root {
 }
 
 @media (min-width: 1024px) {
-  :root { --rooms-tile-h: 200px; }
+  :root { --rooms-tile-h: 172px; }
 }
 
 /* Rooms list grid — 2 cols on phones (original mobile tile density),
@@ -130,13 +130,11 @@ html, body, #root {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
-.z-quick-controls-grid > :only-child { grid-column: 1 / -1; }
 @media (min-width: 768px) {
   .z-quick-controls-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
   }
-  .z-quick-controls-grid > :only-child { grid-column: span 2; }
 }
 
 /* Dashboard outer frame. The desktop "no-scroll" viewport clamp that used
@@ -145,7 +143,7 @@ html, body, #root {
 .z-dashboard-outer {
   max-width: var(--page-max-w-wide);
   margin: 0 auto;
-  padding: 24px 20px 96px;
+  padding: 20px 16px 96px;
 }
 @media (min-width: 1024px) {
   .z-dashboard-outer { padding-bottom: 32px; }
@@ -291,25 +289,25 @@ html, body, #root {
      One scale, mapped to Apple's Large Dynamic Type styles (1pt = 1px on the
      web). Nothing renders under .z-caption (11px, the iOS minimum).
 
-       .z-display   Large Title  34 / 700 / 41
-       .z-title     Title 2      22 / 600 / 28
-       .z-title3    Title 3      20 / 600 / 25
-       .z-headline  Headline     17 / 600 / 22
-       .z-body      Body         17 / 400 / 22
-       .z-subhead   Subhead      15 / 400 / 20
-       .z-footnote  Footnote     13 / 400 / 18
-       .z-caption   Caption      11 / 500 / 13
+       .z-display   Large Title  34 / 700 / 40   (kept — page titles read well)
+       .z-title     Title 2      20 / 600 / 26
+       .z-title3    Title 3      18 / 600 / 23
+       .z-headline  Headline     15 / 600 / 20   (names of things)
+       .z-body      Body         15 / 400 / 20
+       .z-subhead   Subhead      13 / 400 / 18
+       .z-footnote  Footnote     12 / 400 / 16
+       .z-caption   Caption      11 / 500 / 14   (floor — iOS minimum)
        .z-eyebrow   Footnote, uppercase, secondary — a grouped-list header */
-  .z-display  { font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }
-  .z-title    { font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -0.015em; color: var(--ink); }
-  .z-title3   { font-size: 20px; line-height: 25px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
-  .z-headline { font-size: 17px; line-height: 22px; font-weight: 600; color: var(--ink); }
-  .z-body     { font-size: 17px; line-height: 22px; font-weight: 400; color: var(--ink); }
-  .z-subhead  { font-size: 15px; line-height: 20px; font-weight: 400; color: var(--ink-mute); }
-  .z-footnote { font-size: 13px; line-height: 18px; font-weight: 400; color: var(--ink-mute); }
-  .z-caption  { font-size: 11px; line-height: 13px; font-weight: 500; color: var(--ink-mute); }
+  .z-display  { font-size: 34px; line-height: 40px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }
+  .z-title    { font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: -0.015em; color: var(--ink); }
+  .z-title3   { font-size: 18px; line-height: 23px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+  .z-headline { font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink); }
+  .z-body     { font-size: 15px; line-height: 20px; font-weight: 400; color: var(--ink); }
+  .z-subhead  { font-size: 13px; line-height: 18px; font-weight: 400; color: var(--ink-mute); }
+  .z-footnote { font-size: 12px; line-height: 16px; font-weight: 400; color: var(--ink-mute); }
+  .z-caption  { font-size: 11px; line-height: 14px; font-weight: 500; color: var(--ink-mute); }
   .z-eyebrow {
-    font-size: 13px; line-height: 18px; font-weight: 600;
+    font-size: 12px; line-height: 16px; font-weight: 600;
     letter-spacing: 0.06em; text-transform: uppercase;
     color: var(--ink-mute);
   }
@@ -328,7 +326,7 @@ html, body, #root {
 
      Line-height: Heebo's descenders sit low, so Hebrew gets a small bump
      per role to restore comfortable rhythm without breaking hierarchy. */
-  [dir="rtl"] .z-display { letter-spacing: 0; line-height: 44px; }
+  [dir="rtl"] .z-display { letter-spacing: 0; line-height: 43px; }
   [dir="rtl"] .z-title,
   [dir="rtl"] .z-title3  { letter-spacing: 0; }
   [dir="rtl"] .z-eyebrow { letter-spacing: 0.03em; }
@@ -452,9 +450,9 @@ html, body, #root {
   /* Chip — the one small tag. 13px, 4/12 padding, capsule. */
   .z-chip {
     display: inline-flex; align-items: center; gap: 8px;
-    padding: 4px 12px; border-radius: 999px;
+    padding: 3px 10px; border-radius: 999px;
     background: var(--surface-2); border: 0.5px solid var(--line);
-    font-size: 13px; font-weight: 500; color: var(--ink-2); line-height: 18px;
+    font-size: 12px; font-weight: 500; color: var(--ink-2); line-height: 16px;
   }
   .z-chip-accent {
     background: var(--accent-2); color: var(--accent-text);
@@ -463,14 +461,14 @@ html, body, #root {
   /* Pill: alias of chip. Kept so old call sites keep working. */
   .z-pill {
     display: inline-flex; align-items: center; gap: 8px;
-    padding: 4px 12px; border-radius: 999px;
+    padding: 3px 10px; border-radius: 999px;
     background: var(--surface); border: 0.5px solid var(--line);
-    font-size: 13px; font-weight: 500; color: var(--ink-2); line-height: 18px;
+    font-size: 12px; font-weight: 500; color: var(--ink-2); line-height: 16px;
   }
 
   /* Icon button — 44px target, always */
   .z-icon-btn {
-    width: 44px; height: 44px; border-radius: var(--r-ctl);
+    width: 40px; height: 40px; border-radius: var(--r-ctl);
     background: var(--surface-2); border: 0.5px solid var(--line);
     display: flex; align-items: center; justify-content: center;
     color: var(--ink-2); cursor: pointer; flex-shrink: 0;
@@ -486,8 +484,8 @@ html, body, #root {
   /* Buttons — Body size, 44px min target, no opacity-dim on hover */
   .z-btn-primary {
     background: var(--ink); color: var(--bg);
-    border: none; border-radius: var(--r-ctl); padding: 12px 20px; min-height: 44px;
-    font-family: inherit; font-size: 17px; font-weight: 600; line-height: 1.2; cursor: pointer;
+    border: none; border-radius: var(--r-ctl); padding: 10px 16px; min-height: 40px;
+    font-family: inherit; font-size: 15px; font-weight: 600; line-height: 1.2; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     transition: background var(--dur-press) var(--ease-standard);
   }
@@ -495,8 +493,8 @@ html, body, #root {
 
   .z-btn-secondary {
     background: var(--surface); color: var(--ink);
-    border: 0.5px solid var(--line); border-radius: var(--r-ctl); padding: 12px 20px; min-height: 44px;
-    font-family: inherit; font-size: 17px; font-weight: 600; line-height: 1.2; cursor: pointer;
+    border: 0.5px solid var(--line); border-radius: var(--r-ctl); padding: 10px 16px; min-height: 40px;
+    font-family: inherit; font-size: 15px; font-weight: 600; line-height: 1.2; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     transition: background var(--dur-press) var(--ease-standard);
   }
@@ -506,14 +504,14 @@ html, body, #root {
   .z-input {
     background: var(--surface); border: 0.5px solid var(--line);
     border-radius: var(--r-ctl); color: var(--ink); font-family: inherit;
-    font-size: 17px; line-height: 1.3; padding: 12px 16px; min-height: 44px; outline: none; width: 100%;
+    font-size: 16px; line-height: 1.3; padding: 10px 14px; min-height: 40px; outline: none; width: 100%;
     transition: border-color var(--dur-press) var(--ease-standard);
   }
   .z-input:focus { border-color: var(--ink-mute); }
 
   /* Toggle track — CSS twin of components/ui/Toggle.jsx (44×26, 22px knob) */
   .z-toggle {
-    position: relative; width: 44px; height: 26px;
+    position: relative; width: 40px; height: 24px;
     border-radius: 999px; background: var(--line-2);
     transition: background var(--dur-state) var(--ease-standard); border: none; padding: 0; cursor: pointer;
     flex-shrink: 0;
@@ -521,23 +519,23 @@ html, body, #root {
   .z-toggle[aria-checked="true"] { background: var(--ok); }
   .z-toggle::after {
     content: ''; position: absolute; top: 2px; left: 2px;
-    width: 22px; height: 22px; border-radius: 50%;
+    width: 20px; height: 20px; border-radius: 50%;
     background: var(--surface);
     box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 22%, transparent);
     transition: transform var(--dur-state) var(--ease-standard);
   }
-  .z-toggle[aria-checked="true"]::after { transform: translateX(18px); }
+  .z-toggle[aria-checked="true"]::after { transform: translateX(16px); }
   [dir="rtl"] .z-toggle::after { left: auto; right: 2px; }
-  [dir="rtl"] .z-toggle[aria-checked="true"]::after { transform: translateX(-18px); }
+  [dir="rtl"] .z-toggle[aria-checked="true"]::after { transform: translateX(-16px); }
 
   /* Voice wave */
   .z-wave-bar { width: 3px; background: var(--accent); border-radius: 2px; }
 
   /* Nav items (desktop sidebar) */
   .z-nav-item {
-    display: flex; align-items: center; gap: 12px;
-    padding: 10px 12px; border-radius: var(--r-ctl); min-height: 44px;
-    font-size: 15px; font-weight: 500; cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: var(--r-ctl); min-height: 40px;
+    font-size: 14px; font-weight: 500; cursor: pointer;
     transition: background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard); color: var(--ink-mute);
     background: transparent; border: 0.5px solid transparent;
     text-decoration: none; width: 100%;
@@ -554,16 +552,16 @@ html, body, #root {
   .z-page {
     max-width: var(--page-max-w-narrow);
     margin: 0 auto;
-    padding-top: 24px;
-    padding-bottom: 24px;
-    padding-left: max(20px, var(--safe-left));
-    padding-right: max(20px, var(--safe-right));
+    padding-top: 20px;
+    padding-bottom: 20px;
+    padding-left: max(16px, var(--safe-left));
+    padding-right: max(16px, var(--safe-right));
   }
   .z-page-wide { max-width: var(--page-max-w); }
 
   /* Page header — eyebrow, Large Title, optional one-line footnote, and one
      trailing action. Every list page opens with this block. */
-  .z-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+  .z-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
   .z-page-head > div:first-child { min-width: 0; }
   .z-page-head .z-eyebrow { margin-bottom: 4px; }
   .z-page-head .z-footnote { margin-top: 4px; }
@@ -658,7 +656,7 @@ html, body, #root {
 
   /* Section heading */
   .z-section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
-  .z-section-title { font-size: 17px; line-height: 22px; font-weight: 600; color: var(--ink); }
+  .z-section-title { font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink); }
 
   /* Room tile without a photo. Rooms are flat surfaces with a glyph until
      the person adds their own picture — no stock sofa. */
@@ -699,7 +697,7 @@ html, body, #root {
 /* Shared controls keep their silhouette while providing comfortable touch targets. */
 .z-button:active:not(:disabled) { transform: scale(.98); }
 .z-button:disabled { opacity: .45; cursor: not-allowed; }
-@media (pointer: coarse) { .z-button { min-height: 44px; } }
+@media (pointer: coarse) { .z-button { min-height: 40px; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }

@@ -143,7 +143,7 @@ function RoomPickField({ values, setValue, ctx, t }) {
         })}
       </div>
       {resolving && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40 }}>
           <Spinner size={18} />
           <span className="z-subhead" dir="auto">
             {t('automations.smartRoom.designing', { room: values.room?.name || '' })}
@@ -205,7 +205,7 @@ function PresenceField({ values, setValue, ctx, t }) {
   if (values._justCreated && values.occEntity && !chosenInList) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '12px 16px', borderRadius: 'var(--r-ctl)',
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, padding: '12px 16px', borderRadius: 'var(--r-ctl)',
           background: 'color-mix(in srgb, var(--ok) 9%, var(--surface))', border: '0.5px solid color-mix(in srgb, var(--ok) 30%, var(--line))' }}>
           <Check size={20} strokeWidth={2} aria-hidden="true" style={{ color: 'var(--ok)', flexShrink: 0 }} />
           <span className="z-subhead" style={{ color: 'var(--ink)' }} dir="auto">{t('automations.smartRoom.wiz.sensorReady')}</span>
@@ -234,7 +234,7 @@ function PresenceField({ values, setValue, ctx, t }) {
       </div>
       <button type="button" onClick={() => setValue('_creatingSensor', true)}
         className="z-btn-secondary"
-        style={{ alignSelf: 'flex-start', fontSize: 15, fontWeight: 500, color: 'var(--ink-2)', border: '0.5px dashed var(--line-2)' }} dir="auto">
+        style={{ alignSelf: 'flex-start', fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', border: '0.5px dashed var(--line-2)' }} dir="auto">
         <Plus size={18} strokeWidth={1.75} aria-hidden="true" />
         {t('automations.smartRoom.wiz.createMerged')}
       </button>
@@ -337,7 +337,7 @@ function MembersField({ values, ctx, t }) {
         {t('automations.smartRoom.stepsIntro')}
       </p>
       {members.map((m) => (
-        <div key={m.id} style={{ display: 'flex', gap: 12, alignItems: 'center', minHeight: 56, padding: '8px 16px',
+        <div key={m.id} style={{ display: 'flex', gap: 12, alignItems: 'center', minHeight: 48, padding: '8px 16px',
           borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
           <PartIcon member={m} />
           <span className="z-body" style={{ flex: 1, minWidth: 0 }} dir="auto">{m.name}</span>

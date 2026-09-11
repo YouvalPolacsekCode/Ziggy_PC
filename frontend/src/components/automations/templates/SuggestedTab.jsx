@@ -55,7 +55,7 @@ function SuggestionCard({ suggestion, onConfigure, onReject, onSnooze }) {
 
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={T_ENTER}
-      style={{ padding: 16, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', color: isPending ? 'var(--ink)' : 'var(--ink-mute)' }}
+      style={{ padding: 12, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', color: isPending ? 'var(--ink)' : 'var(--ink-mute)' }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
         <p className="z-eyebrow" style={{ margin: 0 }}>{meta.label}</p>
@@ -140,7 +140,7 @@ function SuggestionNudgeStrip({ suggestions, onConfigure, onReject, onSnooze, on
         <p className="z-eyebrow" style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <Lightbulb size={16} strokeWidth={1.75} aria-hidden="true" />{t('automations.tabSuggested')}
         </p>
-        <button onClick={onOpenInbox} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 15, fontWeight: 600, color: 'var(--ink-mute)', minHeight: 44, padding: '0 8px', margin: '0 -8px' }}>
+        <button onClick={onOpenInbox} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, color: 'var(--ink-mute)', minHeight: 40, padding: '0 8px', margin: '0 -8px' }}>
           {t('automations.suggested.seeAll', { n: pending.length })}
         </button>
       </div>

@@ -32,7 +32,7 @@ export default function MediaDiagnostics() {
       </div>
 
       {error && (
-        <div className="bg-err-soft" style={{ color: 'var(--err-text)', fontSize: 15, padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', marginBottom: 16 }}>
+        <div className="bg-err-soft" style={{ color: 'var(--err-text)', fontSize: 13, padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', marginBottom: 16 }}>
           {error}
         </div>
       )}
@@ -65,7 +65,7 @@ export default function MediaDiagnostics() {
 
 function Section({ title, children }) {
   return (
-    <section className="z-card" style={{ marginBottom: 16, padding: 16 }}>
+    <section className="z-card" style={{ marginBottom: 16, padding: 12 }}>
       <h2 className="z-headline" style={{ marginBottom: 12 }}>{title}</h2>
       {children}
     </section>
@@ -74,7 +74,7 @@ function Section({ title, children }) {
 function Pre({ children }) {
   return (
     <pre dir="ltr" className="z-code" style={{
-      fontSize: 13, lineHeight: '18px', color: 'var(--ink)',
+      fontSize: 12, lineHeight: '18px', color: 'var(--ink)',
       background: 'var(--surface-2)',
       border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)',
       padding: 12, margin: 0, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',

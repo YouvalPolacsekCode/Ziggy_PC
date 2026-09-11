@@ -82,10 +82,9 @@ function KindIcon({ kind, customIcon, size = 18, fill = true }) {
 
 // ─── Inline mini-controls ───────────────────────────────────────────────────
 
-// 44×44 always — the HIG default touch target. `size` is kept for callers
-// but no longer shrinks the button below the minimum.
+// 40×40 — comfortably above Apple's 28pt minimum without dominating a tile.
 function ToggleButton({ facts, onClick, size = 'sm' }) {
-  const dim = 44
+  const dim = 40
   const enabled = commandAvailable(facts.entity, 'toggle')
   return (
     <button
@@ -124,7 +123,7 @@ function TempStepper({ facts, onCommand }) {
     }}>
       <button onClick={() => downOk && onCommand('temp_down')} aria-label={i18nT('deviceCard.cooler')} disabled={!downOk}
         title={downOk ? '' : 'temp_down not learned'} style={iconBtn(40, !downOk)}><ArrowDown size={18} /></button>
-      <span className="z-mono" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', minWidth: 40, textAlign: 'center' }}>
+      <span className="z-mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', minWidth: 40, textAlign: 'center' }}>
         {t != null ? `${Math.round(t)}°` : '—'}
       </span>
       <button onClick={() => upOk && onCommand('temp_up')} aria-label={i18nT('deviceCard.warmer')} disabled={!upOk}
@@ -143,7 +142,7 @@ function PlayPauseButton({ facts, onCommand }) {
       aria-label={playing ? i18nT('common.pause') : i18nT('common.play')}
       title={enabled ? '' : 'play/pause not learned'}
       style={{
-        width: 44, height: 44, borderRadius: '50%',
+        width: 40, height: 40, borderRadius: '50%',
         background: 'var(--ink)', color: 'var(--bg)',
         border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
         cursor: enabled ? 'pointer' : 'not-allowed', flexShrink: 0,
@@ -174,8 +173,8 @@ function VolumeBars({ facts }) {
 function CoverButtons({ onCommand }) {
   return (
     <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-      <button onClick={() => onCommand('open')}  style={iconBtn(44)} aria-label={i18nT('common.open')}><ArrowUp size={18} /></button>
-      <button onClick={() => onCommand('close')} style={iconBtn(44)} aria-label={i18nT('common.closed')}><ArrowDown size={18} /></button>
+      <button onClick={() => onCommand('open')}  style={iconBtn(40)} aria-label={i18nT('common.open')}><ArrowUp size={18} /></button>
+      <button onClick={() => onCommand('close')} style={iconBtn(40)} aria-label={i18nT('common.closed')}><ArrowDown size={18} /></button>
     </div>
   )
 }
@@ -191,7 +190,7 @@ function StatusPill({ tone, label }) {
   const c = map[tone] || map.off
   return (
     <span style={{
-      padding: '4px 12px', borderRadius: 999, fontSize: 13, fontWeight: 500,
+      padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 500,
       background: c.bg, color: c.fg, lineHeight: '18px', flexShrink: 0, whiteSpace: 'nowrap',
     }}>{label}</span>
   )
@@ -243,7 +242,7 @@ function InlineControl({ facts, onCommand, variant }) {
     case KIND.HUMIDITY:
     case KIND.POWER_METER:
     case KIND.SENSOR:
-      return <span className="z-mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{facts.stateLabel}</span>
+      return <span className="z-mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{facts.stateLabel}</span>
 
     case KIND.CAMERA:
       return <StatusPill tone="on" label={i18nT('cameras.live')} />
@@ -385,16 +384,16 @@ function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted
   // Dimensions per density. Dense is sized for the 4-col home grid; both
   // keep the name at Headline/Subhead size and the arrow at a 32px target
   // (above the 28pt minimum; 44 would dominate a 128px tile).
-  const padding      = dense ? 12 : 16
+  const padding      = dense ? 10 : 12
   const minHeight    = dense ? 104 : 132
   const aspectRatio  = dense ? '1 / 1' : '1 / 1.05'
   const radius       = 'var(--r-card)'
-  const iconBoxSize  = dense ? 32 : 40
-  const iconSize     = dense ? 18 : 22
-  const arrowSize    = 32
+  const iconBoxSize  = dense ? 28 : 34
+  const iconSize     = dense ? 16 : 19
+  const arrowSize    = 28
   const arrowOffset  = 8
-  const nameSize     = dense ? 15 : 17
-  const stateSize    = 13
+  const nameSize     = dense ? 13 : 15
+  const stateSize    = 12
 
   return (
     <button
@@ -477,19 +476,19 @@ function RowCard({ facts, onCommand, onOpen, dense = false, metrics = [] }) {
       className="z-card"
       style={{
         display: 'flex', alignItems: 'center', gap: 16,
-        padding: dense ? '8px 12px' : '12px 16px', minHeight: 56,
+        padding: dense ? '8px 12px' : '12px 16px', minHeight: 48,
         cursor: 'pointer', borderRadius: 'var(--r-card)',
         transition: 'background var(--dur-press) var(--ease-standard)',
       }}
     >
       {/* Icon tile */}
       <div style={{
-        width: 44, height: 44, borderRadius: 'var(--r-ctl)',
+        width: 40, height: 40, borderRadius: 'var(--r-ctl)',
         background: iconBg, color: iconColor,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexShrink: 0,
       }}>
-        <KindIcon kind={facts.kind} size={22} />
+        <KindIcon kind={facts.kind} size={19} />
       </div>
 
       {/* Name + state + (optional) metric pills */}
@@ -568,7 +567,7 @@ function MetricPills({ metrics }) {
   return (
     <div className="z-mono" style={{
       display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6, alignItems: 'center',
-      fontSize: 13, lineHeight: '18px', color: 'var(--ink-mute)',
+      fontSize: 12, lineHeight: '18px', color: 'var(--ink-mute)',
     }}>
       {visible.map((m, i) => (
         <span
@@ -600,8 +599,8 @@ function CompactCard({ facts, onCommand, onOpen }) {
       <span style={{ color: facts.isOn ? facts.tint : 'var(--ink-mute)', display: 'flex' }}>
         <KindIcon kind={facts.kind} size={16} />
       </span>
-      <span dir="auto" style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{deviceName}</span>
-      <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{facts.stateLabel}</span>
+      <span dir="auto" style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{deviceName}</span>
+      <span className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{facts.stateLabel}</span>
     </button>
   )
 }

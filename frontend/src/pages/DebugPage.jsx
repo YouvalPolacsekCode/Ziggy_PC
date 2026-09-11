@@ -156,22 +156,22 @@ function EventRow({ event, onSelect, selected, onFilterReqId }) {
         transition: 'background var(--dur-press) var(--ease-standard)',
       }}
     >
-      <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)' }}>
+      <span className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)' }}>
         {fmtTime(event.ts)}
       </span>
       <span><ScopeBadge scope={event.scope} /></span>
       <span><LevelBadge level={event.level} /></span>
-      <span style={{ fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {event.step}
-        {data.intent && <span style={{ fontSize: 13, color: 'var(--ink-mute)', marginInlineStart: 8 }}>{data.intent}</span>}
-        {data.message && <span style={{ fontSize: 13, color: 'var(--ink-faint)', marginInlineStart: 8 }}>{truncate(data.message, 60)}</span>}
+        {data.intent && <span style={{ fontSize: 12, color: 'var(--ink-mute)', marginInlineStart: 8 }}>{data.intent}</span>}
+        {data.message && <span style={{ fontSize: 12, color: 'var(--ink-faint)', marginInlineStart: 8 }}>{truncate(data.message, 60)}</span>}
         {event.request_id && (
           <span
             onClick={e => { e.stopPropagation(); onFilterReqId(event.request_id) }}
             title={t('debug.filterTo', { id: event.request_id })}
             className="z-code"
             style={{
-              marginInlineStart: 8, fontSize: 13, color: 'var(--ink-mute)',
+              marginInlineStart: 8, fontSize: 12, color: 'var(--ink-mute)',
               cursor: 'pointer', textDecoration: 'underline dotted',
             }}
           >
@@ -200,38 +200,38 @@ function EventDetail({ event, onClose }) {
         </span>
       </PanelHead>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
         <Row label={t('debug.detailTime')}       value={fmtTime(event.ts)} />
         <Row label={t('debug.detailRequestId')} value={event.request_id} mono />
         <Row label={t('debug.detailEventId')}   value={event.id} mono />
 
         {data.result && (
           <div className={tone.soft} style={{ margin: '12px 0', padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)' }}>
-            <p style={{ fontSize: 15, fontWeight: 600, color: tone.text }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: tone.text }}>
               {t('debug.detailResult', { result: data.result })}
             </p>
-            {data.message && <p style={{ fontSize: 15, color: 'var(--ink)', marginTop: 4 }}>{data.message}</p>}
+            {data.message && <p style={{ fontSize: 13, color: 'var(--ink)', marginTop: 4 }}>{data.message}</p>}
           </div>
         )}
 
         {data.suggestion && (
           <div className="bg-info-soft" style={{ margin: '8px 0', padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)' }}>
-            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('debug.detailSuggestion')}</p>
-            <p style={{ fontSize: 15, color: 'var(--ink)' }}>{data.suggestion}</p>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('debug.detailSuggestion')}</p>
+            <p style={{ fontSize: 13, color: 'var(--ink)' }}>{data.suggestion}</p>
           </div>
         )}
 
         {data.error && (
           <div className="bg-err-soft" style={{ margin: '8px 0', padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)' }}>
-            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--err-text)', marginBottom: 4 }}>{t('debug.detailErrorLabel', { type: data.error_type })}</p>
-            <p className="z-code" style={{ fontSize: 13, color: 'var(--err-text)', wordBreak: 'break-all' }}>{data.error}</p>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--err-text)', marginBottom: 4 }}>{t('debug.detailErrorLabel', { type: data.error_type })}</p>
+            <p className="z-code" style={{ fontSize: 12, color: 'var(--err-text)', wordBreak: 'break-all' }}>{data.error}</p>
           </div>
         )}
 
         <div style={{ marginTop: 16 }}>
           <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('debug.detailData')}</p>
           <pre className="z-code" style={{
-            fontSize: 13, color: 'var(--ink)', background: 'var(--surface-2)',
+            fontSize: 12, color: 'var(--ink)', background: 'var(--surface-2)',
             padding: 12, borderRadius: 'var(--r-ctl)', overflow: 'auto',
             lineHeight: '18px', margin: 0,
             maxHeight: 400, border: '0.5px solid var(--line)',
@@ -281,7 +281,7 @@ function SimulatePanel({ onClose }) {
       <PanelHead onClose={onClose} closeLabel={t('common.close')}>
         <span className="z-headline" style={{ flex: 1 }}>{t('debug.simTitle')}</span>
       </PanelHead>
-      <div style={{ padding: 16, flex: 1, overflow: 'auto' }}>
+      <div style={{ padding: 12, flex: 1, overflow: 'auto' }}>
         <p className="z-subhead" style={{ marginBottom: 12 }}>
           {t('debug.simHelp')}
         </p>
@@ -311,7 +311,7 @@ function SimulatePanel({ onClose }) {
               <p className="z-headline">{result.parsed_intent}</p>
               <p className="z-subhead" style={{ marginTop: 4 }}>{result.reply}</p>
               {result.params && Object.keys(result.params).length > 0 && (
-                <pre className="z-code" style={{ fontSize: 13, lineHeight: '18px', marginTop: 8, marginBottom: 0, color: 'var(--ink-mute)', whiteSpace: 'pre-wrap' }}>
+                <pre className="z-code" style={{ fontSize: 12, lineHeight: '18px', marginTop: 8, marginBottom: 0, color: 'var(--ink-mute)', whiteSpace: 'pre-wrap' }}>
                   {JSON.stringify(result.params, null, 2)}
                 </pre>
               )}
@@ -323,7 +323,7 @@ function SimulatePanel({ onClose }) {
                 {result.events.map(ev => (
                   <div key={ev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', minHeight: 36, padding: '4px 0', borderBottom: '0.5px solid var(--line)' }}>
                     <ScopeBadge scope={ev.scope} />
-                    <span style={{ fontSize: 15, color: 'var(--ink)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.step}</span>
+                    <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.step}</span>
                     {ev.data?.result && <ResultDot result={ev.data.result} />}
                   </div>
                 ))}
@@ -493,7 +493,7 @@ export default function DebugPage() {
     background: active ? 'var(--surface-2)' : 'transparent',
     border: `0.5px solid ${active ? 'var(--line)' : 'transparent'}`,
     color: active ? 'var(--ink)' : 'var(--ink-mute)',
-    fontSize: 15, fontWeight: active ? 600 : 400,
+    fontSize: 13, fontWeight: active ? 600 : 400,
     transition: 'background var(--dur-press) var(--ease-standard)',
   })
 
@@ -558,23 +558,23 @@ export default function DebugPage() {
           display: 'flex', alignItems: 'flex-start', gap: 12,
         }}>
           <div style={{ flex: 1, paddingTop: 12 }}>
-            <p style={{ fontSize: 15, fontWeight: 600, color: selfTestOk ? 'var(--ok-text)' : 'var(--err-text)' }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: selfTestOk ? 'var(--ok-text)' : 'var(--err-text)' }}>
               {selfTestResult.error
                 ? t('debug.errorPrefix', { msg: selfTestResult.error })
                 : selfTestResult.diagnosis}
             </p>
             {selfTestResult.ws_callback_wired === false && (
-              <p style={{ fontSize: 13, color: 'var(--err-text)', marginTop: 4 }}>
+              <p style={{ fontSize: 12, color: 'var(--err-text)', marginTop: 4 }}>
                 {t('debug.wsNotWired')}
               </p>
             )}
             {selfTestResult.ws_callback_wired && !selfTestResult.was_active_before && (
-              <p style={{ fontSize: 13, color: 'var(--warn-text)', marginTop: 4 }}>
+              <p style={{ fontSize: 12, color: 'var(--warn-text)', marginTop: 4 }}>
                 {t('debug.busNotActive')}
               </p>
             )}
             {selfTestResult.ws_callback_wired && (
-              <p className="z-code" style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 4 }}>
+              <p className="z-code" style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 4 }}>
                 buffer={selfTestResult.buffer_size} · ws={selfTestResult.ws_callback_wired ? 'wired' : 'NOT wired'} · loop={selfTestResult.event_loop_stored ? 'stored' : 'missing'} · level={selfTestResult.config?.level}
               </p>
             )}
@@ -589,7 +589,7 @@ export default function DebugPage() {
         {/* Left sidebar — config + filters */}
         <div style={{
           width: 240, flexShrink: 0, borderInlineEnd: '0.5px solid var(--line)',
-          overflow: 'auto', background: 'var(--bg-2)', padding: 16,
+          overflow: 'auto', background: 'var(--bg-2)', padding: 12,
         }}>
           {/* Level selector */}
           <p className="z-eyebrow" style={{ marginBottom: 8 }}>
@@ -673,7 +673,7 @@ export default function DebugPage() {
                   key={String(mode)}
                   onClick={() => { setLiveMode(mode); if (!mode) loadEvents() }}
                   style={{
-                    flex: 1, minHeight: 36, borderRadius: 'var(--r-chip)', fontSize: 15, cursor: 'pointer',
+                    flex: 1, minHeight: 36, borderRadius: 'var(--r-chip)', fontSize: 13, cursor: 'pointer',
                     fontFamily: 'inherit', fontWeight: on ? 600 : 400,
                     background: on ? 'var(--surface-2)' : 'transparent',
                     color: on ? 'var(--ink)' : 'var(--ink-mute)',
@@ -707,9 +707,9 @@ export default function DebugPage() {
               <div className="bg-info-soft" style={{
                 padding: '8px 12px',
                 borderBottom: '0.5px solid var(--line)',
-                display: 'flex', alignItems: 'center', gap: 8, minHeight: 44,
+                display: 'flex', alignItems: 'center', gap: 8, minHeight: 40,
               }}>
-                <span className="z-code" style={{ fontSize: 13, color: 'var(--ink)', flex: 1 }}>
+                <span className="z-code" style={{ fontSize: 12, color: 'var(--ink)', flex: 1 }}>
                   {t('debug.tracing', { id: filterReqId })}
                 </span>
                 <Button variant="ghost" size="sm" onClick={() => setFilterReqId('')}>

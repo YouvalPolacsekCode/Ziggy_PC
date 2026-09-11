@@ -45,7 +45,7 @@ function NavItem({ to, Icon, label }) {
 // sit at the very bottom of the window where the pointer arrives fast).
 const footBtn = {
   background: 'transparent', border: 'none', cursor: 'pointer',
-  width: 44, height: 44, borderRadius: 'var(--r-ctl)', padding: 0,
+  width: 40, height: 40, borderRadius: 'var(--r-ctl)', padding: 0,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
 }
 
@@ -83,11 +83,11 @@ export function Sidebar({ connected }) {
       }}
     >
       {/* Wordmark — the one place the brand accent appears in the chrome. */}
-      <div style={{ padding: '4px 12px 24px', display: 'flex', alignItems: 'center', gap: 2, minHeight: 44 }}>
-        <span style={{ fontWeight: 700, fontSize: 20, letterSpacing: '-0.02em', color: 'var(--ink)', lineHeight: 1 }}>
+      <div style={{ padding: '4px 12px 24px', display: 'flex', alignItems: 'center', gap: 2, minHeight: 40 }}>
+        <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.02em', color: 'var(--ink)', lineHeight: 1 }}>
           Ziggy
         </span>
-        <span style={{ color: 'var(--accent)', fontSize: 20, fontWeight: 700, lineHeight: 1 }}>.</span>
+        <span style={{ color: 'var(--accent)', fontSize: 18, fontWeight: 700, lineHeight: 1 }}>.</span>
         <span
           aria-label={connected ? t('common.connected') : t('common.offline')}
           style={{

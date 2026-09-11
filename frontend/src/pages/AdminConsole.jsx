@@ -75,7 +75,7 @@ export default function AdminConsole() {
       {/* Header */}
       <header style={{
         padding: '0 20px',
-        minHeight: 56,
+        minHeight: 48,
         borderBottom: '0.5px solid var(--line)',
         background: 'var(--bg-2)',
         display: 'flex',
@@ -87,16 +87,16 @@ export default function AdminConsole() {
           onClick={() => navigate('/')}
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--ink-mute)', fontSize: 15, fontWeight: 500, fontFamily: 'inherit',
+            color: 'var(--ink-mute)', fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
             display: 'flex', alignItems: 'center', gap: 4,
-            padding: '0 8px', minHeight: 44, borderRadius: 'var(--r-ctl)',
+            padding: '0 8px', minHeight: 40, borderRadius: 'var(--r-ctl)',
           }}
         >
           <ChevronLeft size={18} strokeWidth={1.75} className="icon-flip-rtl" />
           Ziggy
         </button>
 
-        <span style={{ color: 'var(--line-2)', fontSize: 17 }}>/</span>
+        <span style={{ color: 'var(--line-2)', fontSize: 15 }}>/</span>
 
         <span className="z-headline" style={{ flex: 1 }}>
           {t('adminConsole.title')}

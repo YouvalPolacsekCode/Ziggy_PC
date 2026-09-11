@@ -34,7 +34,7 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
   const dragHandle = (
     <span
       role="button" aria-label={t('automations.wizard.actionLabel', { n: index + 1 })}
-      style={{ color: 'var(--ink-faint)', cursor: 'grab', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none', width: 44, height: 44, margin: '0 -12px', flexShrink: 0 }}
+      style={{ color: 'var(--ink-faint)', cursor: 'grab', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none', width: 40, height: 40, margin: '0 -12px', flexShrink: 0 }}
       onClick={e => e.stopPropagation()} {...dragHandleProps}
     >
       <GripVertical size={18} strokeWidth={1.75} aria-hidden="true" />
@@ -49,7 +49,7 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
   if (collapsed) {
     return (
       <div onClick={onToggleCollapse} style={{
-        display: 'flex', alignItems: 'center', gap: 12, minHeight: 56,
+        display: 'flex', alignItems: 'center', gap: 12, minHeight: 48,
         padding: '6px 16px', borderRadius: 'var(--r-ctl)',
         background: 'var(--surface)', border: '0.5px solid var(--line)',
         cursor: 'pointer',
@@ -82,7 +82,7 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
           <p className="z-eyebrow" style={{ margin: 0 }}>{t('automations.wizard.actionLabel', { n: index + 1 })}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 0, margin: '0 -12px 0 0' }}>
-          <button type="button" onClick={onToggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)', fontFamily: 'inherit', minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-ctl)' }}>{t('automations.wizard.collapse')}</button>
+          <button type="button" onClick={onToggleCollapse} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)', fontFamily: 'inherit', minHeight: 40, padding: '0 12px', borderRadius: 'var(--r-ctl)' }}>{t('automations.wizard.collapse')}</button>
           {removeBtn}
         </div>
       </div>

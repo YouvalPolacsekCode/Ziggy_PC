@@ -127,7 +127,7 @@ function Body({ entity, loading, error, navigate }) {
         subtitle={`${facts.meta.label}${facts.isIr ? i18nT('remote.metaIr') : facts.linkedIr ? i18nT('remote.metaIrWifi') : ''}`}
         onBack={() => navigate(-1)}
       />
-      <div className="z-card" style={{ padding: 16 }}>
+      <div className="z-card" style={{ padding: 12 }}>
         <DeviceRemote entity={entity} />
       </div>
     </div>

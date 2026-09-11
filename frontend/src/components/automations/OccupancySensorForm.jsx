@@ -206,7 +206,7 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
               ['new', t('automations.smartSensor.modeNew')]].map(([m, label]) => (
               <button key={m} type="button" onClick={() => setMode(m)} aria-pressed={mode === m}
                 style={{ display: 'flex', alignItems: 'center', gap: 12, background: mode === m ? 'color-mix(in srgb, var(--ok) 9%, transparent)' : 'none', border: 'none',
-                  minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-chip)', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', width: '100%' }}>
+                  minHeight: 40, padding: '8px 12px', borderRadius: 'var(--r-chip)', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', width: '100%' }}>
                 <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
                   border: `1.5px solid ${mode === m ? 'var(--ok)' : 'var(--line-2)'}`,
                   background: mode === m ? 'var(--ok)' : 'transparent',
@@ -235,7 +235,7 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
               const on = selected.has(e.entity_id)
               return (
                 <button key={e.entity_id} type="button" onClick={() => toggle(e.entity_id)} aria-pressed={on}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-chip)',
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, padding: '8px 12px', borderRadius: 'var(--r-chip)',
                     background: on ? 'color-mix(in srgb, var(--ok) 9%, transparent)' : 'transparent',
                     border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', width: '100%',
                     transition: 'background var(--dur-press) var(--ease-standard)' }}>

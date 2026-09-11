@@ -103,7 +103,7 @@ export default function LoginPage() {
               aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
               style={{
                 position: 'absolute', insetInlineEnd: 0, bottom: 0,
-                width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-mute)', padding: 0,
               }}
             >
@@ -112,7 +112,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <p role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)', textAlign: 'center' }}>{error}</p>
+            <p role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)', textAlign: 'center' }}>{error}</p>
           )}
 
           <button

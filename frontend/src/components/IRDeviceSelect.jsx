@@ -10,7 +10,7 @@ import { useT } from '../lib/i18n'
 const selectStyle = {
   width: '100%', height: 44, padding: '0 16px',
   background: 'var(--surface)', border: '0.5px solid var(--line)',
-  borderRadius: 'var(--r-ctl)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 17,
+  borderRadius: 'var(--r-ctl)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 15,
   outline: 'none', appearance: 'none',
   backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.4)' d='M0 0h10L5 6z'/></svg>")`,
   backgroundRepeat: 'no-repeat', backgroundPosition: 'right 16px center', paddingRight: 36,
@@ -79,7 +79,7 @@ export default function IRDeviceSelect({ value, onChange }) {
                     aria-pressed={active}
                     className="z-button"
                     style={{
-                      minHeight: 36, padding: '8px 16px', borderRadius: 999, fontSize: 15, fontFamily: 'inherit',
+                      minHeight: 36, padding: '8px 16px', borderRadius: 999, fontSize: 13, fontFamily: 'inherit',
                       fontWeight: active ? 600 : 500, cursor: 'pointer',
                       background: active ? 'var(--surface-2)' : 'var(--surface)',
                       color: active ? 'var(--ink)' : 'var(--ink-mute)',

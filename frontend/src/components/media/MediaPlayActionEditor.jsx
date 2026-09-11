@@ -311,7 +311,7 @@ function Note({ children, error }) {
   return <div style={{ fontSize: 11, color: error ? 'var(--err)' : 'var(--ink-faint)', padding: '4px 0' }}>{children}</div>
 }
 
-const input = { width: '100%', padding: '8px 12px', border: '0.5px solid var(--line)', borderRadius: 10, background: 'var(--surface-elev, var(--surface))', color: 'var(--ink)', fontSize: 13 }
+const input = { width: '100%', padding: '8px 12px', border: '0.5px solid var(--line)', borderRadius: 10, background: 'var(--surface-elev, var(--surface))', color: 'var(--ink)', fontSize: 12 }
 const chip = { padding: '8px 12px', borderRadius: 16, border: '0.5px solid var(--line)', background: 'transparent', color: 'var(--ink)', fontSize: 12, cursor: 'pointer' }
 const chipActive = { ...chip, background: 'var(--accent)', color: 'white', border: '0.5px solid var(--accent)' }
 const btnSecondary = { padding: '8px 12px', background: 'transparent', border: '0.5px solid var(--line)', color: 'var(--ink)', borderRadius: 10, cursor: 'pointer', fontSize: 12 }

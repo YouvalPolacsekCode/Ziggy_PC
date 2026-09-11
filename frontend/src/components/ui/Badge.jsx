@@ -19,7 +19,7 @@ export function Badge({ variant = 'default', className, children, style }) {
       style={{
         display: 'inline-flex', alignItems: 'center',
         borderRadius: 999, padding: '4px 10px',
-        fontSize: 13, fontWeight: 500, lineHeight: 1.2, letterSpacing: '0.01em',
+        fontSize: 12, fontWeight: 500, lineHeight: 1.2, letterSpacing: '0.01em',
         ...vs, ...style,
       }}
     >

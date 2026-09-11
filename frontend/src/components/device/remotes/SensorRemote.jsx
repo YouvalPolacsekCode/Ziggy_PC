@@ -56,13 +56,13 @@ export function SensorRemote({ entity }) {
         }}>
           {facts.stateLabel}
         </div>
-        <div style={{ fontSize: 15, marginTop: 8, color: 'var(--ink-mute)' }}>
+        <div style={{ fontSize: 13, marginTop: 8, color: 'var(--ink-mute)' }}>
           {facts.meta.label}
         </div>
       </div>
 
       {/* Diagnostics */}
-      <div className="z-card" style={{ padding: 16 }}>
+      <div className="z-card" style={{ padding: 12 }}>
         <span className="z-headline" style={{ display: 'block', marginBottom: 4 }}>{i18nT('sensorRemote.diagnostics')}</span>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {facts.battery != null && (
@@ -86,7 +86,7 @@ export function SensorRemote({ entity }) {
 function DiagRow({ Icon, label, value, tone = 'idle' }) {
   const fg = tone === 'err' ? 'var(--err-text)' : tone === 'warn' ? 'var(--warn-text)' : 'var(--ink)'
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, fontSize: 15 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, fontSize: 13 }}>
       {Icon && <Icon size={18} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />}
       <span style={{ color: 'var(--ink-mute)', flex: 1 }}>{label}</span>
       <span className="z-mono" style={{ color: fg, fontWeight: 600 }}>{value}</span>

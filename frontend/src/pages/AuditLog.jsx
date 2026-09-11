@@ -37,27 +37,27 @@ function Row({ row, selected, onSelect }) {
         display: 'grid',
         gridTemplateColumns: GRID,
         gap: 12, alignItems: 'center',
-        minHeight: 44,
+        minHeight: 40,
         padding: '8px 12px', borderBottom: '0.5px solid var(--line)',
         cursor: 'pointer',
         background: isSelected ? 'var(--surface-2)' : 'transparent',
         transition: 'background var(--dur-press) var(--ease-standard)',
       }}
     >
-      <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{fmtTs(row.ts)}</span>
+      <span className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{fmtTs(row.ts)}</span>
       <OkDot ok={row.ok} />
-      <span style={{ fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {row.event}
         {row.detail && (
-          <span style={{ fontSize: 13, color: 'var(--ink-mute)', marginInlineStart: 8 }}>
+          <span style={{ fontSize: 12, color: 'var(--ink-mute)', marginInlineStart: 8 }}>
             {row.detail.length > 80 ? row.detail.slice(0, 80) + '…' : row.detail}
           </span>
         )}
       </span>
-      <span style={{ fontSize: 13, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 12, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {row.home_id || '—'}
       </span>
-      <span className="z-code" style={{ fontSize: 13, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span className="z-code" style={{ fontSize: 12, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {row.source_ip || ''}
       </span>
     </div>
@@ -83,7 +83,7 @@ function DetailPanel({ row, onClose }) {
           <X size={20} strokeWidth={1.75} />
         </button>
       </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
         <Field label={t('auditPage.fieldTime')}    value={fmtTs(row.ts)} />
         <Field label={t('auditPage.fieldId')}      value={row.id} mono />
         <Field label={t('auditPage.fieldHomeId')}  value={row.home_id} mono />
@@ -94,7 +94,7 @@ function DetailPanel({ row, onClose }) {
             {t('auditPage.fieldDetail')}
           </p>
           <pre className="z-code" style={{
-            fontSize: 13, lineHeight: '18px', color: 'var(--ink)', background: 'var(--surface-2)',
+            fontSize: 12, lineHeight: '18px', color: 'var(--ink)', background: 'var(--surface-2)',
             padding: 12, borderRadius: 'var(--r-ctl)', overflow: 'auto', maxHeight: 360,
             border: '0.5px solid var(--line)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0,
           }}>
@@ -189,7 +189,7 @@ export default function AuditLog() {
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Filters sidebar */}
-        <div style={{ width: 240, flexShrink: 0, borderInlineEnd: '0.5px solid var(--line)', overflow: 'auto', background: 'var(--bg-2)', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ width: 240, flexShrink: 0, borderInlineEnd: '0.5px solid var(--line)', overflow: 'auto', background: 'var(--bg-2)', padding: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <p className="z-eyebrow" style={{ marginBottom: 8 }}>
               {t('auditPage.filterEvent')}
@@ -259,7 +259,7 @@ export default function AuditLog() {
           </div>
 
           {error && (
-            <div className="z-alert-warn" style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--line)', fontSize: 15, color: 'var(--warn-text)' }}>
+            <div className="z-alert-warn" style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--line)', fontSize: 13, color: 'var(--warn-text)' }}>
               {error}
             </div>
           )}
@@ -276,7 +276,7 @@ export default function AuditLog() {
             <Button variant="secondary" size="sm" onClick={() => load(Math.max(0, offset - PAGE_SIZE))} disabled={loading || offset === 0}>
               <ChevronLeft size={18} strokeWidth={1.75} className="icon-flip-rtl" /> {t('auditPage.prev')}
             </Button>
-            <span className="z-mono" style={{ flex: 1, textAlign: 'center', fontSize: 13, color: 'var(--ink-mute)' }}>
+            <span className="z-mono" style={{ flex: 1, textAlign: 'center', fontSize: 12, color: 'var(--ink-mute)' }}>
               {t('auditPage.rangeLabel', { from: offset + 1, to: offset + rows.length })}
             </span>
             <Button variant="secondary" size="sm" onClick={() => load(offset + PAGE_SIZE)} disabled={loading || !hasMore}>

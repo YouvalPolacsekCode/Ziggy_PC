@@ -21,7 +21,7 @@ const chipStyle = (active) => ({
 })
 // 44×44 quiet icon target (transport buttons, mute, close).
 const ICON_BTN_STYLE = {
-  width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+  width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
   background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--ink-mute)',
 }
@@ -103,7 +103,7 @@ function BrightnessLamp({ value, onChange, onCommit, onTap, isOn, accentColor = 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-      <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.035em', color: 'var(--ink)', lineHeight: 1 }}>
+      <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.035em', color: 'var(--ink)', lineHeight: 1 }}>
         {isOn ? `${pct}%` : t('deviceControls.off')}
       </div>
       <div
@@ -156,7 +156,7 @@ function Dial({ size = 220, value = 70, max = 100, label, sublabel, color = 'var
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
         <div style={{ fontSize: Math.round(size * 0.22), fontWeight: 700, letterSpacing: '-0.04em', color: 'var(--ink)', lineHeight: 1 }}>{label}</div>
-        {sublabel && <div className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 8, letterSpacing: '0.04em' }}>{sublabel}</div>}
+        {sublabel && <div className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 8, letterSpacing: '0.04em' }}>{sublabel}</div>}
       </div>
     </div>
   )
@@ -326,12 +326,12 @@ function settingsMatch(preset, live) {
   return false
 }
 
-const _presetIconBtn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 999, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }
-const _presetMenuItem = { display: 'block', width: '100%', textAlign: 'start', padding: '12px 16px', minHeight: 44, fontSize: 17, fontFamily: 'inherit', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink)' }
-const _presetSavePill = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '8px 12px', minHeight: 36, borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', border: '1px dashed var(--line-2)', background: 'transparent', color: 'var(--ink-mute)' }
+const _presetIconBtn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 999, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }
+const _presetMenuItem = { display: 'block', width: '100%', textAlign: 'start', padding: '12px 16px', minHeight: 40, fontSize: 15, fontFamily: 'inherit', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink)' }
+const _presetSavePill = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '8px 12px', minHeight: 36, borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', border: '1px dashed var(--line-2)', background: 'transparent', color: 'var(--ink-mute)' }
 // A preset that is currently applied is an "on" tile — the one place an
 // inverted chip is allowed.
-const _presetPill = (active) => ({ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px 8px 8px', minHeight: 36, borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', border: '0.5px solid var(--line)', background: active ? 'var(--ink)' : 'var(--surface-2)', color: active ? 'var(--bg)' : 'var(--ink-mute)' })
+const _presetPill = (active) => ({ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px 8px 8px', minHeight: 36, borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', border: '0.5px solid var(--line)', background: active ? 'var(--ink)' : 'var(--surface-2)', color: active ? 'var(--bg)' : 'var(--ink-mute)' })
 
 function PresetGauge({ settings, active }) {
   const fill = Math.max(6, Math.min(100, settings.brightness_pct || 0))
@@ -350,7 +350,7 @@ function PresetInput({ value, onChange, onConfirm, onCancel, t, placeholder }) {
       <input autoFocus value={value} placeholder={placeholder || ''}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') onConfirm(); else if (e.key === 'Escape') onCancel() }}
-        style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 17, fontFamily: 'inherit', color: 'var(--ink)', width: 120 }} />
+        style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 15, fontFamily: 'inherit', color: 'var(--ink)', width: 120 }} />
       <button onClick={onConfirm} title={t('deviceControls.presetSaveConfirm')} aria-label={t('deviceControls.presetSaveConfirm')} style={{ ..._presetIconBtn, color: 'var(--ok-text)' }}><Check size={16} strokeWidth={2} /></button>
       <button onClick={onCancel} title={t('deviceControls.presetCancel')} aria-label={t('deviceControls.presetCancel')} style={{ ..._presetIconBtn, color: 'var(--ink-mute)' }}><X size={16} strokeWidth={1.75} /></button>
     </span>
@@ -491,7 +491,7 @@ function DevicePresetsRow({ entityId, live, isOn, suggestedName, onApply }) {
                 <PresetGauge settings={p.settings} active={active} />
                 {p.is_default && <Star size={14} strokeWidth={1.75} fill="currentColor" />}
                 <span>{p.name}</span>
-                <span className="z-mono" style={{ fontSize: 13, fontWeight: 500 }}>{p.settings.brightness_pct}%</span>
+                <span className="z-mono" style={{ fontSize: 12, fontWeight: 500 }}>{p.settings.brightness_pct}%</span>
               </button>
               {menuFor === p.id && (
                 <PresetMenu
@@ -639,7 +639,7 @@ export function LightControls({ entity, onService }) {
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
           <span className="z-eyebrow">{t('deviceControls.brightness')}</span>
-          <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{brightness}%</span>
+          <span className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{brightness}%</span>
         </div>
         <GradientSlider
           value={brightness}
@@ -655,7 +655,7 @@ export function LightControls({ entity, onService }) {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
             <span className="z-eyebrow">{t('deviceControls.temperature')}</span>
-            <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{colorTemp}K · {colorTemp < 3500 ? t('deviceControls.tempWarm') : colorTemp < 5000 ? t('deviceControls.tempNeutral') : t('deviceControls.tempCool')}</span>
+            <span className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{colorTemp}K · {colorTemp < 3500 ? t('deviceControls.tempWarm') : colorTemp < 5000 ? t('deviceControls.tempNeutral') : t('deviceControls.tempCool')}</span>
           </div>
           <GradientSlider
             value={colorTemp}
@@ -797,7 +797,7 @@ export function ClimateControls({ entity, onService }) {
       {/* Temp stepper below dial */}
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 20 }}>
         <button onClick={() => adjustTemp(-step)} className="z-icon-btn" aria-label={t('deviceControls.hvacCool')}><Minus size={20} strokeWidth={1.75} /></button>
-        <span className="z-mono" style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.04em', minWidth: 56, textAlign: 'center' }}>{displayTemp}°</span>
+        <span className="z-mono" style={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.04em', minWidth: 56, textAlign: 'center' }}>{displayTemp}°</span>
         <button onClick={() => adjustTemp(step)} className="z-icon-btn" aria-label={t('deviceControls.hvacHeat')}><Plus size={20} strokeWidth={1.75} /></button>
       </div>
 
@@ -1062,7 +1062,7 @@ export function MediaPlayerControls({ entity, onService }) {
 // Secondary action button inside a control surface: 44px tall, 15px.
 const ctrlBtn = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-  padding: '8px 12px', minHeight: 44, borderRadius: 'var(--r-ctl)', fontSize: 15, fontWeight: 500,
+  padding: '8px 12px', minHeight: 40, borderRadius: 'var(--r-ctl)', fontSize: 13, fontWeight: 500,
   background: 'var(--surface-2)', border: '0.5px solid var(--line)',
   color: 'var(--ink)', cursor: 'pointer', fontFamily: 'inherit',
 }
@@ -1089,7 +1089,7 @@ export function CoverControls({ entity, onService }) {
       </div>
       {position != null && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--ink-mute)', marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--ink-mute)', marginBottom: 8 }}>
             <span>{t('deviceControls.position')}</span>
             <span className="z-mono">{localPos}%</span>
           </div>
@@ -1116,7 +1116,7 @@ export function FanControls({ entity, onService }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--ink-mute)', marginBottom: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--ink-mute)', marginBottom: 8 }}>
           <span>{t('deviceControls.speed')}</span>
           <span className="z-mono">{pct}%</span>
         </div>
@@ -1156,7 +1156,7 @@ export function LockControls({ entity, onService }) {
   return (
     <div style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       {isPending ? (
-        <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--ink-mute)', padding: '12px 0' }}>{pendingLabel}</div>
+        <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--ink-mute)', padding: '12px 0' }}>{pendingLabel}</div>
       ) : !isLocked ? (
         <button
           onClick={() => onService('lock', {})}
@@ -1228,7 +1228,7 @@ export function VacuumControls({ entity, onService }) {
         </button>
       )}
       {isDocked && (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', minHeight: 44, fontSize: 15, color: 'var(--ok-text)', fontWeight: 500 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', minHeight: 40, fontSize: 13, color: 'var(--ok-text)', fontWeight: 500 }}>
           <Home size={16} strokeWidth={1.75} /> {t('deviceControls.docked')}
         </span>
       )}
@@ -1533,7 +1533,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
 
         {/* Now-playing card */}
         <div className="z-card" style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-2)', flexShrink: 0 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-2)', flexShrink: 0 }}>
             <Tv2 size={22} strokeWidth={1.75} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -1552,7 +1552,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
               disabled={!canDo(b.cmd)}
               className="z-card"
               style={{
-                padding: '16px 0', minHeight: 44,
+                padding: '16px 0', minHeight: 40,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
                 cursor: canDo(b.cmd) ? 'pointer' : 'not-allowed',
                 opacity: canDo(b.cmd) ? 1 : 0.35,
@@ -1562,7 +1562,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
               {b.cmd === 'power' && <Power size={20} strokeWidth={1.75} />}
               {b.cmd === 'mute' && <VolumeX size={20} strokeWidth={1.75} />}
               {b.cmd === 'input' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="10" r="2" fill="currentColor"/><circle cx="20" cy="14" r="2" fill="currentColor"/></svg>}
-              <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--ink-2)' }}>{b.label}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--ink-2)' }}>{b.label}</span>
             </button>
           ))}
         </div>
@@ -1584,7 +1584,7 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
                   transform: 'translate(-50%, -50%)',
                   width: 82, height: 82, borderRadius: '50%',
                   background: 'var(--ink)', color: 'var(--bg)',
-                  border: 'none', fontSize: 15, fontWeight: 700,
+                  border: 'none', fontSize: 13, fontWeight: 700,
                   cursor: 'pointer', letterSpacing: '0.02em',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
@@ -1623,26 +1623,26 @@ export function IRRemoteDrawer({ irDevice, onCommand, onChannel, onClose }) {
           {/* Volume */}
           <div className="z-card" style={{ padding: '4px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
             <button onClick={() => { fire('volume_up');   setVolDisplay(v => Math.min(100, v+1)) }} style={{ ...ICON_BTN_STYLE, color: 'var(--ink-2)' }} aria-label={t('deviceControls.remote.volUp')}><ArrowIcon dir="up" /></button>
-            <span className="z-mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceControls.remote.vol')} {volDisplay}</span>
+            <span className="z-mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceControls.remote.vol')} {volDisplay}</span>
             <button onClick={() => { fire('volume_down'); setVolDisplay(v => Math.max(0, v-1)) }} style={{ ...ICON_BTN_STYLE, color: 'var(--ink-2)' }} aria-label={t('deviceControls.remote.volDown')}><ArrowIcon dir="down" /></button>
           </div>
 
           {/* Mic / voice — the sheet's single accent element; on-accent for
               the glyph and label, never a raw white. */}
           <button style={{
-            padding: '16px 0', minHeight: 44, borderRadius: 'var(--r-sheet)',
+            padding: '16px 0', minHeight: 40, borderRadius: 'var(--r-sheet)',
             background: 'var(--accent)', color: 'var(--on-accent)', border: 'none',
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
             cursor: 'pointer', boxShadow: 'var(--shadow-md)', fontFamily: 'inherit',
           }}>
             <Mic size={20} strokeWidth={1.75} />
-            <span style={{ fontSize: 13, fontWeight: 600 }}>{t('deviceControls.remote.speak')}</span>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{t('deviceControls.remote.speak')}</span>
           </button>
 
           {/* Channel */}
           <div className="z-card" style={{ padding: '4px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
             <button onClick={() => { fire('channel_up');   setChDisplay(v => v+1) }} style={{ ...ICON_BTN_STYLE, color: 'var(--ink-2)' }} aria-label={t('deviceControls.remote.chanUp')}><ArrowIcon dir="up" /></button>
-            <span className="z-mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceControls.remote.ch')} {chDisplay}</span>
+            <span className="z-mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceControls.remote.ch')} {chDisplay}</span>
             <button onClick={() => { fire('channel_down'); setChDisplay(v => Math.max(1, v-1)) }} style={{ ...ICON_BTN_STYLE, color: 'var(--ink-2)' }} aria-label={t('deviceControls.remote.chanDown')}><ArrowIcon dir="down" /></button>
           </div>
         </div>

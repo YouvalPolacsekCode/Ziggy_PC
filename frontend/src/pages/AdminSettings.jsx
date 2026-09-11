@@ -54,10 +54,10 @@ function SectionTitle({ icon: Icon, children, restart }) {
 
 function SettingRow({ label, subtitle, children }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 56, padding: '8px 16px', gap: 12 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 48, padding: '8px 16px', gap: 12 }}>
       <div style={{ minWidth: 0 }}>
-        <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{label}</p>
-        {subtitle && <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</p>}
+        <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{label}</p>
+        {subtitle && <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</p>}
       </div>
       {children}
     </div>
@@ -66,14 +66,14 @@ function SettingRow({ label, subtitle, children }) {
 
 // Borderless 44×44 target for a row-level icon action.
 const ghostIcon = {
-  width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'transparent', border: 'none',
+  width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'transparent', border: 'none',
   cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
 }
 
 // Active-filter chip: surface-2 + ink + hairline when on; never accent.
 function chipStyle(on) {
   return {
-    minHeight: 44, padding: '0 16px', borderRadius: 999, fontSize: 15, fontWeight: 500, fontFamily: 'inherit',
+    minHeight: 40, padding: '0 16px', borderRadius: 999, fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
     border: '0.5px solid var(--line)', cursor: 'pointer',
     background: on ? 'var(--surface-2)' : 'transparent',
     color: on ? 'var(--ink)' : 'var(--ink-mute)',
@@ -124,12 +124,12 @@ function SecretField({ label, subtitle, masked, configured, onSave, onRefresh, p
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 56, padding: '8px 16px', gap: 12 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 48, padding: '8px 16px', gap: 12 }}>
       <div style={{ minWidth: 0 }}>
-        <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{label}</p>
+        <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{label}</p>
         {configured
-          ? <p className="z-code" style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{masked}</p>
-          : <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>{subtitle || t('adminSettings.notConfigured')}</p>}
+          ? <p className="z-code" style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{masked}</p>
+          : <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{subtitle || t('adminSettings.notConfigured')}</p>}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         {configured && <Check size={20} strokeWidth={1.75} style={{ color: 'var(--ok)' }} />}
@@ -258,10 +258,10 @@ export function PushPreferenceCenter() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
       <div style={cardBox}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 56, padding: '8px 16px', borderBottom: '0.5px solid var(--line)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 48, padding: '8px 16px', borderBottom: '0.5px solid var(--line)' }}>
           <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('adminSettings.thisBrowser')}</p>
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>
+            <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('adminSettings.thisBrowser')}</p>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>
               {'Notification' in window
                 ? Notification.permission === 'granted' ? t('adminSettings.subscribed')
                 : Notification.permission === 'denied'  ? t('adminSettings.blocked')
@@ -273,8 +273,8 @@ export function PushPreferenceCenter() {
             {'Notification' in window ? Notification.permission : t('adminSettings.unsupported')}
           </span>
         </div>
-        <div style={{ minHeight: 56, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)' }}>{t('adminSettings.sendTestDesc')}</p>
+        <div style={{ minHeight: 48, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{t('adminSettings.sendTestDesc')}</p>
           <button
             onClick={async () => { try { await testPushNotification(); addToast(t('adminSettings.testSent'), 'success') } catch { addToast(t('adminSettings.notSubscribed'), 'error') } }}
             className="z-btn-secondary"
@@ -284,18 +284,18 @@ export function PushPreferenceCenter() {
       </div>
 
       <div style={cardBox}>
-        <div style={{ display: 'flex', alignItems: 'center', minHeight: 56, padding: '8px 16px', borderBottom: qh.enabled ? '0.5px solid var(--line)' : 'none', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', minHeight: 48, padding: '8px 16px', borderBottom: qh.enabled ? '0.5px solid var(--line)' : 'none', gap: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t('adminSettings.quietHours')}</p>
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>{t('adminSettings.quietHoursDesc')}</p>
+            <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('adminSettings.quietHours')}</p>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{t('adminSettings.quietHoursDesc')}</p>
           </div>
           <Toggle checked={!!qh.enabled} aria-label={t('adminSettings.quietHours')} onCheckedChange={(v) => saveQuietHours({ ...qh, enabled: v })} />
         </div>
         {qh.enabled && (
           <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', flexShrink: 0 }}>{t('adminSettings.from')}</p>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', flexShrink: 0 }}>{t('adminSettings.from')}</p>
             <Input type="time" value={qh.start} onChange={e => saveQuietHours({ ...qh, start: e.target.value })} aria-label={t('adminSettings.from')} style={{ width: 128 }} />
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', flexShrink: 0 }}>{t('adminSettings.to')}</p>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', flexShrink: 0 }}>{t('adminSettings.to')}</p>
             <Input type="time" value={qh.end}   onChange={e => saveQuietHours({ ...qh, end:   e.target.value })} aria-label={t('adminSettings.to')} style={{ width: 128 }} />
           </div>
         )}
@@ -307,13 +307,13 @@ export function PushPreferenceCenter() {
             <p className="z-eyebrow">{t('adminSettings.whatReaches')}</p>
           </div>
           {systemCats.map((cat, i) => (
-            <div key={cat.id} style={{ display: 'flex', alignItems: 'center', minHeight: 56, padding: '8px 16px', borderBottom: i < systemCats.length - 1 ? '0.5px solid var(--line)' : 'none', gap: 12 }}>
+            <div key={cat.id} style={{ display: 'flex', alignItems: 'center', minHeight: 48, padding: '8px 16px', borderBottom: i < systemCats.length - 1 ? '0.5px solid var(--line)' : 'none', gap: 12 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   {cat.label}
                   {cat.bypass_quiet_hours && <span className="z-chip" style={{ color: 'var(--warn-text)' }}>{t('adminSettings.always')}</span>}
                 </p>
-                <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>{cat.description}</p>
+                <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{cat.description}</p>
               </div>
               <Toggle checked={!!cat.enabled} aria-label={cat.label} onCheckedChange={() => toggleCategory(cat.id)} />
             </div>
@@ -335,16 +335,16 @@ export function PushPreferenceCenter() {
                 {/* CLAUDE.md memory: user must never see HA entity_ids.
                     Sensor label is human-friendly; the raw entity_id row was
                     removed in the 2026-06 settings refactor. */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{cat.label}</p>
+                    <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{cat.label}</p>
                   </div>
                   <Toggle checked={!!cat.enabled} aria-label={cat.label} onCheckedChange={() => toggleCategory(cat.id)} />
                 </div>
                 {cat.enabled && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <p style={{ fontSize: 15, color: 'var(--ink-mute)', width: 80, flexShrink: 0 }}>{t('adminSettings.alertWhen')}</p>
+                      <p style={{ fontSize: 13, color: 'var(--ink-mute)', width: 80, flexShrink: 0 }}>{t('adminSettings.alertWhen')}</p>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         {SEV_PRESENCE_OPTS.map(opt => (
                           <button key={opt.value} onClick={() => updateSensorCondition(cat.id, cat.entity_id, { presence: opt.value })}
@@ -355,7 +355,7 @@ export function PushPreferenceCenter() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <p style={{ fontSize: 15, color: 'var(--ink-mute)', width: 80, flexShrink: 0 }}>{t('adminSettings.time')}</p>
+                      <p style={{ fontSize: 13, color: 'var(--ink-mute)', width: 80, flexShrink: 0 }}>{t('adminSettings.time')}</p>
                       <Toggle checked={timeEnabled} aria-label={t('adminSettings.time')}
                         onCheckedChange={() => updateSensorCondition(cat.id, cat.entity_id,
                           timeEnabled ? { time_start: null, time_end: null } : { time_start: '22:00', time_end: '06:00' }
@@ -363,7 +363,7 @@ export function PushPreferenceCenter() {
                       {timeEnabled && (
                         <>
                           <Input type="time" value={cond.time_start || '22:00'} onChange={e => updateSensorCondition(cat.id, cat.entity_id, { time_start: e.target.value })} aria-label={t('adminSettings.from')} style={{ width: 128 }} />
-                          <p style={{ fontSize: 15, color: 'var(--ink-mute)' }}>{t('adminSettings.to')}</p>
+                          <p style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{t('adminSettings.to')}</p>
                           <Input type="time" value={cond.time_end || '06:00'} onChange={e => updateSensorCondition(cat.id, cat.entity_id, { time_end: e.target.value })} aria-label={t('adminSettings.to')} style={{ width: 128 }} />
                         </>
                       )}
@@ -381,7 +381,7 @@ export function PushPreferenceCenter() {
           <p className="z-eyebrow">{t('adminSettings.subscribedDevices')}</p>
         </div>
         {devices.length === 0 ? (
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', padding: '8px 16px 16px' }}>{t('adminSettings.noDevicesSubbed')}</p>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', padding: '8px 16px 16px' }}>{t('adminSettings.noDevicesSubbed')}</p>
         ) : (
           devices.map((d, i) => {
             const browser   = parseBrowser(d.user_agent, t)
@@ -391,13 +391,13 @@ export function PushPreferenceCenter() {
               ? (() => { const diff = Math.floor((Date.now() - new Date(d.subscribed_at)) / 86400000); return diff === 0 ? t('adminSettings.today') : diff === 1 ? t('adminSettings.yesterday') : t('adminSettings.daysAgo', { n: diff }) })()
               : ''
             return (
-              <div key={d.endpoint} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 16px', borderBottom: i < devices.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
+              <div key={d.endpoint} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 16px', borderBottom: i < devices.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     {browser}{os ? ` · ${os}` : ''}
                     {isCurrent && <span className="z-chip" style={{ color: 'var(--ok-text)' }}>{t('adminSettings.thisDevice')}</span>}
                   </p>
-                  {ago && <p style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{t('adminSettings.subscribed_ago', { when: ago })}</p>}
+                  {ago && <p style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{t('adminSettings.subscribed_ago', { when: ago })}</p>}
                 </div>
                 <button onClick={() => handleRevoke(d.endpoint)} style={{ ...ghostIcon, color: 'var(--err-text)' }} title={t('adminSettings.revokeTitle')} aria-label={t('adminSettings.revokeTitle')}>
                   <Trash2 size={18} />
@@ -418,7 +418,7 @@ function OpsToolbar({ refreshing, onRefresh }) {
   const t = useT()
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
-      <p style={{ fontSize: 15, color: 'var(--ink-mute)' }}>{t('adminSettings.restartHint')}</p>
+      <p style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{t('adminSettings.restartHint')}</p>
       <button onClick={onRefresh} disabled={refreshing} title={t('adminSettings.refresh')} aria-label={t('adminSettings.refresh')} className="z-icon-btn">
         <RefreshCw size={18} className={refreshing ? 'z-spin' : undefined} />
       </button>
@@ -503,7 +503,7 @@ export function EmailPage() {
   const [refreshing, onRefresh] = useRefresh(load)
 
   if (!isSuperAdmin) {
-    return <p style={{ padding: 24, fontSize: 15, color: 'var(--ink-mute)' }}>{t('adminSettings.superAdminOnly')}</p>
+    return <p style={{ padding: 24, fontSize: 13, color: 'var(--ink-mute)' }}>{t('adminSettings.superAdminOnly')}</p>
   }
 
   const saveSmtp = async () => {
@@ -532,7 +532,7 @@ export function EmailPage() {
             </SettingRow>
             {email.enabled && (
               <>
-                <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <div style={{ flex: 2, minWidth: 0 }}>
                       <Input label={t('adminSettings.smtpHost')} value={email.host} onChange={e => setEmail(s => ({ ...s, host: e.target.value }))} placeholder={t('adminSettings.smtpHostPh')} dir="auto" />
@@ -621,7 +621,7 @@ export function EngineTuningPage() {
       <div style={{ marginBottom: 24 }}>
         <SectionTitle icon={Brain}>{t('adminSettings.sectionOllama')}</SectionTitle>
         <Card>
-          <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Input label={t('adminSettings.baseUrl')} placeholder={t('adminSettings.ollamaBaseUrlPh')} value={ollama.base_url || ''} onChange={e => setOllama(s => ({ ...s, base_url: e.target.value }))} dir="auto" />
             <Input label={t('adminSettings.model')} placeholder={t('adminSettings.ollamaModelPh')} value={ollama.model || ''} onChange={e => setOllama(s => ({ ...s, model: e.target.value }))} dir="auto" />
             <Input
@@ -641,15 +641,15 @@ export function EngineTuningPage() {
       <div style={{ marginBottom: 24 }}>
         <SectionTitle icon={Sliders}>{t('adminSettings.sectionPattern')}</SectionTitle>
         <Card>
-          <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div className="flex items-center justify-between gap-3" style={{ minHeight: 44 }}>
+          <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div className="flex items-center justify-between gap-3" style={{ minHeight: 40 }}>
               <div>
                 <p className="text-body font-medium text-ink">{t('adminSettings.plEnabled')}</p>
                 <p className="text-subhead text-ink-mute">{t('adminSettings.plEnabledDesc')}</p>
               </div>
               <Toggle checked={!!patternLearning.enabled} aria-label={t('adminSettings.plEnabled')} onCheckedChange={(v) => setPatternLearning(s => ({ ...s, enabled: v }))} />
             </div>
-            <div className="flex items-center justify-between gap-3" style={{ minHeight: 44 }}>
+            <div className="flex items-center justify-between gap-3" style={{ minHeight: 40 }}>
               <div>
                 <p className="text-body font-medium text-ink">{t('adminSettings.plLLM')}</p>
                 <p className="text-subhead text-ink-mute">{t('adminSettings.plLLMDesc')}</p>

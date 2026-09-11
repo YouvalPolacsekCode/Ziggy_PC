@@ -158,7 +158,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
                 type="button"
                 onClick={() => setConditions(cs => [...cs, { type: 'entity', entity_id: '', operator: 'is', value: 'on', _key: safeUuid() }])}
                 className="z-btn-secondary"
-                style={{ width: '100%', fontSize: 15, fontWeight: 500, color: 'var(--ink-2)', border: '0.5px dashed var(--line-2)' }}
+                style={{ width: '100%', fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', border: '0.5px dashed var(--line-2)' }}
               >
                 <Plus size={18} strokeWidth={1.75} aria-hidden="true" />
                 {conditions.length === 0 ? t('automations.wizard.addCondition') : t('automations.wizard.addAnotherCondition')}
@@ -172,7 +172,7 @@ function AutomationWizard({ initial, onSave, onClose }) {
                   <DraggableActionRow key={action._key} action={action} index={i} onChange={v => updateAction(i, v)} onRemove={() => removeAction(action._key)} collapsed={collapsedActions.has(action._key)} onToggleCollapse={() => toggleCollapse(action._key)} />
                 ))}
               </Reorder.Group>
-              <button type="button" onClick={addAction} className="z-btn-secondary" style={{ width: '100%', fontSize: 15, fontWeight: 500, color: 'var(--ink-2)', border: '0.5px dashed var(--line-2)' }}>
+              <button type="button" onClick={addAction} className="z-btn-secondary" style={{ width: '100%', fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', border: '0.5px dashed var(--line-2)' }}>
                 <Plus size={18} strokeWidth={1.75} aria-hidden="true" />
                 {t('automations.wizard.addAction')}
               </button>

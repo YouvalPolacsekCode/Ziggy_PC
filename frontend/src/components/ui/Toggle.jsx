@@ -1,13 +1,13 @@
 import * as Switch from '@radix-ui/react-switch'
 import { useIsRTL } from '../../lib/i18n'
 
-// The one switch. 44×26 track / 22px knob: the smallest geometry that clears
+// The one switch. 40×24 track / 20px knob: comfortably clears
 // the HIG 28pt minimum control height with a comfortable 44pt-wide target.
 // `.z-toggle` in index.css is the CSS twin for non-Radix call sites; keep
 // both in sync.
-export const TOGGLE_W = 44
-export const TOGGLE_H = 26
-const KNOB = 22
+export const TOGGLE_W = 40
+export const TOGGLE_H = 24
+const KNOB = 20
 const INSET = 2
 
 export function Toggle({ checked, onCheckedChange, disabled, className, 'aria-label': ariaLabel }) {

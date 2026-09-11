@@ -146,7 +146,7 @@ function HeatingToggle({ values, setValue, t }) {
   return (
     <button type="button" onClick={() => setValue('showHeating', true)}
       className="z-btn-secondary"
-      style={{ alignSelf: 'flex-start', fontSize: 15, fontWeight: 500, color: 'var(--ink-2)', border: '0.5px dashed var(--line-2)' }} dir="auto">
+      style={{ alignSelf: 'flex-start', fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', border: '0.5px dashed var(--line-2)' }} dir="auto">
       <Plus size={18} strokeWidth={1.75} aria-hidden="true" />
       {t('automations.smartClimate.addHeating')}
     </button>
@@ -158,7 +158,7 @@ function RightNow({ values, t }) {
   const cur = values._status?.current
   if (!cur) return null
   return (
-    <div style={{ borderRadius: 'var(--r-card)', padding: 16,
+    <div style={{ borderRadius: 'var(--r-card)', padding: 12,
       background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
       <p className="z-eyebrow" style={{ margin: '0 0 4px' }}>{t('automations.smartClimate.rightNow')}</p>
       <p className="z-title z-mono" style={{ margin: 0 }} dir="auto">

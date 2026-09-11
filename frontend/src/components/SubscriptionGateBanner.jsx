@@ -57,12 +57,12 @@ export default function SubscriptionGateBanner() {
       role="status"
       style={{
         position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9000,
-        padding: '12px 16px', textAlign: 'center', minHeight: 44,
+        padding: '12px 16px', textAlign: 'center', minHeight: 40,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         // Solid --warn fill so var(--on-accent) (dark ink) keeps its contrast
         // in both palettes; the strip reads as "heads up, action recommended".
         background: 'var(--warn)',
-        color: 'var(--on-accent)', fontSize: 15, lineHeight: '20px', fontWeight: 500,
+        color: 'var(--on-accent)', fontSize: 13, lineHeight: '20px', fontWeight: 500,
         boxShadow: '0 1px 0 color-mix(in srgb, var(--ink) 20%, transparent)',
       }}
     >

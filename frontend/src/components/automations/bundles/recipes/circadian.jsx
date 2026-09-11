@@ -48,7 +48,7 @@ function RightNow({ values, ctx, t }) {
   const offSchedule = status?.manual_lights || []
   const nameFor = (eid) => entityDisplayName(ctx?.entityMap?.[eid]) || eid
   return (
-    <div style={{ borderRadius: 'var(--r-card)', padding: 16,
+    <div style={{ borderRadius: 'var(--r-card)', padding: 12,
       background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
       <p className="z-eyebrow" style={{ margin: '0 0 4px' }}>{t('automations.circadian.rightNow')}</p>
       <p className="z-title z-mono" style={{ margin: 0 }} dir="auto">

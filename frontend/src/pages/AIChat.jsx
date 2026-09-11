@@ -82,7 +82,7 @@ function PatternCard({ msg, onSaveRoutine }) {
       style={{ maxWidth: '92%', alignSelf: 'flex-start' }}
     >
       <div style={{
-        padding: 16, borderRadius: 'var(--r-card)',
+        padding: 12, borderRadius: 'var(--r-card)',
         background: 'var(--surface)', border: '0.5px solid var(--line)',
       }}>
         {/* Group header, not a headline: an eyebrow in ink-mute with a
@@ -187,7 +187,7 @@ function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
           border:      isError
             ? '0.5px solid color-mix(in srgb, var(--err) 60%, var(--line))'
             : isUser ? 'none' : '0.5px solid var(--line)',
-          fontSize: 17, lineHeight: 1.45,
+          fontSize: 15, lineHeight: 1.45,
           // Bubble text aligns with the bubble's bidi direction (which `dir="auto"`
           // resolves from the message content — Hebrew → rtl, English → ltr,
           // mixed → first strong character wins). Timestamp goes on the
@@ -204,7 +204,7 @@ function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
             text colour: ink-faint on the surface, the deep page shade on the
             inverted user bubble. */}
         <p style={{
-          fontSize: 13, lineHeight: '18px', margin: '4px 0 0', textAlign: 'end',
+          fontSize: 12, lineHeight: '18px', margin: '4px 0 0', textAlign: 'end',
           color: isUser ? 'var(--bg-3)' : 'var(--ink-faint)',
           fontVariantNumeric: 'tabular-nums',
         }}>
@@ -219,10 +219,10 @@ function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
           disabled={flagState !== 'idle'}
           aria-label={t('chat.flagTts')}
           style={{
-            background: 'none', border: 'none', padding: '0 8px', marginInlineStart: -8, minHeight: 44,
+            background: 'none', border: 'none', padding: '0 8px', marginInlineStart: -8, minHeight: 40,
             display: 'inline-flex', alignItems: 'center',
             cursor: flagState === 'idle' ? 'pointer' : 'default',
-            fontSize: 13, lineHeight: '18px', font: 'inherit',
+            fontSize: 12, lineHeight: '18px', font: 'inherit',
             color: flagState === 'done' ? 'var(--ok-text)' : flagState === 'error' ? 'var(--err-text)' : 'var(--ink-mute)',
           }}
         >
@@ -328,7 +328,7 @@ function LiveUserBubble({ text }) {
         style={{
           padding: '12px 16px', borderRadius: 'var(--r-card)', borderEndEndRadius: 6,
           background: 'var(--ink)', color: 'var(--bg)',
-          fontSize: 17, lineHeight: 1.45,
+          fontSize: 15, lineHeight: 1.45,
           textAlign: 'start', unicodeBidi: 'plaintext',
           minWidth: 40,
           display: 'flex', alignItems: 'center', gap: 8,
@@ -409,7 +409,7 @@ function ThinkingBubble({ mode }) {
   const bubbleStyle = {
     padding: '12px 16px', borderRadius: 'var(--r-card)', borderEndStartRadius: 6,
     background: 'var(--surface)', border: '0.5px solid var(--line)',
-    display: 'flex', gap: 8, alignItems: 'center', minHeight: 44,
+    display: 'flex', gap: 8, alignItems: 'center', minHeight: 40,
   }
   const dots = [0, 1, 2].map(i => (
     <motion.span
@@ -1871,7 +1871,7 @@ export default function AIChat({ docked = false }) {
               title={rehearsal ? t('chat.rehearsalOnTitle') : t('chat.rehearsalOffTitle')}
               aria-pressed={rehearsal}
               style={{
-                minHeight: 44, cursor: 'pointer', fontFamily: 'inherit',
+                minHeight: 40, cursor: 'pointer', fontFamily: 'inherit',
                 fontWeight: rehearsal ? 600 : 500,
                 color: rehearsal ? 'var(--warn-text)' : 'var(--ink-mute)',
               }}
@@ -1889,7 +1889,7 @@ export default function AIChat({ docked = false }) {
               onClick={onLeaveDiagnostic}
               className="z-chip"
               title={t('chat.diagModeTitle')}
-              style={{ minHeight: 44, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, color: 'var(--ink)' }}
+              style={{ minHeight: 40, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, color: 'var(--ink)' }}
             >
               <span className="z-dot" aria-hidden="true" style={{ background: 'var(--ink)' }} />
               {t('chat.diagModeOn')}
@@ -1909,7 +1909,7 @@ export default function AIChat({ docked = false }) {
               title={micEnabled
                 ? t('chat.wakeOnTitle')
                 : t('chat.wakeOffTitle')}
-              style={{ minHeight: 44, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--ink-mute)' }}
+              style={{ minHeight: 40, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--ink-mute)' }}
             >
               <span className="z-dot" aria-hidden="true" style={{ background: micEnabled ? 'var(--ok)' : 'var(--ink-faint)' }} />
               {micEnabled ? t('chat.wakeOn') : t('chat.muted')}
@@ -1921,7 +1921,7 @@ export default function AIChat({ docked = false }) {
               this pill is just the steady "what stage am I in" indicator
               (Listening → Transcribing → Thinking → Speaking). */}
           {(listening || transcribing || speaking) && (
-            <span className="z-chip" role="status" style={{ minHeight: 44, color: 'var(--ink-mute)', maxWidth: '70vw' }}>
+            <span className="z-chip" role="status" style={{ minHeight: 40, color: 'var(--ink-mute)', maxWidth: '70vw' }}>
               {listening && <VoiceWave active size={16} />}
               <span
                 style={{ fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -1973,11 +1973,11 @@ export default function AIChat({ docked = false }) {
           title={t('chat.rehearsalOnTitle')}
           className="bg-warn-soft"
           style={{
-            display: 'block', width: '100%', flexShrink: 0, minHeight: 44,
+            display: 'block', width: '100%', flexShrink: 0, minHeight: 40,
             paddingBlock: 8, paddingInline: 20,
             borderBlockEnd: '0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))',
             borderInline: 'none', borderBlockStart: 'none',
-            color: 'var(--warn-text)', fontSize: 15, lineHeight: '20px', fontWeight: 600,
+            color: 'var(--warn-text)', fontSize: 13, lineHeight: '20px', fontWeight: 600,
             textAlign: 'start', cursor: 'pointer', fontFamily: 'inherit',
           }}
         >
@@ -2048,7 +2048,7 @@ export default function AIChat({ docked = false }) {
               <p className="z-title" style={{ margin: 0, textAlign: 'center' }}>
                 {listening ? t('chat.listening') : t('chat.whatCanIDo')}
               </p>
-              <p style={{ fontSize: 17, lineHeight: '22px', color: 'var(--ink-mute)', margin: 0, textAlign: 'center', maxWidth: 320 }}>
+              <p style={{ fontSize: 15, lineHeight: '22px', color: 'var(--ink-mute)', margin: 0, textAlign: 'center', maxWidth: 320 }}>
                 {t('chat.tryOneBelow')}
               </p>
             </div>
@@ -2065,9 +2065,9 @@ export default function AIChat({ docked = false }) {
                     onClick={() => handleDirectQuickAsk(qa)}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: 8,
-                      minHeight: 44, padding: '12px 16px', borderRadius: 'var(--r-card)', flexShrink: 0,
+                      minHeight: 40, padding: '12px 16px', borderRadius: 'var(--r-card)', flexShrink: 0,
                       background: 'var(--surface)', border: '0.5px solid var(--line)',
-                      fontSize: 15, lineHeight: '20px', fontWeight: 500, color: 'var(--ink)',
+                      fontSize: 13, lineHeight: '20px', fontWeight: 500, color: 'var(--ink)',
                       cursor: 'pointer', fontFamily: 'inherit',
                       transition: 'background var(--dur-press) var(--ease-standard)',
                     }}
@@ -2083,9 +2083,9 @@ export default function AIChat({ docked = false }) {
                     onClick={() => handleSend(s)}
                     dir="auto"
                     style={{
-                      minHeight: 44, padding: '12px 16px', borderRadius: 'var(--r-card)',
+                      minHeight: 40, padding: '12px 16px', borderRadius: 'var(--r-card)',
                       background: 'var(--surface)', border: '0.5px solid var(--line)',
-                      fontSize: 15, lineHeight: '20px', fontWeight: 500, color: 'var(--ink)',
+                      fontSize: 13, lineHeight: '20px', fontWeight: 500, color: 'var(--ink)',
                       cursor: 'pointer', fontFamily: 'inherit',
                       transition: 'background var(--dur-press) var(--ease-standard)',
                     }}
@@ -2136,9 +2136,9 @@ export default function AIChat({ docked = false }) {
               onClick={() => handleDirectQuickAsk(qa)}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
-                minHeight: 44, padding: '8px 16px', borderRadius: 999, flexShrink: 0, cursor: 'pointer',
+                minHeight: 40, padding: '8px 16px', borderRadius: 999, flexShrink: 0, cursor: 'pointer',
                 background: 'var(--surface)', border: '0.5px solid var(--line)',
-                fontSize: 15, lineHeight: '20px', color: 'var(--ink)', fontWeight: 500, fontFamily: 'inherit',
+                fontSize: 13, lineHeight: '20px', color: 'var(--ink)', fontWeight: 500, fontFamily: 'inherit',
               }}
             >
               {qa.icon && <span aria-hidden="true">{qa.icon}</span>}
@@ -2178,7 +2178,7 @@ export default function AIChat({ docked = false }) {
             dir={isHebrew(input) ? 'rtl' : 'ltr'}
             style={{
               flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none',
-              fontSize: 17, lineHeight: '22px', color: 'var(--ink)', fontFamily: 'inherit', padding: 0,
+              fontSize: 15, lineHeight: '22px', color: 'var(--ink)', fontFamily: 'inherit', padding: 0,
             }}
           />
         </div>

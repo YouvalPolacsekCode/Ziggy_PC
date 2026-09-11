@@ -16,7 +16,7 @@ const TYPE_META = {
 // a navigation.
 const iconBtn = {
   background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)',
-  width: 44, height: 44, margin: '-12px -8px', padding: 0,
+  width: 40, height: 40, margin: '-12px -8px', padding: 0,
   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
 }
 
@@ -41,7 +41,7 @@ function Toast({ t, onDismiss }) {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
-        <span dir="auto" style={{ flex: 1, fontSize: 15, color: 'var(--ink)', lineHeight: 1.4, unicodeBidi: 'plaintext' }}>{t.message}</span>
+        <span dir="auto" style={{ flex: 1, fontSize: 13, color: 'var(--ink)', lineHeight: 1.4, unicodeBidi: 'plaintext' }}>{t.message}</span>
         {hasDetail && (
           <button onClick={() => setExpanded(v => !v)} style={iconBtn} aria-expanded={expanded}>
             <ChevronDown size={16} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)' }} />
@@ -52,7 +52,7 @@ function Toast({ t, onDismiss }) {
         </button>
       </div>
       {hasDetail && expanded && (
-        <div dir="auto" style={{ paddingBlockStart: 0, paddingBlockEnd: 12, paddingInlineEnd: 16, paddingInlineStart: 36, fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5, unicodeBidi: 'plaintext' }}>
+        <div dir="auto" style={{ paddingBlockStart: 0, paddingBlockEnd: 12, paddingInlineEnd: 16, paddingInlineStart: 36, fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.5, unicodeBidi: 'plaintext' }}>
           {t.detail}
         </div>
       )}

@@ -89,7 +89,7 @@ function ParamField({ schema, value, onChange }) {
     return (
       <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
         <Toggle checked={!!value} onCheckedChange={onChange} />
-        <span style={{ fontSize: 17, lineHeight: '22px', color: 'var(--ink)' }}>{schema.label}</span>
+        <span style={{ fontSize: 15, lineHeight: '22px', color: 'var(--ink)' }}>{schema.label}</span>
       </label>
     )
   }
@@ -118,7 +118,7 @@ function ParamField({ schema, value, onChange }) {
 // inverted look is reserved for the one primary action on the screen).
 function filterChip(active) {
   return {
-    minHeight: 36, padding: '8px 16px', borderRadius: 999, fontSize: 13, lineHeight: '18px',
+    minHeight: 36, padding: '8px 16px', borderRadius: 999, fontSize: 12, lineHeight: '18px',
     fontWeight: active ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit',
     background: active ? 'var(--surface-2)' : 'var(--surface)',
     color: active ? 'var(--ink)' : 'var(--ink-mute)',
@@ -137,7 +137,7 @@ function StepIndicator({ current }) {
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20 }}>
       {WIZARD_STEP_KEYS.map((s, i) => (
         <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div className="z-mono" style={{ width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, background: i < current ? 'var(--ink)' : i === current ? 'var(--surface-2)' : 'var(--surface)', color: i < current ? 'var(--bg)' : i === current ? 'var(--ink)' : 'var(--ink-mute)', border: i === current ? '1px solid var(--ink)' : i < current ? 'none' : '0.5px solid var(--line)', transition: 'background var(--dur-state) var(--ease-standard)' }}>
+          <div className="z-mono" style={{ width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, background: i < current ? 'var(--ink)' : i === current ? 'var(--surface-2)' : 'var(--surface)', color: i < current ? 'var(--bg)' : i === current ? 'var(--ink)' : 'var(--ink-mute)', border: i === current ? '1px solid var(--ink)' : i < current ? 'none' : '0.5px solid var(--line)', transition: 'background var(--dur-state) var(--ease-standard)' }}>
             {i < current ? <Check size={14} strokeWidth={2.5} aria-hidden /> : i + 1}
           </div>
           {i < WIZARD_STEP_COUNT - 1 && <div style={{ width: 24, height: 1, background: i < current ? 'var(--ink)' : 'var(--line)' }} />}
@@ -225,15 +225,15 @@ function AddVirtualDeviceWizard({ onSave, onClose, rooms, categories, capabiliti
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 260, overflowY: 'auto' }} className="scrollbar-thin">
                 {filteredCaps.map(cap => (
                   <button key={cap.id} onClick={() => selectCapability(cap)} aria-pressed={selectedCap?.id === cap.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '12px 16px', borderRadius: 'var(--r-ctl)', textAlign: 'start', cursor: 'pointer', fontFamily: 'inherit',
+                    display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '12px 16px', borderRadius: 'var(--r-ctl)', textAlign: 'start', cursor: 'pointer', fontFamily: 'inherit',
                     background: selectedCap?.id === cap.id ? 'var(--surface-2)' : 'var(--surface)',
                     border: `0.5px solid ${selectedCap?.id === cap.id ? 'var(--line-2)' : 'var(--line)'}`,
                     transition: 'background var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
                   }}>
-                    <span style={{ fontSize: 22, lineHeight: '24px', flexShrink: 0 }} aria-hidden>{cap.icon}</span>
+                    <span style={{ fontSize: 20, lineHeight: '24px', flexShrink: 0 }} aria-hidden>{cap.icon}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{cap.name}</p>
-                      <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{cap.description}</p>
+                      <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{cap.name}</p>
+                      <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{cap.description}</p>
                     </div>
                     {selectedCap?.id === cap.id && <Check size={20} strokeWidth={2} style={{ color: 'var(--ink)', flexShrink: 0 }} aria-hidden />}
                   </button>
@@ -380,12 +380,12 @@ function VirtualDeviceCard({ device, onToggle, onTrigger, onEdit, onDelete, trig
   const t = useT()
   return (
     <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={T_ENTER}>
-      <div className="z-card" style={{ padding: 16, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, lineHeight: '24px', background: device.enabled ? 'var(--surface-2)' : 'var(--surface)', border: '0.5px solid var(--line)', color: device.enabled ? 'var(--ink)' : 'var(--ink-faint)' }} aria-hidden>
+      <div className="z-card" style={{ padding: 12, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, lineHeight: '24px', background: device.enabled ? 'var(--surface-2)' : 'var(--surface)', border: '0.5px solid var(--line)', color: device.enabled ? 'var(--ink)' : 'var(--ink-faint)' }} aria-hidden>
           {device.icon}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{device.name}</p>
+          <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">{device.name}</p>
           <p className="z-footnote z-code" style={{ marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.capability}</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
             {device.category && (

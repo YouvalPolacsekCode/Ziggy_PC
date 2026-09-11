@@ -24,7 +24,7 @@ function _fmtAgo(iso) {
 
 // 44×44 quiet icon target used for the per-signal dismiss.
 const ICON_BTN = {
-  width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+  width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
   background: 'transparent', border: 'none', padding: 0,
 }
@@ -72,10 +72,10 @@ function SignalRow({ signal, devices, onAssigned, onDismissed }) {
   const canBind = !busy && !!deviceId && !!commandName.trim()
 
   return (
-    <div className="z-card" style={{ padding: 16, marginBottom: 8 }}>
+    <div className="z-card" style={{ padding: 12, marginBottom: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
         <div style={{
-          width: 44, height: 44, borderRadius: 'var(--r-ctl)',
+          width: 40, height: 40, borderRadius: 'var(--r-ctl)',
           background: 'var(--surface-2)', color: 'var(--ink-2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
@@ -198,7 +198,7 @@ export default function UnassignedSignalsPanel({ open, onClose, refreshSignal })
           onClick={refresh}
           disabled={loading}
           className="z-btn-secondary"
-          style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)' }}
+          style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)' }}
         >
           {/* 1s linear spin, only while a load is in flight */}
           <RefreshCw size={16} strokeWidth={1.75} className={loading ? 'z-spin' : ''} />
@@ -208,7 +208,7 @@ export default function UnassignedSignalsPanel({ open, onClose, refreshSignal })
           <button
             onClick={handleClearAll}
             className="z-btn-secondary"
-            style={{ fontSize: 15, fontWeight: 500, color: 'var(--err-text)' }}
+            style={{ fontSize: 13, fontWeight: 500, color: 'var(--err-text)' }}
           >
             {t('unassignedSig.clearAll')}
           </button>
@@ -224,7 +224,7 @@ export default function UnassignedSignalsPanel({ open, onClose, refreshSignal })
       {!loading && signals.length === 0 && (
         <div style={{ textAlign: 'center', padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
           <Radio size={28} strokeWidth={1.75} style={{ color: 'var(--ink-faint)', marginBottom: 8 }} />
-          <p style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{t('unassignedSig.noneTitle')}</p>
+          <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{t('unassignedSig.noneTitle')}</p>
           <p className="z-subhead" style={{ margin: 0 }}>
             {t('unassignedSig.noneHint')}
           </p>

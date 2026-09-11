@@ -205,7 +205,7 @@ function WebSetupStep({ onDone, onError }) {
         dir="ltr"
       />
       <div className="z-footnote">{t('mobileOnboard.claim.passwordHint')}</div>
-      {error && <div role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>}
+      {error && <div role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>}
       <button onClick={submit} disabled={busy} style={primaryBtn}>
         {busy ? t('mobileOnboard.claim.creating') : t('mobileOnboard.claim.create')}
       </button>

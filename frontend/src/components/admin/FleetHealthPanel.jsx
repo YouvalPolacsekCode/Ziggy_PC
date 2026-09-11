@@ -82,7 +82,7 @@ function HomeRow({ home, onRepaired }) {
   return (
     <div style={{
       padding: '12px 16px', borderTop: '0.5px solid var(--line)',
-      display: 'flex', flexDirection: 'column', gap: 8, minHeight: 56,
+      display: 'flex', flexDirection: 'column', gap: 8, minHeight: 48,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <Pill level={home.level} />
@@ -93,7 +93,7 @@ function HomeRow({ home, onRepaired }) {
       </div>
 
       {!isFine && (
-        <div style={{ fontSize: 15, color: 'var(--ink)', lineHeight: '20px' }}>
+        <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: '20px' }}>
           {(home.issues || []).map((issue, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span className="z-dot" style={{ background: (LEVEL_UI[issue.level] || LEVEL_UI.unknown).fill }} />
@@ -122,7 +122,7 @@ function HomeRow({ home, onRepaired }) {
             )
           })}
           {result && (
-            <span style={{ fontSize: 15, color: result.ok ? 'var(--ok-text)' : 'var(--err-text)' }}>
+            <span style={{ fontSize: 13, color: result.ok ? 'var(--ok-text)' : 'var(--err-text)' }}>
               {result.message}
             </span>
           )}
@@ -191,7 +191,7 @@ function RelaySignIn({ relayUrl, onSignedIn }) {
           {busy ? <Loader2Spin /> : <LogIn size={18} strokeWidth={1.75} />} Sign in
         </button>
       </div>
-      {error && <span style={{ fontSize: 15, color: 'var(--err-text)' }}>{error}</span>}
+      {error && <span style={{ fontSize: 13, color: 'var(--err-text)' }}>{error}</span>}
     </form>
   )
 }
@@ -275,7 +275,7 @@ export default function FleetHealthPanel() {
       )}
       {needsAuth && <RelaySignIn relayUrl={relayUrl} onSignedIn={load} />}
       {error && !needsAuth && (
-        <div style={{ padding: '0 16px 16px', fontSize: 15, color: 'var(--err-text)' }}>{error}</div>
+        <div style={{ padding: '0 16px 16px', fontSize: 13, color: 'var(--err-text)' }}>{error}</div>
       )}
       {data?.homes?.map(h => (
         <HomeRow key={h.home_id} home={h} onRepaired={load} />

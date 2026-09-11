@@ -67,7 +67,7 @@ function Chips({ options, value, onPick, labelFor }) {
             onClick={() => onPick(opt)}
             aria-pressed={active}
             style={{
-              minHeight: 44, padding: '8px 16px', borderRadius: 999, fontSize: 15, fontWeight: active ? 600 : 500,
+              minHeight: 40, padding: '8px 16px', borderRadius: 999, fontSize: 13, fontWeight: active ? 600 : 500,
               fontFamily: 'inherit', cursor: 'pointer',
               background: active ? 'var(--surface-2)' : 'var(--surface)',
               color: active ? 'var(--ink)' : 'var(--ink-mute)',
@@ -116,7 +116,7 @@ function CaptureFlash({ seq, label }) {
             <Check size={52} strokeWidth={3} />
           </div>
           <span style={{
-            fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--on-accent)',
+            fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--on-accent)',
             background: 'var(--ok)', padding: '8px 16px', borderRadius: 999,
             boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
           }}>{label}</span>
@@ -137,7 +137,7 @@ function ListeningPulse({ label }) {
       >
         <Ear size={20} strokeWidth={1.75} />
       </motion.span>
-      <span style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)', fontWeight: 500 }}>{label}</span>
+      <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ink-mute)', fontWeight: 500 }}>{label}</span>
     </div>
   )
 }
@@ -466,7 +466,7 @@ export default function IrWalkWizard() {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
-            <label style={{ display: 'block', fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+            <label style={{ display: 'block', fontSize: 13, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
               {t('irWalk.setup.tempLabel')}
             </label>
             <input
@@ -477,7 +477,7 @@ export default function IrWalkWizard() {
             />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+            <label style={{ display: 'block', fontSize: 13, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
               {t('irWalk.setup.fanLabel')}
             </label>
             <Chips options={['low']} value={setupFan} onPick={setSetupFan}
@@ -527,7 +527,7 @@ export default function IrWalkWizard() {
         <ListeningPulse label={t('irWalk.listening')} />
 
         {captures > 0 && (
-          <p className="z-mono" style={{ textAlign: 'center', fontSize: 15, lineHeight: '20px', color: 'var(--ink)', fontWeight: 600 }}>
+          <p className="z-mono" style={{ textAlign: 'center', fontSize: 13, lineHeight: '20px', color: 'var(--ink)', fontWeight: 600 }}>
             {t('irWalk.pressesHeard', { n: captures })}
           </p>
         )}
@@ -538,7 +538,7 @@ export default function IrWalkWizard() {
             background: 'var(--surface-2)', border: '0.5px solid var(--line)',
             borderRadius: 'var(--r-ctl)', padding: '12px 16px',
           }}>
-            <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink)' }}>
+            <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ink)' }}>
               {missCount >= MISSES_BEFORE_RECOVERY ? t('irWalk.recoveryHint') : t('irWalk.missHint')}
             </p>
           </div>
@@ -551,8 +551,8 @@ export default function IrWalkWizard() {
           style={{
             background: 'none', border: 'none', cursor: waitingForPress ? 'default' : 'pointer',
             color: waitingForPress ? 'var(--ink-faint)' : 'var(--ink-mute)',
-            fontSize: 15, lineHeight: '20px', fontWeight: 500, fontFamily: 'inherit',
-            minHeight: 44, padding: '8px 16px', textDecoration: 'underline',
+            fontSize: 13, lineHeight: '20px', fontWeight: 500, fontFamily: 'inherit',
+            minHeight: 40, padding: '8px 16px', textDecoration: 'underline',
           }}
         >
           {waitingForPress ? t('irWalk.stillListening') : t('irWalk.iPressed')}
@@ -607,10 +607,10 @@ export default function IrWalkWizard() {
         </div>
 
         {facts.length > 0 && (
-          <Card soft style={{ padding: 16 }}>
+          <Card soft style={{ padding: 12 }}>
             <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, listStyle: 'none', margin: 0, padding: 0 }}>
               {facts.map((f, i) => (
-                <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 15, lineHeight: '20px', color: 'var(--ink)' }}>
+                <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, lineHeight: '20px', color: 'var(--ink)' }}>
                   <Check size={20} strokeWidth={2} style={{ color: 'var(--ok)', flexShrink: 0 }} />
                   <span>{f}</span>
                 </li>
@@ -620,8 +620,8 @@ export default function IrWalkWizard() {
         )}
 
         {unresolved.length > 0 && (
-          <Card soft style={{ padding: 16 }}>
-            <p style={{ fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+          <Card soft style={{ padding: 12 }}>
+            <p style={{ fontSize: 13, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
               {t('irWalk.finish.unresolvedTitle')}
             </p>
             <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, listStyle: 'none', margin: 0, padding: 0 }}>
@@ -642,7 +642,7 @@ export default function IrWalkWizard() {
               <span className="z-pulse" style={{ display: 'inline-flex', color: 'var(--ink-mute)' }}>
                 <Radio size={20} strokeWidth={1.75} />
               </span>
-              <span className="z-mono" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink)', fontWeight: 600 }}>
+              <span className="z-mono" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ink)', fontWeight: 600 }}>
                 {t('irWalk.validate.sending', { i: valProgress.i, total: valProgress.total })}
               </span>
             </div>
@@ -738,7 +738,7 @@ export default function IrWalkWizard() {
 
       {phase === 'error' && (
         <div style={{ textAlign: 'center', padding: '32px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <p role="alert" style={{ fontSize: 17, lineHeight: '22px', color: 'var(--err-text)' }}>{errorMsg || t('irWalk.errorGeneric')}</p>
+          <p role="alert" style={{ fontSize: 15, lineHeight: '22px', color: 'var(--err-text)' }}>{errorMsg || t('irWalk.errorGeneric')}</p>
           <Button variant="secondary" size="md" style={{ margin: '0 auto' }} onClick={() => navigate('/devices')}>
             {t('common.back')}
           </Button>
@@ -754,7 +754,7 @@ export default function IrWalkWizard() {
             exit={{ opacity: 0, y: -4 }}
             transition={T_ENTER}
           >
-            <Card style={{ padding: 16 }}>
+            <Card style={{ padding: 12 }}>
               <p className="z-body" style={{ marginBottom: 16 }}>
                 {t(instructionKey)}
               </p>
@@ -774,7 +774,7 @@ export default function IrWalkWizard() {
       )}
 
       {phase === 'summary' && finishData && (
-        <Card style={{ padding: 16 }}>{renderSummary()}</Card>
+        <Card style={{ padding: 12 }}>{renderSummary()}</Card>
       )}
 
       {phase === 'done_ok' && renderDone(true)}

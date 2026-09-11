@@ -113,7 +113,7 @@ function OsNavSection({ entity, pairedRemoteId, fireSmart }) {
 
   return (
     <div className="z-card" style={{
-      padding: 16, borderRadius: 16,
+      padding: 12, borderRadius: 16,
       display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center',
     }}>
       {dpadVisible && (
@@ -160,7 +160,7 @@ function CompactDPad({ okOk, upOk, downOk, leftOk, rightOk, fireSmart }) {
           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
           width: OK, height: OK, borderRadius: '50%',
           background: 'var(--ink)', color: 'var(--bg)', border: 'none',
-          fontSize: 15, fontWeight: 700, letterSpacing: '0.02em',
+          fontSize: 13, fontWeight: 700, letterSpacing: '0.02em',
           boxShadow: okOk ? 'var(--shadow-md)' : 'none',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: okOk ? 'pointer' : 'not-allowed',
@@ -194,7 +194,7 @@ function CompactDPad({ okOk, upOk, downOk, leftOk, rightOk, fireSmart }) {
 
 function NavPill({ onClick, children }) {
   return (
-    <button onClick={onClick} className="z-btn-secondary" style={{ padding: '0 16px', fontSize: 15 }}>
+    <button onClick={onClick} className="z-btn-secondary" style={{ padding: '0 16px', fontSize: 13 }}>
       {children}
     </button>
   )
@@ -220,7 +220,7 @@ function NowPlayingHero({ entity, attrs, facts }) {
   return (
     <div className="z-card" style={{
       display: 'flex', flexDirection: 'column', gap: 16,
-      padding: 16,
+      padding: 12,
     }}>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
         {/* Artwork or fallback — a plain surface-2 tile with the kind glyph,
@@ -247,12 +247,12 @@ function NowPlayingHero({ entity, attrs, facts }) {
             }}>{app}</div>
           )}
           <div dir="auto" style={{
-            fontSize: 17, fontWeight: 600, color: 'var(--ink)', lineHeight: '22px',
+            fontSize: 15, fontWeight: 600, color: 'var(--ink)', lineHeight: '22px',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>{title}</div>
           {subtitle && (
             <div dir="auto" style={{
-              fontSize: 15, color: 'var(--ink-mute)', marginTop: 2,
+              fontSize: 13, color: 'var(--ink-mute)', marginTop: 2,
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>{subtitle}</div>
           )}
@@ -307,7 +307,7 @@ function ScrubBar({ entity, attrs, fire }) {
   }
 
   return (
-    <div className="z-card" style={{ padding: 16 }}>
+    <div className="z-card" style={{ padding: 12 }}>
       <input
         type="range"
         min={0} max={duration} step={1}
@@ -324,13 +324,13 @@ function ScrubBar({ entity, attrs, fire }) {
       />
       <div style={{
         display: 'flex', justifyContent: 'space-between', marginTop: 4,
-        fontSize: 13, color: 'var(--ink-mute)',
+        fontSize: 12, color: 'var(--ink-mute)',
         fontVariantNumeric: 'tabular-nums', }}>
         <span dir="ltr">{_fmtSec(value)}</span>
         <span dir="ltr">−{_fmtSec(Math.max(0, duration - value))}</span>
       </div>
       {!seekOk && (
-        <div style={{ fontSize: 13, color: 'var(--ink-mute)', textAlign: 'center', marginTop: 4 }}>
+        <div style={{ fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center', marginTop: 4 }}>
           {i18nT('remote.seekNotSupported')}
         </div>
       )}
@@ -430,7 +430,7 @@ function VolumeRow({ entity, attrs, fire }) {
   return (
     <div className="z-card" style={{
       display: 'flex', alignItems: 'center', gap: 12,
-      padding: '8px 16px', minHeight: 56,
+      padding: '8px 16px', minHeight: 48,
     }}>
       <button
         onClick={() => muteOk && fire('mute_toggle', { muted: !isMuted })}
@@ -462,20 +462,20 @@ function VolumeRow({ entity, attrs, fire }) {
           <button onClick={() => bumpStep(-1)} disabled={!downOk}
             aria-label={i18nT('remote.volumeDown')}
             style={{ width: 64, height: 44, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)',
-                     color: 'var(--ink-2)', border: '0.5px solid var(--line)', fontSize: 20,
+                     color: 'var(--ink-2)', border: '0.5px solid var(--line)', fontSize: 18,
                      cursor: downOk ? 'pointer' : 'not-allowed', opacity: downOk ? 1 : 0.4,
                      fontFamily: 'inherit' }}>−</button>
           <button onClick={() => bumpStep(+1)} disabled={!upOk}
             aria-label={i18nT('remote.volumeUp')}
             style={{ width: 64, height: 44, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)',
-                     color: 'var(--ink-2)', border: '0.5px solid var(--line)', fontSize: 20,
+                     color: 'var(--ink-2)', border: '0.5px solid var(--line)', fontSize: 18,
                      cursor: upOk ? 'pointer' : 'not-allowed', opacity: upOk ? 1 : 0.4,
                      fontFamily: 'inherit' }}>+</button>
         </div>
       )}
 
       <span className="z-mono" style={{
-        fontSize: 13, color: 'var(--ink-mute)', minWidth: 40, textAlign: 'end',
+        fontSize: 12, color: 'var(--ink-mute)', minWidth: 40, textAlign: 'end',
       }}>{setVolOk ? `${local}%` : (haVolPct != null ? `${haVolPct}%` : '')}</span>
     </div>
   )

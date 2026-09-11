@@ -100,7 +100,7 @@ function StatRow({ label, value, mono }) {
 
 function TabSpinner() {
   return (
-    <div style={{ padding: 16, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ink-mute)' }}>
+    <div style={{ padding: 12, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ink-mute)' }}>
       <Loader size={18} strokeWidth={1.75} className="z-spin" />
       <span />
     </div>
@@ -108,7 +108,7 @@ function TabSpinner() {
 }
 
 function TabError({ children }) {
-  return <p style={{ padding: 16, fontSize: 15, color: 'var(--warn-text)' }}>{children}</p>
+  return <p style={{ padding: 12, fontSize: 13, color: 'var(--warn-text)' }}>{children}</p>
 }
 function TabEmpty({ children }) {
   return <p className="z-body" style={{ padding: 32, textAlign: 'center', color: 'var(--ink-mute)' }}>{children}</p>
@@ -208,7 +208,7 @@ function TelemetryTab({ homeId, onPayload }) {
       </Button>
       {showRaw && (
         <pre className="z-code" style={{
-          fontSize: 13, lineHeight: '18px', color: 'var(--ink-mute)', background: 'var(--surface-2)',
+          fontSize: 12, lineHeight: '18px', color: 'var(--ink-mute)', background: 'var(--surface-2)',
           padding: 12, borderRadius: 'var(--r-ctl)', overflow: 'auto', marginTop: 8,
           maxHeight: 240, border: '0.5px solid var(--line)',
         }}>
@@ -374,7 +374,7 @@ function BackupTab({ homeId }) {
         {restoreEvents.length === 0 ? (
           <p className="z-subhead">{t('cloudAdmin.backupNoRestoreEvents')}</p>
         ) : restoreEvents.map((ev, i) => (
-          <div key={i} className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)', padding: '8px 0', borderBottom: '0.5px dashed var(--line)' }}>
+          <div key={i} className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)', padding: '8px 0', borderBottom: '0.5px dashed var(--line)' }}>
             {ev.ts} · {ev.event} {ev.ok === false ? '(failed)' : ''}
           </div>
         ))}
@@ -472,7 +472,7 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
             {emailSent && (
               <div className="bg-ok-soft" style={{ display: 'flex', gap: 12, alignItems: 'flex-start', border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', padding: '12px 16px' }}>
                 <CheckCircle size={20} strokeWidth={1.75} style={{ color: 'var(--ok)', flexShrink: 0 }} />
-                <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ok-text)', fontWeight: 600 }}>
+                <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ok-text)', fontWeight: 600 }}>
                   {mode === 'home' ? t('cloud.setupEmailSent') : t('cloud.inviteEmailSent')} {t('cloud.emailToStrong')} <strong>{email}</strong>
                 </p>
               </div>
@@ -481,13 +481,13 @@ function InviteModal({ open, onClose, onCreated, homeId, homeName, mode }) {
               <div className="bg-warn-soft" style={{ display: 'flex', gap: 12, alignItems: 'flex-start', border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', padding: '12px 16px' }}>
                 <XCircle size={20} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} />
                 <div>
-                  <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--warn-text)', fontWeight: 600, marginBottom: 2 }}>{t('cloud.emailNotSent')}</p>
+                  <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--warn-text)', fontWeight: 600, marginBottom: 2 }}>{t('cloud.emailNotSent')}</p>
                   <p className="z-footnote">{emailError}</p>
                 </div>
               </div>
             )}
             <p className="z-footnote">{t('cloud.linkExpires')}</p>
-            <div className="z-code" style={{ background: 'var(--surface-2)', border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', padding: 12, fontSize: 13, lineHeight: '18px', color: 'var(--ink)', wordBreak: 'break-all' }}>
+            <div className="z-code" style={{ background: 'var(--surface-2)', border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', padding: 12, fontSize: 12, lineHeight: '18px', color: 'var(--ink)', wordBreak: 'break-all' }}>
               {link}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -577,9 +577,9 @@ function UserRow({
     <div style={{ borderBottom: '0.5px solid var(--line)' }}>
       <div
         onClick={() => setExpanded(v => !v)}
-        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 20px', minHeight: 56, cursor: 'pointer' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 20px', minHeight: 48, cursor: 'pointer' }}
       >
-        <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: 'var(--ink)', flexShrink: 0 }}>
+        <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: 'var(--ink)', flexShrink: 0 }}>
           {(user.username?.[0] || user.email?.[0] || '?').toUpperCase()}
         </div>
         <span className="z-headline" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -591,7 +591,7 @@ function UserRow({
             onChange={e => onRoleChange(user.username, e.target.value)}
             onClick={stopRowToggle}
             className="z-input"
-            style={{ width: 'auto', fontSize: 15, padding: '8px 12px', cursor: 'pointer' }}
+            style={{ width: 'auto', fontSize: 13, padding: '8px 12px', cursor: 'pointer' }}
           >
             {ROLE_ORDER.map(r => <option key={r} value={r}>{t(ROLE_LABEL_KEY[r])}</option>)}
           </select>
@@ -629,7 +629,7 @@ function UserRow({
             <a
               href={auditDeepLink}
               onClick={stopRowToggle}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44, marginTop: 4, fontSize: 15, fontWeight: 500, color: 'var(--ink)', textDecoration: 'underline', textUnderlineOffset: 3 }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 40, marginTop: 4, fontSize: 13, fontWeight: 500, color: 'var(--ink)', textDecoration: 'underline', textUnderlineOffset: 3 }}
             >
               {t('cloudAdmin.userViewAudit')}
               <ChevronRight size={18} strokeWidth={1.75} className="icon-flip-rtl" />
@@ -674,10 +674,10 @@ function MobileTab({ homeId, onDevicesLoaded }) {
         const lastSeen = d.last_seen_at || d.last_seen || d.last_active_at
         const hasToken = !!(d.push_token || d.apns_token || d.fcm_token || d.web_push_endpoint)
         return (
-          <div key={d.device_id || d.id} style={{ padding: '12px 20px', minHeight: 56, borderBottom: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div key={d.device_id || d.id} style={{ padding: '12px 20px', minHeight: 48, borderBottom: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
             <Smartphone size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span>
                   {platformLabel}
                   {d.device_name && <span style={{ color: 'var(--ink-mute)', fontWeight: 400 }}> · {d.device_name}</span>}
@@ -762,7 +762,7 @@ function SupportSessionModal({ open, onClose, homeId, homeName }) {
         ) : (
           <>
             <div className="bg-ok-soft" style={{ padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)' }}>
-              <p style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ok-text)', fontWeight: 600 }}>{t('cloudAdmin.supportAuditWritten', { id: result.audit_id ?? '?' })}</p>
+              <p style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ok-text)', fontWeight: 600 }}>{t('cloudAdmin.supportAuditWritten', { id: result.audit_id ?? '?' })}</p>
               <p className="z-footnote" style={{ marginTop: 4 }}>{t('cloudAdmin.supportNotificationStub')}</p>
             </div>
             <div>
@@ -771,7 +771,7 @@ function SupportSessionModal({ open, onClose, homeId, homeName }) {
               </p>
               <pre dir="ltr" className="z-code" style={{
                 background: 'var(--surface-2)', borderRadius: 'var(--r-ctl)', padding: 12,
-                fontSize: 13, lineHeight: '18px', color: 'var(--ink)', border: '0.5px solid var(--line)', overflowX: 'auto', margin: 0,
+                fontSize: 12, lineHeight: '18px', color: 'var(--ink)', border: '0.5px solid var(--line)', overflowX: 'auto', margin: 0,
                 whiteSpace: 'pre-wrap', wordBreak: 'break-all',
               }}>{result.ssh_snippet}</pre>
             </div>
@@ -896,9 +896,9 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
 
       {/* Pending invites */}
       {pending.map(inv => (
-        <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 20px', minHeight: 56, borderBottom: '0.5px solid var(--line)' }}>
+        <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 20px', minHeight: 48, borderBottom: '0.5px solid var(--line)' }}>
           <Clock size={20} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} />
-          <span style={{ flex: 1, minWidth: 0, fontSize: 15, color: 'var(--ink-mute)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--ink-mute)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {inv.email || t('cloud.openInviteShort')} · {ROLE_LABEL_KEY[inv.role] ? t(ROLE_LABEL_KEY[inv.role]) : inv.role}
           </span>
           <span className="z-chip bg-warn-soft" style={{ color: 'var(--warn-text)', flexShrink: 0 }}>{t('cloud.tagPending')}</span>
@@ -933,7 +933,7 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(v => !v) } }}
         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', minHeight: 68, cursor: 'pointer', textAlign: 'start', boxSizing: 'border-box' }}
       >
-        <div style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ width: 36, height: 36, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <Home size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -996,8 +996,8 @@ function HomeCard({ home, users, invites, onRoleChange, onDeleteUser, onRevokeIn
                       onClick={() => setTab(id)}
                       style={{
                         flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                        padding: '0 12px', minHeight: 44, background: 'transparent', border: 'none', cursor: 'pointer',
-                        fontFamily: 'inherit', fontSize: 15, fontWeight: 600, whiteSpace: 'nowrap',
+                        padding: '0 12px', minHeight: 40, background: 'transparent', border: 'none', cursor: 'pointer',
+                        fontFamily: 'inherit', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
                         color: active ? 'var(--ink)' : 'var(--ink-mute)',
                         borderBottom: `2px solid ${active ? 'var(--ink)' : 'transparent'}`,
                         transition: 'color var(--dur-press) var(--ease-standard), border-color var(--dur-press) var(--ease-standard)',
@@ -1151,13 +1151,13 @@ export default function CloudAdmin() {
 
       {/* Relay status bar */}
       {relayConfigured && (
-        <div className="z-card-soft" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, padding: '8px 16px', minHeight: 56, borderRadius: 'var(--r-ctl)' }}>
+        <div className="z-card-soft" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, padding: '8px 16px', minHeight: 48, borderRadius: 'var(--r-ctl)' }}>
           {relayOnline
-            ? <><CheckCircle size={18} strokeWidth={1.75} style={{ color: 'var(--ok)', flexShrink: 0 }} /><span style={{ fontSize: 15, color: 'var(--ok-text)', fontWeight: 600 }}>{t('cloud.relayOnline')}</span></>
+            ? <><CheckCircle size={18} strokeWidth={1.75} style={{ color: 'var(--ok)', flexShrink: 0 }} /><span style={{ fontSize: 13, color: 'var(--ok-text)', fontWeight: 600 }}>{t('cloud.relayOnline')}</span></>
             : relayNeedsAuth
-              ? <><Shield size={18} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} /><span style={{ fontSize: 15, color: 'var(--warn-text)', fontWeight: 600 }}>Not signed in to the relay</span></>
-              : <><WifiOff size={18} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} /><span style={{ fontSize: 15, color: 'var(--warn-text)', fontWeight: 600 }}>{t('cloud.relayOffline')}</span></>}
-          <span className="z-code" style={{ fontSize: 13, color: 'var(--ink-mute)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getRelayUrl()}</span>
+              ? <><Shield size={18} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} /><span style={{ fontSize: 13, color: 'var(--warn-text)', fontWeight: 600 }}>Not signed in to the relay</span></>
+              : <><WifiOff size={18} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} /><span style={{ fontSize: 13, color: 'var(--warn-text)', fontWeight: 600 }}>{t('cloud.relayOffline')}</span></>}
+          <span className="z-code" style={{ fontSize: 12, color: 'var(--ink-mute)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getRelayUrl()}</span>
           <Button variant="ghost" size="sm" onClick={() => { localStorage.removeItem('ziggy_relay_url'); localStorage.removeItem('ziggy_relay_token'); window.location.reload() }}>
             {t('cloud.disconnectBtn')}
           </Button>

@@ -56,7 +56,7 @@ export function CheckMark() {
 export function CheckRow({ label, sub, on, onClick }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={on}
-      style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-chip)',
+      style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, padding: '8px 12px', borderRadius: 'var(--r-chip)',
         background: on ? 'color-mix(in srgb, var(--ok) 8%, transparent)' : 'transparent',
         border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', width: '100%',
         transition: 'background var(--dur-press) var(--ease-standard)' }}>
@@ -78,7 +78,7 @@ export function CheckRow({ label, sub, on, onClick }) {
 export function RadioRow({ label, sub, sel, onClick }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={sel}
-      style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minHeight: 44, padding: '10px 12px', borderRadius: 'var(--r-ctl)',
+      style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minHeight: 40, padding: '10px 12px', borderRadius: 'var(--r-ctl)',
         background: sel ? 'color-mix(in srgb, var(--ok) 9%, transparent)' : 'transparent',
         border: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'inherit', width: '100%',
         transition: 'background var(--dur-press) var(--ease-standard)' }}>
@@ -107,7 +107,7 @@ export function Pill({ selected, onClick, children }) {
 
 export function ToggleRow({ label, sub, checked, onChange, border }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 56,
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 48,
       padding: '12px 16px', borderTop: border ? '0.5px solid var(--line)' : 'none' }}>
       <span style={{ minWidth: 0 }}>
         <span className="z-body" style={{ display: 'block' }} dir="auto">{label}</span>
@@ -197,7 +197,7 @@ function PickOneField({ field, values, setValue, ctx, t }) {
     return (
       <div>
         {label && <Eyebrow>{label}</Eyebrow>}
-        <p className="z-subhead" style={{ color: 'var(--ink)', minHeight: 44, display: 'flex', alignItems: 'center', padding: '8px 16px', margin: 0,
+        <p className="z-subhead" style={{ color: 'var(--ink)', minHeight: 40, display: 'flex', alignItems: 'center', padding: '8px 16px', margin: 0,
           border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', background: 'var(--surface)' }} dir="auto">
           {items[0].label}
         </p>
@@ -260,7 +260,7 @@ function ToggleField({ field, values, setValue, ctx, t, borderTop }) {
 function NumberField({ field, values, setValue, ctx, t, borderTop }) {
   const label = L(t, values, ctx, field.labelKey, field.label)
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 16px',
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 16px',
       borderTop: borderTop ? '0.5px solid var(--line)' : 'none' }}>
       <span className="z-body" style={{ flex: 1, minWidth: 0 }} dir="auto">
         {label}
@@ -294,7 +294,7 @@ function SliderField({ field, values, setValue, ctx, t }) {
         value={values[field.key]}
         onChange={(e) => setValue(field.key, Number(e.target.value))}
         aria-label={label}
-        style={{ width: '100%', accentColor: 'var(--ink)', minHeight: 44 }} />
+        style={{ width: '100%', accentColor: 'var(--ink)', minHeight: 40 }} />
     </div>
   )
 }
@@ -302,7 +302,7 @@ function SliderField({ field, values, setValue, ctx, t }) {
 function TimeField({ field, values, setValue, ctx, t, borderTop }) {
   const label = L(t, values, ctx, field.labelKey, field.label)
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 16px',
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 16px',
       borderTop: borderTop ? '0.5px solid var(--line)' : 'none' }}>
       <span className="z-body" style={{ flex: 1, minWidth: 0 }} dir="auto">
         {label}
@@ -317,7 +317,7 @@ function TimeField({ field, values, setValue, ctx, t, borderTop }) {
 function TimeWindowField({ field, values, setValue, ctx, t, borderTop }) {
   const [fromKey, toKey] = field.keys || ['after', 'before']
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 56, padding: '8px 16px', flexWrap: 'wrap',
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 48, padding: '8px 16px', flexWrap: 'wrap',
       borderTop: borderTop ? '0.5px solid var(--line)' : 'none' }}>
       <span className="z-subhead" dir="auto">{t(field.fromKey || 'automations.bundles.from')}</span>
       <div style={{ width: 120 }}>
@@ -390,7 +390,7 @@ export function FieldList({ fields, values, setValue, ctx, isInstalled }) {
     if (f.locked && f.locked(values, ctx)) {
       flushCard()
       out.push(
-        <div key={f.key} className="z-subhead" style={{ color: 'var(--ink)', minHeight: 44, display: 'flex', alignItems: 'center', padding: '8px 16px',
+        <div key={f.key} className="z-subhead" style={{ color: 'var(--ink)', minHeight: 40, display: 'flex', alignItems: 'center', padding: '8px 16px',
           border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', background: 'var(--surface)' }} dir="auto">
           {f.lockedLabel ? f.lockedLabel(t, values, ctx) : String(values[f.key] ?? '')}
         </div>,
@@ -446,7 +446,7 @@ function summaryValue(f, values, ctx, t) {
 
 function SummaryRow({ label, value }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '8px 0',
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, padding: '8px 0',
       borderBottom: '0.5px solid var(--line)' }}>
       <span className="z-subhead" style={{ flex: 1, minWidth: 0 }} dir="auto">{label}</span>
       <span className="z-subhead z-mono" style={{ color: 'var(--ink)', fontWeight: 600, textAlign: 'end', maxWidth: '55%',

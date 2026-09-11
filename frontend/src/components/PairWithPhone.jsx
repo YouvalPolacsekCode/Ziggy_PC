@@ -81,7 +81,7 @@ export function PairWithPhone() {
 
   return (
     <section className="z-card-soft" style={{
-      padding: 16,
+      padding: 12,
       display: 'flex', flexDirection: 'column', gap: 12,
     }}>
       <div>
@@ -119,14 +119,14 @@ export function PairWithPhone() {
           />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
             <code className="z-code" style={{
-              fontSize: 22, lineHeight: '28px', letterSpacing: '0.2em', fontWeight: 700,
+              fontSize: 20, lineHeight: '28px', letterSpacing: '0.2em', fontWeight: 700,
               color: 'var(--ink)',
             }}>
               {code}
             </code>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <div className="z-footnote">{t('pairPhone.expiresIn')}</div>
-              <div className="z-mono" style={{ fontSize: 17, lineHeight: '22px', color: 'var(--ink)', fontWeight: 600 }}>
+              <div className="z-mono" style={{ fontSize: 15, lineHeight: '22px', color: 'var(--ink)', fontWeight: 600 }}>
                 {Math.floor(expiresIn / 60)}:{String(expiresIn % 60).padStart(2, '0')}
               </div>
             </div>
@@ -138,7 +138,7 @@ export function PairWithPhone() {
       )}
 
       {error && (
-        <div role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>
+        <div role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>
       )}
     </section>
   )

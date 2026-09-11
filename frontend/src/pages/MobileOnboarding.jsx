@@ -167,7 +167,7 @@ export default function MobileOnboarding({ startFresh = false }) {
         <button
           onClick={() => { setWallModeFlag(true); window.location.assign('/wall') }}
           style={{
-            display: 'flex', alignItems: 'center', gap: 12, width: '100%', minHeight: 64,
+            display: 'flex', alignItems: 'center', gap: 12, width: '100%', minHeight: 56,
             padding: '12px 16px', marginBottom: 16, cursor: 'pointer', fontFamily: 'inherit',
             background: 'var(--surface)', border: '0.5px solid var(--line)',
             borderRadius: 'var(--r-card)', color: 'var(--ink)', textAlign: 'start',
@@ -175,10 +175,10 @@ export default function MobileOnboarding({ startFresh = false }) {
         >
           <Monitor size={24} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-2)', flexShrink: 0 }} />
           <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: 'block', fontSize: 17, lineHeight: '22px', fontWeight: 600 }}>
+            <span style={{ display: 'block', fontSize: 15, lineHeight: '22px', fontWeight: 600 }}>
               {t('mobileOnboard.wallInstead')}
             </span>
-            <span style={{ display: 'block', fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)', marginTop: 2 }}>
+            <span style={{ display: 'block', fontSize: 13, lineHeight: '20px', color: 'var(--ink-mute)', marginTop: 2 }}>
               {t('mobileOnboard.wallInsteadSub')}
             </span>
           </span>
@@ -314,7 +314,7 @@ function PairStep({ onDone }) {
         className="z-code"
         style={codeInput}
       />
-      {error && <div role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>}
+      {error && <div role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>}
       <button
         onClick={submit}
         disabled={busy || codeEntry.length < 4}
@@ -395,7 +395,7 @@ function ClaimStep({ onDone, onError }) {
         dir="ltr"
       />
       <div className="z-footnote">{t('mobileOnboard.claim.passwordHint')}</div>
-      {error && <div role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>}
+      {error && <div role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>}
       <button onClick={submit} disabled={busy} style={primaryBtn}>
         {busy ? t('mobileOnboard.claim.creating') : t('mobileOnboard.claim.create')}
       </button>
@@ -462,11 +462,11 @@ function PersonStep({ onDone }) {
           onClick={() => pick(p.id)}
           disabled={busy}
           style={{
-            minHeight: 56, padding: '12px 16px', borderRadius: 'var(--r-ctl)',
+            minHeight: 48, padding: '12px 16px', borderRadius: 'var(--r-ctl)',
             border: '0.5px solid var(--line)',
             background: 'var(--surface)', color: 'var(--ink)',
             display: 'flex', alignItems: 'center', gap: 12,
-            cursor: busy ? 'wait' : 'pointer', fontSize: 17, lineHeight: '22px', fontWeight: 600,
+            cursor: busy ? 'wait' : 'pointer', fontSize: 15, lineHeight: '22px', fontWeight: 600,
             fontFamily: 'inherit', textAlign: 'start',
           }}
         >
@@ -474,7 +474,7 @@ function PersonStep({ onDone }) {
           <ChevronRight size={20} strokeWidth={1.75} aria-hidden className="icon-flip-rtl" style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
         </button>
       ))}
-      {error && <div role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>}
+      {error && <div role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>}
       <button onClick={onDone} disabled={busy} style={secondaryBtn}>
         {t('mobileOnboard.skipPerson')}
       </button>

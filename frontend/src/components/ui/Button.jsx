@@ -1,6 +1,6 @@
 // Button — one control, five intents, three sizes. Sizes follow the HIG
-// control table: 44px default touch target, 36px only for dense desktop
-// rows. Type is the Body role (17px); nothing here renders under 15px.
+// control table: 40px default touch target, 34px only for dense desktop
+// rows. Type is the Body role (15px); nothing here renders under 13px.
 const variants = {
   primary:   { background: 'var(--ink)',     color: 'var(--bg)',      border: 'none' },
   secondary: { background: 'var(--surface)', color: 'var(--ink)',     border: '0.5px solid var(--line)' },
@@ -10,10 +10,10 @@ const variants = {
 }
 
 const sizes = {
-  sm:   { minHeight: 36, padding: '8px 16px',  fontSize: 15, borderRadius: 10, gap: 8, fontWeight: 500 },
-  md:   { minHeight: 44, padding: '12px 20px', fontSize: 17, borderRadius: 10, gap: 8, fontWeight: 600 },
-  lg:   { minHeight: 48, padding: '12px 24px', fontSize: 17, borderRadius: 10, gap: 8, fontWeight: 600 },
-  icon: { height: 44, width: 44, padding: 0, fontSize: 15, borderRadius: 10, fontWeight: 500 },
+  sm:   { minHeight: 36, padding: '8px 16px',  fontSize: 13, borderRadius: 10, gap: 8, fontWeight: 500 },
+  md:   { minHeight: 40, padding: '12px 20px', fontSize: 15, borderRadius: 10, gap: 8, fontWeight: 600 },
+  lg:   { minHeight: 44, padding: '12px 20px', fontSize: 17, borderRadius: 10, gap: 8, fontWeight: 600 },
+  icon: { height: 40, width: 40, padding: 0, fontSize: 13, borderRadius: 10, fontWeight: 500 },
 }
 
 export function Button({ variant = 'primary', size = 'md', className, children, style, ...props }) {

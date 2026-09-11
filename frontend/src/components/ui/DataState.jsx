@@ -31,7 +31,7 @@ function DefaultSkeleton() {
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         minHeight: 120, padding: 24,
-        color: 'var(--ink-mute)', fontSize: 15,
+        color: 'var(--ink-mute)', fontSize: 13,
       }}
     >
       {i18nT('state.loading')}
@@ -45,7 +45,7 @@ function DefaultEmpty({ message }) {
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', gap: 8, minHeight: 120, padding: 24,
-        color: 'var(--ink-mute)', fontSize: 15, textAlign: 'center',
+        color: 'var(--ink-mute)', fontSize: 13, textAlign: 'center',
       }}
     >
       <p>{message || i18nT('state.empty')}</p>

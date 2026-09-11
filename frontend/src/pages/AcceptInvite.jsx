@@ -259,7 +259,7 @@ export default function AcceptInvite() {
           {!loading && invite && !done && (
             <form onSubmit={handleSubmit}>
               {/* Invite context */}
-              <div className="z-card-soft" style={{ padding: 16, marginBottom: 20 }}>
+              <div className="z-card-soft" style={{ padding: 12, marginBottom: 20 }}>
                 <p className="z-footnote" style={{ marginBottom: 4 }}>
                   {t('invite.invitedByLabel')} <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{invite.invited_by}</strong>
                 </p>
@@ -308,7 +308,7 @@ export default function AcceptInvite() {
               </div>
 
               {error && (
-                <p role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)', marginBottom: 16 }}>
+                <p role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)', marginBottom: 16 }}>
                   {error}
                 </p>
               )}

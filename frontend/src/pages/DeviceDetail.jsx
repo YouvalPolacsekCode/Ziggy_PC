@@ -81,7 +81,7 @@ function FoldSection({ title, children }) {
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex items-center justify-between w-full"
-        style={{ background: 'none', border: 'none', padding: 0, minHeight: 44, cursor: 'pointer', textAlign: 'start' }}
+        style={{ background: 'none', border: 'none', padding: 0, minHeight: 40, cursor: 'pointer', textAlign: 'start' }}
         aria-expanded={open}
       >
         <p className="z-headline">{title}</p>
@@ -111,7 +111,7 @@ function BatteryBar({ level, unit = '%' }) {
       <div className="z-slider-track" style={{ flex: 1 }}>
         <div className="z-slider-fill" style={{ width: `${level}%`, background: barColor }} />
       </div>
-      <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink-mute)', width: 44, textAlign: 'end' }}>
+      <span className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)', width: 44, textAlign: 'end' }}>
         {level}{unit}
       </span>
     </div>
@@ -144,7 +144,7 @@ function SignalBars({ lqi, rssi }) {
           }}
         />
       ))}
-      <span style={{ marginInlineStart: 8, fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1 }}>
+      <span style={{ marginInlineStart: 8, fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1 }}>
         {friendly}
       </span>
     </div>
@@ -154,10 +154,10 @@ function SignalBars({ lqi, rssi }) {
 function DiagRow({ label, value, children }) {
   if (value == null && !children) return null
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 44, padding: '8px 0', borderBottom: '0.5px solid var(--line)' }}
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 40, padding: '8px 0', borderBottom: '0.5px solid var(--line)' }}
       className="last:border-0">
-      <span style={{ fontSize: 15, color: 'var(--ink-mute)', flexShrink: 0 }}>{label}</span>
-      {children ?? <span className="z-mono" style={{ fontSize: 15, color: 'var(--ink)', textAlign: 'end', wordBreak: 'break-all' }}>{value}</span>}
+      <span style={{ fontSize: 13, color: 'var(--ink-mute)', flexShrink: 0 }}>{label}</span>
+      {children ?? <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink)', textAlign: 'end', wordBreak: 'break-all' }}>{value}</span>}
     </div>
   )
 }
@@ -211,7 +211,7 @@ function GhostDevicePage({ details, entityId, navigate, addToast }) {
 
   return (
     <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 12 }}>
         <button onClick={() => navigate(-1)} className="z-icon-btn" aria-label={t('deviceDetail.back')}>
           <ArrowLeft size={20} strokeWidth={1.75} className="icon-flip-rtl" />
         </button>
@@ -220,14 +220,14 @@ function GhostDevicePage({ details, entityId, navigate, addToast }) {
         }}>
           {name}
         </h1>
-        <p style={{ fontSize: 15, color: 'var(--warn-text)', margin: '4px 0 0' }}>{t('deviceDetail.ghost.eyebrow')}</p>
+        <p style={{ fontSize: 13, color: 'var(--warn-text)', margin: '4px 0 0' }}>{t('deviceDetail.ghost.eyebrow')}</p>
       </div>
 
-      <div className="z-card" style={{ padding: 16, marginBottom: 16 }}>
-        <p style={{ fontSize: 17, color: 'var(--ink-2)', lineHeight: 1.4, margin: 0 }}>
+      <div className="z-card" style={{ padding: 12, marginBottom: 12 }}>
+        <p style={{ fontSize: 15, color: 'var(--ink-2)', lineHeight: 1.4, margin: 0 }}>
           {t('deviceDetail.ghost.description')}
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 12, rowGap: 8, fontSize: 15, marginTop: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 12, rowGap: 8, fontSize: 13, marginTop: 16 }}>
           {room && (<>
             <span style={{ color: 'var(--ink-mute)' }}>{t('deviceDetail.ghost.room')}</span>
             <span style={{ color: 'var(--ink)' }}>{room.replace(/_/g, ' ')}</span>
@@ -249,7 +249,7 @@ function GhostDevicePage({ details, entityId, navigate, addToast }) {
       >
         {removing ? t('deviceDetail.ghost.removing') : t('deviceDetail.ghost.remove')}
       </button>
-      <p style={{ fontSize: 15, color: 'var(--ink-mute)', textAlign: 'center', marginTop: 12, lineHeight: 1.4 }}>
+      <p style={{ fontSize: 13, color: 'var(--ink-mute)', textAlign: 'center', marginTop: 12, lineHeight: 1.4 }}>
         {t('deviceDetail.ghost.hint')}
       </p>
     </div>
@@ -272,14 +272,14 @@ function DeleteDeviceModal({ open, deviceName, hasParentDevice, isIr, deleting, 
   useEffect(() => { if (open) setAlsoDeleteDevice(true) }, [open])
   return (
     <Modal open={open} onClose={onClose} title={t('deviceDetail.deleteTitle')}>
-      <p style={{ fontSize: 17, color: 'var(--ink-2)', lineHeight: 1.4, marginBottom: 16 }}>
+      <p style={{ fontSize: 15, color: 'var(--ink-2)', lineHeight: 1.4, marginBottom: 12 }}>
         {isIr
           ? t('deviceDetail.deleteIrDescription', { name: deviceName })
           : t('deviceDetail.deleteHaDescription', { name: deviceName })
         }
       </p>
       {hasParentDevice && (
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 12, minHeight: 56, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', cursor: 'pointer', marginBottom: 16 }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 12, minHeight: 48, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', cursor: 'pointer', marginBottom: 12 }}>
           <input
             type="checkbox"
             checked={alsoDeleteDevice}
@@ -287,8 +287,8 @@ function DeleteDeviceModal({ open, deviceName, hasParentDevice, isIr, deleting, 
             style={{ marginTop: 2, width: 20, height: 20, accentColor: 'var(--ink)', flexShrink: 0 }}
           />
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceDetail.alsoRemoveDevice')}</div>
-            <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 4, lineHeight: 1.4 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{t('deviceDetail.alsoRemoveDevice')}</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 4, lineHeight: 1.4 }}>
               {t('deviceDetail.alsoRemoveHint')}
             </div>
           </div>
@@ -375,13 +375,13 @@ function CameraPanel({ entityId, navigate }) {
           <button
             onClick={() => setLive(v => !v)}
             className="z-btn-secondary"
-            style={{ minHeight: 44 }}
+            style={{ minHeight: 40 }}
           >
             {live ? t('deviceDetail.cameraStop') : t('deviceDetail.cameraLive')}
           </button>
           <button
             onClick={() => navigate('/cameras')}
-            style={{ fontSize: 15, minHeight: 44, padding: '0 8px', color: 'var(--ink-mute)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+            style={{ fontSize: 13, minHeight: 40, padding: '0 8px', color: 'var(--ink-mute)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
           >
             {t('deviceDetail.cameraFullView')}
           </button>
@@ -431,12 +431,12 @@ function CameraPanel({ entityId, navigate }) {
               : diff < 3600 ? t('deviceDetail.minutesAgo', { n: Math.floor(diff / 60) })
               : t('deviceDetail.hoursAgo', { n: Math.floor(diff / 3600) })
             return (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, borderBottom: i < camMotion.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, borderBottom: i < camMotion.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
                 <span className="z-dot z-dot-err" style={{ flexShrink: 0 }} />
-                <span style={{ flex: 1, fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {ev.name || ev.entity_id.split('.')[1]?.replace(/_/g, ' ')}
                 </span>
-                <span style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{ago}</span>
+                <span style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{ago}</span>
               </div>
             )
           })}
@@ -482,7 +482,7 @@ function WhoCanUse({ entityId }) {
           <span key={n} className="z-chip">{n}</span>
         ))}
       </div>
-      <PageLink to="/settings/people" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, marginTop: 4, fontSize: 15,
+      <PageLink to="/settings/people" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 40, marginTop: 4, fontSize: 13,
         fontWeight: 500, color: 'var(--ink)', textDecoration: 'none' }}>{t('deviceDetail.manageAccess')}</PageLink>
     </Card>
   )
@@ -848,19 +848,19 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
     if (detailsLoadFailed) {
       return (
         <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 12 }}>
             <button onClick={() => navigate(-1)} className="z-icon-btn" aria-label={t('deviceDetail.back')}>
               <ArrowLeft size={20} strokeWidth={1.75} className="icon-flip-rtl" />
             </button>
             <h1 className="z-display" style={{ margin: '12px 0 0', overflowWrap: 'anywhere' }}>
               {t('deviceDetail.couldntLoad')}
             </h1>
-            <p className="z-code" style={{ fontSize: 15, color: 'var(--ink-mute)', margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <p className="z-code" style={{ fontSize: 13, color: 'var(--ink-mute)', margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {entityId}
             </p>
           </div>
-          <div className="z-card" style={{ padding: 16 }}>
-            <p style={{ fontSize: 17, color: 'var(--ink-2)', lineHeight: 1.4, margin: 0 }}>
+          <div className="z-card" style={{ padding: 12 }}>
+            <p style={{ fontSize: 15, color: 'var(--ink-2)', lineHeight: 1.4, margin: 0 }}>
               {t('deviceDetail.couldntLoadHint')}
             </p>
             <button
@@ -985,7 +985,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
 
       {/* ── Header — back / refresh row, then ONE Large Title with the
             room · kind line under it. ── */}
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <button
             onClick={() => navigate(-1)}
@@ -1012,8 +1012,8 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
           <button
             onClick={() => navigate(`/devices/${encodeURIComponent(group.primary_entity_id)}`)}
             style={{
-              fontSize: 15, color: 'var(--ink-mute)', fontFamily: 'inherit',
-              background: 'transparent', border: 'none', padding: 0, minHeight: 44, cursor: 'pointer',
+              fontSize: 13, color: 'var(--ink-mute)', fontFamily: 'inherit',
+              background: 'transparent', border: 'none', padding: 0, minHeight: 40, cursor: 'pointer',
               display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4,
             }}
             title={t('devices.openParentDevice')}
@@ -1031,7 +1031,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
         </h1>
         {subtitle && (
           <p dir="auto" style={{
-            fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)', margin: '4px 0 0',
+            fontSize: 13, lineHeight: '20px', color: 'var(--ink-mute)', margin: '4px 0 0',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
             {subtitle}
@@ -1046,9 +1046,9 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       {isToggleable && (
         <div className="z-card" style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-          minHeight: 56, padding: '12px 16px', marginBottom: 16,
+          minHeight: 44, padding: '10px 14px', marginBottom: 12,
         }}>
-          <span dir="auto" style={{ fontSize: 17, fontWeight: 600, color: facts.isAvailable ? 'var(--ink)' : 'var(--ink-mute)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span dir="auto" style={{ fontSize: 15, fontWeight: 600, color: facts.isAvailable ? 'var(--ink)' : 'var(--ink-mute)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {facts.isAvailable ? stateLabel : t('deviceDetail.unavailable')}
           </span>
           <Toggle
@@ -1064,7 +1064,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             control: 44px buttons, active = surface + hairline, no inversion. ── */}
       {hasControls && (
         <div role="tablist" style={{
-          display: 'flex', gap: 4, padding: 4, marginBottom: 16,
+          display: 'flex', gap: 4, padding: 3, marginBottom: 12,
           background: 'var(--surface-2)', borderRadius: 'var(--r-card)',
         }}>
           {[
@@ -1079,12 +1079,12 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
                 aria-selected={active}
                 onClick={() => setActiveTab(tab.id)}
                 style={{
-                  flex: 1, minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-ctl)',
+                  flex: 1, minHeight: 40, padding: '0 12px', borderRadius: 'var(--r-ctl)',
                   background: active ? 'var(--surface)' : 'transparent',
                   color: active ? 'var(--ink)' : 'var(--ink-mute)',
                   border: '0.5px solid ' + (active ? 'var(--line)' : 'transparent'),
                   cursor: 'pointer',
-                  fontFamily: 'inherit', fontSize: 15, fontWeight: 600,
+                  fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                   transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
                 }}
@@ -1099,10 +1099,10 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       {/* ── Identity strip + Control surface ── */}
       {showControls && (
         <>
-          <div className="z-card" style={{ padding: 16, marginBottom: 16 }}>
+          <div className="z-card" style={{ padding: 12, marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{
-                width: 48, height: 48, borderRadius: 'var(--r-ctl)',
+                width: 36, height: 36, borderRadius: 'var(--r-ctl)',
                 background: isOn
                   ? `color-mix(in srgb, ${facts.tint} 14%, var(--surface-2))`
                   : 'var(--surface-2)',
@@ -1110,7 +1110,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0,
               }}>
-                <DeviceIcon kind={facts.kind} customIcon={entity.icon} size={24} fill />
+                <DeviceIcon kind={facts.kind} customIcon={entity.icon} size={20} fill />
               </div>
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {(facts.isIr || facts.hasIr || !facts.isAvailable) && (
@@ -1120,12 +1120,6 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
                     {!facts.isAvailable && <span className="z-chip" style={{ color: 'var(--warn-text)' }}>{t('deviceDetail.unavailable')}</span>}
                   </div>
                 )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                  <Home size={18} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-                  <span dir="auto" style={{ fontSize: 15, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {currentRoom?.name || t('deviceDetail.noRoom')}
-                  </span>
-                </div>
               </div>
               <button
                 onClick={() => setShowRename(true)}
@@ -1145,7 +1139,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
                 onClick={handleAskFixer}
                 className="z-btn-secondary"
                 style={{
-                  marginTop: 12, width: '100%',
+                  marginTop: 8, width: '100%', minHeight: 34, fontSize: 13,
                   background: facts.isAvailable
                     ? undefined
                     : 'color-mix(in srgb, var(--warn) 12%, var(--surface))',
@@ -1188,7 +1182,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
                      (lowerRoom && msg.includes(lowerRoom))
             })
             return (
-              <div className="z-card" style={{ padding: 16, marginBottom: 16 }}>
+              <div className="z-card" style={{ padding: 12, marginBottom: 12 }}>
                 <DeviceRemote
                   entity={{ ...attributes, ...entity, entity_id: entityId }}
                   automations={scheduledAutos}
@@ -1207,7 +1201,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
           {entity.domain === 'camera' && <CameraPanel entityId={entityId} navigate={navigate} />}
 
           {/* Entity ID footer */}
-          <p className="z-code" style={{ marginTop: 4, fontSize: 13, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <p className="z-code" style={{ marginTop: 4, fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {entityId}{facts.irId ? ` · ir:${facts.irId}` : ''}
           </p>
         </>
@@ -1220,27 +1214,27 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
 
           {diagnostics.battery != null && (
             <div className="mb-3">
-              <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.battery')}</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.battery')}</div>
               <BatteryBar level={diagnostics.battery} unit={diagnostics.battery_unit} />
             </div>
           )}
 
           {(diagnostics.lqi != null || diagnostics.rssi != null) && (
             <div className="mb-3">
-              <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.signal')}</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.signal')}</div>
               <SignalBars lqi={diagnostics.lqi} rssi={diagnostics.rssi} />
             </div>
           )}
 
           <div className="divide-y divide-line">
             <DiagRow label={t('deviceDetail.lastChanged')}>
-              <span className="z-mono" style={{ fontSize: 15, color: 'var(--ink)' }}>
+              <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink)' }}>
                 <TimeAgo iso={diagnostics.last_changed} />
               </span>
             </DiagRow>
             <DiagRow label={t('deviceDetail.lastSeen')}>
               {diagnostics.last_seen && (
-                <span className="z-mono" style={{ fontSize: 15, color: 'var(--ink)' }}>
+                <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink)' }}>
                   <TimeAgo iso={diagnostics.last_seen} />
                 </span>
               )}
@@ -1288,7 +1282,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             {parentBlaster && (
               <DiagRow label={t('deviceDetail.blaster')}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                  <span dir="auto" style={{ fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span dir="auto" style={{ fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {parentBlaster.name}
                   </span>
                   <span className="z-chip" style={{
@@ -1309,7 +1303,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             <DiagRow label={t('deviceDetail.brand')} value={facts.linkedIr.brand || '—'} />
             <DiagRow label={t('deviceDetail.commandsLearned')} value={`${(facts.linkedIr.learned_commands || []).length}`} />
             <DiagRow label={t('deviceDetail.irId')}>
-              <span className="z-code" style={{ fontSize: 15, color: 'var(--ink)' }}>{facts.linkedIr.id}</span>
+              <span className="z-code" style={{ fontSize: 13, color: 'var(--ink)' }}>{facts.linkedIr.id}</span>
             </DiagRow>
             {facts.linkedIr.assumed_state && (
               <DiagRow label={t('deviceDetail.assumedState')} value={facts.linkedIr.assumed_state} />
@@ -1341,7 +1335,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
                 key={sib.entity_id}
                 to={`/devices/${encodeURIComponent(sib.entity_id)}`}
                 className="flex items-center justify-between gap-3 hover:bg-surface-2 transition-colors group"
-                style={{ minHeight: 56, padding: '8px 12px', borderRadius: 'var(--r-ctl)', textDecoration: 'none' }}
+                style={{ minHeight: 48, padding: '8px 12px', borderRadius: 'var(--r-ctl)', textDecoration: 'none' }}
               >
                 <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
                   <span style={{ color: 'var(--ink-mute)', display: 'flex', flexShrink: 0 }}>
@@ -1352,13 +1346,13 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
                     />
                   </span>
                   <div style={{ minWidth: 0 }}>
-                    <p dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <p dir="auto" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sib.friendly_name}</span>
                       {sib.isPrimary && (
                         <span className="z-chip">{t('deviceDetail.primary')}</span>
                       )}
                     </p>
-                    <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>
+                    <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>
                       {sib.state ?? '—'}{sib.unit ? ` ${sib.unit}` : ''}
                       {sib.device_class ? ` · ${sib.device_class}` : ''}
                     </p>
@@ -1381,11 +1375,11 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
                 key={auto.id}
                 to="/actions"
                 className="flex items-center justify-between gap-3 hover:bg-surface-2 transition-colors group"
-                style={{ minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-ctl)', textDecoration: 'none' }}
+                style={{ minHeight: 40, padding: '8px 12px', borderRadius: 'var(--r-ctl)', textDecoration: 'none' }}
               >
                 <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
                   <Zap size={18} strokeWidth={1.75} className={cn('shrink-0', auto.enabled ? 'text-ink' : 'text-ink-faint')} />
-                  <p dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{auto.name}</p>
+                  <p dir="auto" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{auto.name}</p>
                 </div>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                   <Badge variant={auto.enabled ? 'success' : 'default'} size="sm">
@@ -1403,14 +1397,14 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
           reassignment. Tap the lock to enter edit mode. ── */}
       {showData && (
       <Card className="p-4 mb-3">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 44, marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 40, marginBottom: 12 }}>
           <p className="z-headline">{t('deviceDetail.room')}</p>
           {/* The lock is a switch: off = read-only summary, on = the radio
               list. Label stays "Edit" in both states; the list itself is
               the feedback. */}
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 12, cursor: 'pointer', minHeight: 44 }}
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 12, cursor: 'pointer', minHeight: 40 }}
             title={editingRoom ? t('deviceDetail.editRoomLock') : t('deviceDetail.editRoomUnlock')}>
-            <span style={{ fontSize: 15, color: 'var(--ink-mute)' }}>{t('deviceDetail.editRoomEdit')}</span>
+            <span style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{t('deviceDetail.editRoomEdit')}</span>
             <Toggle
               checked={editingRoom}
               onCheckedChange={(v) => setEditingRoom(!!v)}
@@ -1423,11 +1417,11 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
           // Locked: read-only summary of the current assignment
           <div style={{
             display: 'flex', alignItems: 'center', gap: 12,
-            minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-ctl)',
+            minHeight: 40, padding: '8px 12px', borderRadius: 'var(--r-ctl)',
             background: 'var(--surface-2)', border: '0.5px solid var(--line)',
           }}>
             <Home size={18} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
-            <span dir="auto" style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>
+            <span dir="auto" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
               {currentRoom?.name || t('deviceDetail.noRoom')}
             </span>
           </div>
@@ -1445,11 +1439,11 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
                   onClick={() => handleAssignRoom(r.none ? null : r.id)}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                    minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-ctl)',
+                    minHeight: 40, padding: '8px 12px', borderRadius: 'var(--r-ctl)',
                     background: selected ? 'var(--surface-2)' : 'transparent',
                     border: '0.5px solid ' + (selected ? 'var(--line)' : 'transparent'),
                     color: selected ? 'var(--ink)' : 'var(--ink-2)',
-                    fontSize: 17, fontWeight: selected ? 600 : 400, fontFamily: 'inherit',
+                    fontSize: 15, fontWeight: selected ? 600 : 400, fontFamily: 'inherit',
                     cursor: 'pointer', textAlign: 'start',
                     transition: 'background var(--dur-state) var(--ease-standard)',
                   }}
@@ -1471,8 +1465,8 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       {/* ── Manage tiles (B: user curation — icon + promote siblings) ── */}
       {showData && group && (
       <FoldSection title={t('deviceDetail.tilesTitle')}>
-        <div style={{ marginBottom: 16 }}>
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.tileIcon')}</p>
+        <div style={{ marginBottom: 12 }}>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.tileIcon')}</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             {ICON_CHOICES.map(name => {
               const tok = `icon:${name}`
@@ -1481,7 +1475,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
                 <button key={name}
                   onClick={() => applyTilePref(entityId, { icon: tok })}
                   aria-pressed={active}
-                  style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', cursor: 'pointer', padding: 0, overflow: 'hidden',
+                  style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', cursor: 'pointer', padding: 0, overflow: 'hidden',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box',
                     border: active ? '2px solid var(--ink)' : '0.5px solid var(--line)',
                     background: 'var(--surface-2)', color: 'var(--ink)',
@@ -1503,23 +1497,23 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
               const mains = allSiblings.filter(s => CTRL.includes(s.domain) || s.entity_id === group.primary_entity_id)
               if (mains.length < 2) return null
               return (
-                <div style={{ marginBottom: 16 }}>
-                  <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.mainControlHint')}</p>
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.mainControlHint')}</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} role="radiogroup">
                     {mains.map(s => {
                       const isMain = s.entity_id === group.primary_entity_id
                       return (
                         <button key={s.entity_id} onClick={() => { if (!isMain) applyClassification({ main_entity: s.entity_id }) }}
                           role="radio" aria-checked={isMain}
-                          style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 12px', borderRadius: 'var(--r-ctl)',
+                          style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 12px', borderRadius: 'var(--r-ctl)',
                             cursor: isMain ? 'default' : 'pointer', textAlign: 'start', boxSizing: 'border-box', fontFamily: 'inherit',
                             background: 'var(--surface-2)',
                             border: isMain ? '2px solid var(--ink)' : '0.5px solid var(--line)',
                             transition: 'border-color var(--dur-state) var(--ease-standard)' }}>
-                          <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.friendly_name}</span>
+                          <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.friendly_name}</span>
                           {isMain
                             ? <span className="z-chip" style={{ flexShrink: 0 }}>{t('deviceDetail.mainBadge')}</span>
-                            : <span style={{ fontSize: 15, color: 'var(--ink-mute)', flexShrink: 0 }}>{t('deviceDetail.setAsMain')}</span>}
+                            : <span style={{ fontSize: 13, color: 'var(--ink-mute)', flexShrink: 0 }}>{t('deviceDetail.setAsMain')}</span>}
                         </button>
                       )
                     })}
@@ -1528,8 +1522,8 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
               )
             })()}
             {/* Device type (card kind) */}
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.deviceTypeHint')}</p>
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.deviceTypeHint')}</p>
               <select value={group.card_kind || 'generic'} onChange={e => applyClassification({ card_kind: e.target.value })}
                 className="z-input" style={{ background: 'var(--surface-2)' }}>
                 {['irrigation','valve','light','switch','outlet','climate','cover','lock','fan','media','sensor','vacuum','humidifier','generic'].map(k => (
@@ -1544,11 +1538,11 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
         )}
         {usefulSiblings.filter(s => !s.isPrimary).length > 0 && (
           <div>
-            <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.showAsTileHint')}</p>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 8 }}>{t('deviceDetail.showAsTileHint')}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {usefulSiblings.filter(s => !s.isPrimary).map(s => (
-                <div key={s.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 12px', borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
-                  <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.friendly_name}</span>
+                <div key={s.entity_id} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 12px', borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
+                  <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.friendly_name}</span>
                   <Toggle checked={pendingTile[s.entity_id] ?? !!s.is_tile}
                     onCheckedChange={(checked) => toggleTile(s.entity_id, checked)}
                     aria-label={s.friendly_name} />
@@ -1572,7 +1566,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
         <button
           onClick={handleToggleHide}
           className="w-full flex items-center gap-3 hover:bg-surface-2 transition-colors"
-          style={{ minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-ctl)', fontSize: 17, color: 'var(--ink)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}
+          style={{ minHeight: 40, padding: '8px 12px', borderRadius: 'var(--r-ctl)', fontSize: 15, color: 'var(--ink)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}
         >
           {isHidden
             ? <><Eye size={18} strokeWidth={1.75} /> {t('deviceDetail.showDevice')}</>
@@ -1586,7 +1580,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
         <button
           onClick={() => setShowDelete(true)}
           className="w-full flex items-center gap-3 hover:bg-surface-2 transition-colors"
-          style={{ minHeight: 44, padding: '8px 12px', borderRadius: 'var(--r-ctl)', fontSize: 17, color: 'var(--err-text)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}
+          style={{ minHeight: 40, padding: '8px 12px', borderRadius: 'var(--r-ctl)', fontSize: 15, color: 'var(--err-text)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}
         >
           <Trash2 size={18} strokeWidth={1.75} /> {t('deviceDetail.deleteDevice')}
         </button>

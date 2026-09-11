@@ -157,10 +157,10 @@ export function SensorsStep({ onDone, onError, authToken = null }) {
       <div style={{
         padding: '12px 16px', borderRadius: 'var(--r-ctl)',
         border: '0.5px solid var(--line)', background: 'var(--surface-2)',
-        fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)',
+        fontSize: 13, lineHeight: '20px', color: 'var(--ink-mute)',
       }}>
         <div>{current.vendor_model || current.device_type}</div>
-        {current.zigbee_mac && <div className="z-code" style={{ fontSize: 13, marginTop: 4 }}>{current.zigbee_mac}</div>}
+        {current.zigbee_mac && <div className="z-code" style={{ fontSize: 12, marginTop: 4 }}>{current.zigbee_mac}</div>}
       </div>
       <label style={fieldLabel}>{t('mobileOnboard.sensors.nameLabel')}</label>
       <input
@@ -295,7 +295,7 @@ export function StarterStep({ userToken, onDone, onError, authToken = null }) {
               aria-checked={on}
               style={{
                 textAlign: 'start', fontFamily: 'inherit',
-                minHeight: 64, padding: '12px 16px', borderRadius: 'var(--r-card)',
+                minHeight: 56, padding: '12px 16px', borderRadius: 'var(--r-card)',
                 background: on ? 'var(--surface-2)' : 'var(--surface)',
                 border: `0.5px solid ${on ? 'var(--line-2)' : 'var(--line)'}`,
                 color: 'var(--ink)',
@@ -305,10 +305,10 @@ export function StarterStep({ userToken, onDone, onError, authToken = null }) {
               }}
             >
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600 }}>
+                <div style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600 }}>
                   {langIsHe ? (s.label_he || s.label_en) : (s.label_en || s.label_he)}
                 </div>
-                <div style={{ fontSize: 15, lineHeight: '20px', color: 'var(--ink-mute)' }}>
+                <div style={{ fontSize: 13, lineHeight: '20px', color: 'var(--ink-mute)' }}>
                   {langIsHe ? (s.description_he || s.description_en) : (s.description_en || s.description_he)}
                 </div>
               </div>

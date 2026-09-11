@@ -28,11 +28,11 @@ function Row({ label, value, status }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
-      padding: '12px 16px', minHeight: 44,
+      padding: '12px 16px', minHeight: 40,
       borderTop: '0.5px solid var(--line)',
     }}>
-      <div style={{ flex: 1, fontSize: 15, color: 'var(--ink)' }}>{label}</div>
-      <div className="z-code" style={{ fontSize: 13, color, textAlign: 'end', overflowWrap: 'anywhere' }}>
+      <div style={{ flex: 1, fontSize: 13, color: 'var(--ink)' }}>{label}</div>
+      <div className="z-code" style={{ fontSize: 12, color, textAlign: 'end', overflowWrap: 'anywhere' }}>
         {value}
       </div>
     </div>
@@ -172,7 +172,7 @@ export default function MobileDiagnostics() {
         <pre className="z-code" style={{
           marginTop: 12, padding: 12, borderRadius: 'var(--r-ctl)',
           background: 'var(--surface-2)', border: '0.5px solid var(--line)',
-          fontSize: 13, lineHeight: '18px', color: 'var(--ink-mute)', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+          fontSize: 12, lineHeight: '18px', color: 'var(--ink-mute)', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
         }}>{pingResult}</pre>
       )}
     </div>

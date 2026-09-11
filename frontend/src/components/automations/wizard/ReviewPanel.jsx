@@ -15,7 +15,7 @@ function ReviewPanel({ name, description, trigger, conditions = [], actions }) {
   const actionTypes = getActionTypes()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ padding: 16, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
+      <div style={{ padding: 12, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', border: '0.5px solid var(--line)' }}>
         <p className="z-headline" style={{ margin: 0 }} dir="auto">{name || t('automations.wizard.noName')}</p>
         {description && <p className="z-subhead" style={{ margin: '2px 0 0' }} dir="auto">{description}</p>}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
@@ -28,7 +28,7 @@ function ReviewPanel({ name, description, trigger, conditions = [], actions }) {
           <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('automations.summary.conditionsCount', { n: completeConditions.length })}</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {completeConditions.map((c, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '8px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, padding: '8px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
                 <Search size={18} strokeWidth={1.75} aria-hidden="true" style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
                 <span className="z-subhead" style={{ color: 'var(--ink-2)' }}>{conditionSummary(c)}</span>
               </div>
@@ -42,7 +42,7 @@ function ReviewPanel({ name, description, trigger, conditions = [], actions }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <p className="z-eyebrow" style={{ margin: 0 }}>{t(actions.length === 1 ? 'automations.action.actionsHeadingOne' : 'automations.action.actionsHeading', { n: actions.length })}</p>
           {actions.map((a, i) => (
-            <div key={a._key || i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minHeight: 56, padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
+            <div key={a._key || i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minHeight: 48, padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
               <span className="z-caption z-mono" style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>{i + 1}</span>
               <div style={{ minWidth: 0 }}>
                 <p className="z-headline" style={{ margin: 0 }}>{actionTypes.find(at => at.value === a.type)?.label || a.type}</p>

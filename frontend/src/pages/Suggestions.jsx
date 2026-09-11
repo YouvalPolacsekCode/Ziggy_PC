@@ -62,7 +62,7 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
       initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}
       transition={T_ENTER}
       style={{
-        padding: 16, borderRadius: 'var(--r-card)',
+        padding: 12, borderRadius: 'var(--r-card)',
         background: 'var(--surface)',
         border: '0.5px solid var(--line)',
         // Resolved cards read in the muted ink, not through an opacity veil.
@@ -118,7 +118,7 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
           <button
             onClick={() => setExpanded(v => !v)}
             aria-expanded={expanded}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', minHeight: 44, padding: '0 8px', margin: '0 -8px' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', minHeight: 40, padding: '0 8px', margin: '0 -8px' }}
           >
             <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)' }} />
             {t('suggestions.whyExpand')}

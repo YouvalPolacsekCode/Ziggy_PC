@@ -36,7 +36,7 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Header — name, description */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <div aria-hidden="true" style={{ width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', color: automation.enabled ? 'var(--ink-2)' : 'var(--ink-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', color: automation.enabled ? 'var(--ink-2)' : 'var(--ink-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <Zap size={22} strokeWidth={1.75} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -54,10 +54,10 @@ function AutomationViewModal({ automation, roomNameMap, onEdit, onTrigger, onClo
           const active = tab === tabDef.id
           return (
             <button key={tabDef.id} role="tab" aria-selected={active} onClick={() => setTab(tabDef.id)} style={{
-              flex: 1, minHeight: 44, padding: '0 16px', borderRadius: 'var(--r-ctl)', fontFamily: 'inherit', cursor: 'pointer',
+              flex: 1, minHeight: 40, padding: '0 16px', borderRadius: 'var(--r-ctl)', fontFamily: 'inherit', cursor: 'pointer',
               background: active ? 'var(--surface)' : 'transparent',
               border: `0.5px solid ${active ? 'var(--line)' : 'transparent'}`,
-              fontSize: 15, fontWeight: 600,
+              fontSize: 13, fontWeight: 600,
               color: active ? 'var(--ink)' : 'var(--ink-mute)',
               transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
             }}>
@@ -125,7 +125,7 @@ function DetailsTab({ automation, roomNameMap, triggerTypeLabel, completeConditi
             {completeConditions.map((c, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {i > 0 && <AndConnector />}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, padding: '8px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, padding: '8px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
                   <Search size={18} strokeWidth={1.75} aria-hidden="true" style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
                   <span className="z-subhead" style={{ color: 'var(--ink-2)' }}>{conditionSummary(c)}</span>
                 </div>
@@ -143,7 +143,7 @@ function DetailsTab({ automation, roomNameMap, triggerTypeLabel, completeConditi
           : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {actions.map((a, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minHeight: 56, padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minHeight: 48, padding: '12px 16px', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)' }}>
                   <span className="z-caption z-mono" style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>{i + 1}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p className="z-headline" style={{ margin: 0 }}>
@@ -251,8 +251,8 @@ function HistoryTab({ automation, t }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <p className="z-eyebrow" style={{ margin: 0 }}>{t('automations.view.recentRuns', { n: state.runs.length })}</p>
         <button onClick={load} style={{
-          background: 'transparent', border: 'none', cursor: 'pointer', minHeight: 44, padding: '0 8px', margin: '0 -8px',
-          fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 8,
+          background: 'transparent', border: 'none', cursor: 'pointer', minHeight: 40, padding: '0 8px', margin: '0 -8px',
+          fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)', display: 'flex', alignItems: 'center', gap: 8,
           fontFamily: 'inherit',
         }}>
           <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -282,7 +282,7 @@ function RunRow({ run, index, automationId, isOpen, onToggle, t }) {
   return (
     <div style={{ borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', background: 'var(--surface)', overflow: 'hidden' }}>
       <button onClick={onToggle} aria-expanded={isOpen} style={{
-        width: '100%', display: 'flex', alignItems: 'center', gap: 12, minHeight: 56,
+        width: '100%', display: 'flex', alignItems: 'center', gap: 12, minHeight: 48,
         padding: '12px 16px', background: 'transparent', border: 'none', cursor: 'pointer',
         fontFamily: 'inherit', textAlign: 'inherit', color: 'var(--ink)',
       }}>

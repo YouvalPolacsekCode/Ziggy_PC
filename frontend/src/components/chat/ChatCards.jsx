@@ -206,7 +206,7 @@ const cardStyle = {
   borderRadius: 'var(--r-card)',
   background: 'var(--surface)',
   border: '0.5px solid var(--line)',
-  fontSize: 15,
+  fontSize: 13,
   lineHeight: 1.4,
   color: 'var(--ink)',
   display: 'flex',
@@ -220,7 +220,7 @@ const rowStyle = {
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: 12,
-  minHeight: 44,
+  minHeight: 40,
   padding: '8px 0',
   borderBlockStart: '0.5px solid var(--line)',
   minWidth: 0,
@@ -246,12 +246,12 @@ const cellSoonStyle = {
   background: 'var(--surface-2)',
 }
 
-const muteStyle = { fontSize: 13, lineHeight: '18px', color: 'var(--ink-mute)' }
+const muteStyle = { fontSize: 12, lineHeight: '18px', color: 'var(--ink-mute)' }
 
 const ellipsis = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 // Tile names sit a step under the card title (15/600) so a 2-column grid of
 // them still fits a phone; the pitch under each is 13px metadata.
-const nameStyle = { fontSize: 15, fontWeight: 600, lineHeight: '20px', display: 'block', maxWidth: '100%', ...ellipsis }
+const nameStyle = { fontSize: 13, fontWeight: 600, lineHeight: '20px', display: 'block', maxWidth: '100%', ...ellipsis }
 const detailStyle = { ...muteStyle, display: 'block', maxWidth: '100%', ...ellipsis }
 
 const STATUS_TONES = new Set(['accent', 'ok', 'warn', 'err', 'info'])
@@ -393,8 +393,8 @@ function TextButton({ children, onClick, ariaExpanded, testid, style }) {
       aria-expanded={ariaExpanded}
       style={{
         background: 'none', border: 'none', padding: '8px 12px', margin: 0, borderRadius: 'var(--r-ctl)',
-        minHeight: 44, display: 'inline-flex', alignItems: 'center',
-        font: 'inherit', fontSize: 15, fontWeight: 600, color: 'var(--ink-mute)',
+        minHeight: 40, display: 'inline-flex', alignItems: 'center',
+        font: 'inherit', fontSize: 13, fontWeight: 600, color: 'var(--ink-mute)',
         cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
         ...style,
       }}
@@ -1054,8 +1054,8 @@ function WhyNotCard({ card, entityId, onAction }) {
   return (
     <Card lang={lang} icon={Stethoscope} title={t('chat.card.whyNot')} tone={primary && primary !== 'unknown' ? 'warn' : undefined}>
       {primary && (
-        <p style={{ margin: 0, fontWeight: 600, fontSize: 17, lineHeight: '22px' }}>
-          <LinkName to={deviceLink} style={{ fontWeight: 600, fontSize: 17, lineHeight: '22px' }}>{verdictTitle(t, primary)}</LinkName>
+        <p style={{ margin: 0, fontWeight: 600, fontSize: 15, lineHeight: '22px' }}>
+          <LinkName to={deviceLink} style={{ fontWeight: 600, fontSize: 15, lineHeight: '22px' }}>{verdictTitle(t, primary)}</LinkName>
         </p>
       )}
       {verdicts.length > 1 && (

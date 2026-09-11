@@ -156,13 +156,13 @@ export function BottomNav({ connected }) {
                     style={{
                       background: active ? 'var(--surface-2)' : 'transparent',
                       border: active ? '0.5px solid var(--line)' : '0.5px solid transparent',
-                      cursor: 'pointer', borderRadius: 'var(--r-card)', minHeight: 72,
+                      cursor: 'pointer', borderRadius: 'var(--r-card)', minHeight: 64,
                       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
                       padding: '12px 8px', fontFamily: 'inherit',
                     }}
                   >
                     <Icon size={24} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
-                    <span style={{ fontSize: 13, fontWeight: active ? 600 : 500, color: active ? 'var(--ink)' : 'var(--ink-mute)' }}>
+                    <span style={{ fontSize: 12, fontWeight: active ? 600 : 500, color: active ? 'var(--ink)' : 'var(--ink-mute)' }}>
                       {label}
                     </span>
                   </button>

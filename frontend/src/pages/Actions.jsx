@@ -435,7 +435,7 @@ export default function Automations() {
           className="z-btn-primary"
           aria-label={t('automations.createChooserTitle')}
           title={t('automations.createChooserTitle')}
-          style={{ width: 44, height: 44, padding: 0, flexShrink: 0 }}
+          style={{ width: 40, height: 40, padding: 0, flexShrink: 0 }}
         >
           <Plus size={20} strokeWidth={2} aria-hidden="true" />
         </button>
@@ -453,16 +453,16 @@ export default function Automations() {
           const active = tab === tabDef.id
           return (
             <button key={tabDef.id} role="tab" aria-selected={active} onClick={() => setTab(tabDef.id)} style={{
-              flex: '1 0 auto', minHeight: 44, padding: '0 16px', borderRadius: 'var(--r-ctl)', fontFamily: 'inherit', cursor: 'pointer',
+              flex: '1 0 auto', minHeight: 40, padding: '0 16px', borderRadius: 'var(--r-ctl)', fontFamily: 'inherit', cursor: 'pointer',
               background: active ? 'var(--surface)' : 'transparent',
               border: `0.5px solid ${active ? 'var(--line)' : 'transparent'}`,
-              fontSize: 15, fontWeight: 600, whiteSpace: 'nowrap',
+              fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
               color: active ? 'var(--ink)' : 'var(--ink-mute)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
             }}>
               {tabDef.label}
-              {tabDef.count > 0 && <span className="z-mono" style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-faint)' }}>{tabDef.count}</span>}
+              {tabDef.count > 0 && <span className="z-mono" style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-faint)' }}>{tabDef.count}</span>}
             </button>
           )
         })}
@@ -607,7 +607,7 @@ export default function Automations() {
           ].map(({ Icon, label, desc, onPick }) => (
             <button key={label} onClick={onPick} style={{
               display: 'flex', alignItems: 'center', gap: 16, textAlign: 'start', cursor: 'pointer',
-              minHeight: 64, padding: 16, borderRadius: 'var(--r-card)', fontFamily: 'inherit',
+              minHeight: 56, padding: 12, borderRadius: 'var(--r-card)', fontFamily: 'inherit',
               background: 'var(--surface-2)', border: '0.5px solid var(--line)', color: 'var(--ink)',
               transition: 'background var(--dur-press) var(--ease-standard)',
             }} dir="auto">

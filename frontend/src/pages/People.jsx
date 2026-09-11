@@ -57,8 +57,8 @@ const card = {
 // Borderless 44-tall text button in ink — for the quiet actions (Cancel,
 // "Manage login accounts").
 const ghostBtn = {
-  minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-ctl)', border: 0, background: 'transparent',
-  color: 'var(--ink)', fontSize: 15, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+  minHeight: 40, padding: '0 12px', borderRadius: 'var(--r-ctl)', border: 0, background: 'transparent',
+  color: 'var(--ink)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
   display: 'inline-flex', alignItems: 'center', gap: 4,
 }
 
@@ -139,8 +139,8 @@ export default function People() {
     <Shell>
       <div style={{ ...card, padding: 32, textAlign: 'center' }}>
         <Lock size={32} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
-        <h3 style={{ margin: '12px 0 4px', fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>Admins only</h3>
-        <p style={{ color: 'var(--ink-mute)', fontSize: 15, margin: 0 }}>
+        <h3 style={{ margin: '12px 0 4px', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>Admins only</h3>
+        <p style={{ color: 'var(--ink-mute)', fontSize: 13, margin: 0 }}>
           Managing people and permissions is limited to the home’s owner and admins.</p>
       </div>
     </Shell>
@@ -164,7 +164,7 @@ export default function People() {
   if (err) return (
     <Shell>
       <div style={{ ...card, padding: 32, textAlign: 'center' }}>
-        <p style={{ margin: 0, fontSize: 17, color: 'var(--ink)' }}>{err}</p>
+        <p style={{ margin: 0, fontSize: 15, color: 'var(--ink)' }}>{err}</p>
         <button onClick={() => { setErr(''); bootstrapPermissions().then(load).catch(e => setErr(e.message)) }}
           className="z-btn-secondary" style={{ marginTop: 16 }}>Set up the permission model</button>
       </div>
@@ -176,8 +176,8 @@ export default function People() {
     <Shell>
       <div style={{ ...card, padding: 32, textAlign: 'center' }}>
         <Lock size={32} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
-        <h3 style={{ margin: '12px 0 4px', fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>No people yet</h3>
-        <p style={{ color: 'var(--ink-mute)', fontSize: 15, margin: 0 }}>
+        <h3 style={{ margin: '12px 0 4px', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>No people yet</h3>
+        <p style={{ color: 'var(--ink-mute)', fontSize: 13, margin: 0 }}>
           Import your household + devices into the permission model to get started.</p>
         <button onClick={() => { setBusy(true); bootstrapPermissions().then(load).finally(() => setBusy(false)) }}
           disabled={busy} className="z-btn-secondary" style={{ marginTop: 16 }}>{busy ? 'Setting up…' : 'Set up now'}</button>
@@ -191,7 +191,7 @@ export default function People() {
         <div className="perm-col" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={card}>
             <Head title="People" sub="tap to select" />
-            <div style={{ padding: 16 }}>
+            <div style={{ padding: 12 }}>
               <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
                 {ov.people.map((p, i) => (
                   <PersonCard key={p.ref} p={p} i={i} selected={p.ref === sel}
@@ -204,7 +204,7 @@ export default function People() {
           {person && (
             <div style={card}>
               <Head title={`${person.name}’s access`} sub={person.role ? PRESET_LABEL[person.role] : 'no role'} />
-              <div style={{ padding: 16 }}>
+              <div style={{ padding: 12 }}>
                 <p className="z-eyebrow" style={{ marginBottom: 8 }}>Access level</p>
                 <Segmented options={ov.presets} value={pendingRole} disabled={busy}
                   onChange={setPendingRole} labels={PRESET_LABEL} />
@@ -262,8 +262,8 @@ function Shell({ children }) {
   return (
     <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 24px',
       width: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}>
-      <Link to="/settings" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44,
-        fontSize: 15, fontWeight: 500, color: 'var(--ink-mute)', textDecoration: 'none', marginBottom: 8 }}>
+      <Link to="/settings" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 40,
+        fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)', textDecoration: 'none', marginBottom: 8 }}>
         <ArrowLeft size={18} className="icon-flip-rtl" /> Settings
       </Link>
       <div className="z-page-head" style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -272,8 +272,8 @@ function Shell({ children }) {
           <p className="z-subhead" style={{ marginTop: 4 }}>
             Set what each person can control. Every decision below is computed by the policy engine.</p>
         </div>
-        <Link to="/settings/users" className="z-link-quiet" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44,
-          fontSize: 15, fontWeight: 500, color: 'var(--ink)', textDecoration: 'none', whiteSpace: 'nowrap', gap: 4 }}>
+        <Link to="/settings/users" className="z-link-quiet" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 40,
+          fontSize: 13, fontWeight: 500, color: 'var(--ink)', textDecoration: 'none', whiteSpace: 'nowrap', gap: 4 }}>
           Manage login accounts <ChevronRight size={18} className="icon-flip-rtl" />
         </Link>
       </div>
@@ -288,7 +288,7 @@ function Head({ title, sub }) {
     <div style={{ padding: '16px 16px 12px', borderBottom: '0.5px solid var(--line)',
       display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
       <h2 className="z-headline" style={{ margin: 0 }}>{title}</h2>
-      <span style={{ fontSize: 15, color: 'var(--ink-mute)' }}>{sub}</span>
+      <span style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{sub}</span>
     </div>
   )
 }
@@ -303,10 +303,10 @@ function PersonCard({ p, i, selected, onClick }) {
       borderRadius: 'var(--r-ctl)', padding: 12,
       transition: 'border-color var(--dur-press) var(--ease-standard), background var(--dur-press) var(--ease-standard)',
     }}>
-      <div style={{ fontSize: 28, lineHeight: 1, marginBottom: 8 }}>{AVATARS[i % AVATARS.length]}</div>
-      <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden',
+      <div style={{ fontSize: 26, lineHeight: 1, marginBottom: 8 }}>{AVATARS[i % AVATARS.length]}</div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden',
         textOverflow: 'ellipsis' }}>{p.name}</div>
-      <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>
+      <div style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>
         {p.role ? PRESET_LABEL[p.role] : '—'}{age != null ? ` · ${age}` : ''}</div>
     </button>
   )
@@ -320,7 +320,7 @@ function Segmented({ options, value, onChange, labels, disabled }) {
         const on = o === value
         return (
           <button key={o} disabled={disabled} onClick={() => onChange(o)} aria-pressed={on} style={{
-            flex: '1 1 auto', border: 0, borderRadius: 'var(--r-chip)', minHeight: 44, padding: '0 8px', fontSize: 15,
+            flex: '1 1 auto', border: 0, borderRadius: 'var(--r-chip)', minHeight: 40, padding: '0 8px', fontSize: 13,
             fontWeight: 600, cursor: disabled ? 'wait' : 'pointer', fontFamily: 'inherit',
             background: on ? 'var(--surface)' : 'transparent',
             color: on ? 'var(--ink)' : 'var(--ink-mute)',
@@ -413,7 +413,7 @@ function KidAccess({ person, ov, onChange }) {
     } finally { setSaving('') }
   }
 
-  if (grants === null) return <div style={{ color: 'var(--ink-mute)', fontSize: 15, marginTop: 12 }}>Loading…</div>
+  if (grants === null) return <div style={{ color: 'var(--ink-mute)', fontSize: 13, marginTop: 12 }}>Loading…</div>
 
   // Real HA area names from the overview (fall back to the humanized slug).
   const spaceName = {}
@@ -430,7 +430,7 @@ function KidAccess({ person, ov, onChange }) {
     <div>
       <p className="z-eyebrow" style={{ margin: '16px 0 8px' }}>Devices {person.name} can use</p>
       {roomEntries.length === 0 && (
-        <div style={{ color: 'var(--ink-mute)', fontSize: 15 }}>No controllable devices in this home.</div>
+        <div style={{ color: 'var(--ink-mute)', fontSize: 13 }}>No controllable devices in this home.</div>
       )}
       {roomEntries.map(([room, devs]) => {
         const onCount = devs.filter(d => enabled.has(d.id)).length
@@ -440,11 +440,11 @@ function KidAccess({ person, ov, onChange }) {
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                 <span className="chev chev-closed"><ChevronRight size={18} className="icon-flip-rtl" /></span>
                 <span className="chev chev-open"><ChevronDown size={18} /></span>
-                <span style={{ textTransform: 'capitalize', fontWeight: 500, fontSize: 17, color: 'var(--ink)',
+                <span style={{ textTransform: 'capitalize', fontWeight: 500, fontSize: 15, color: 'var(--ink)',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {roomLabel(room)}</span>
               </span>
-              <span style={{ fontSize: 15, color: onCount ? 'var(--ink)' : 'var(--ink-mute)',
+              <span style={{ fontSize: 13, color: onCount ? 'var(--ink)' : 'var(--ink-mute)',
                 flex: 'none', fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{onCount}/{devs.length} on</span>
             </summary>
             <div style={{ paddingBottom: 8 }}>
@@ -456,9 +456,9 @@ function KidAccess({ person, ov, onChange }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                       <span style={{ color: 'var(--ink-mute)', display: 'flex' }}><ClassIcon cls={d.class} /></span>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 17, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis',
+                        <div style={{ fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap' }}>{deviceName(d)}</div>
-                        <div style={{ fontSize: 15, color: 'var(--ink-mute)', textTransform: danger ? 'none' : 'capitalize' }}>
+                        <div style={{ fontSize: 13, color: 'var(--ink-mute)', textTransform: danger ? 'none' : 'capitalize' }}>
                           {danger ? 'Dangerous — kids can’t be given this' : d.class}</div>
                       </div>
                     </div>
@@ -476,8 +476,8 @@ function KidAccess({ person, ov, onChange }) {
       <p className="z-eyebrow" style={{ margin: '16px 0 8px' }}>Allowed hours</p>
       <div style={rowStyle}>
         <div>
-          <div style={{ fontSize: 17, color: 'var(--ink)' }}>Only during set hours</div>
-          <div style={{ fontSize: 15, color: 'var(--ink-mute)' }}>
+          <div style={{ fontSize: 15, color: 'var(--ink)' }}>Only during set hours</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-mute)' }}>
             Outside this window, {person.name}’s controls are blocked</div>
         </div>
         <Toggle checked={hoursOn} disabled={saving === 'hours'} aria-label="Only during set hours"
@@ -486,7 +486,7 @@ function KidAccess({ person, ov, onChange }) {
       {hoursOn && (
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
           <Input type="time" value={from} onChange={e => applyHours(true, e.target.value, to)} aria-label="From" style={{ width: 140 }} />
-          <span style={{ color: 'var(--ink-mute)', fontSize: 15 }}>to</span>
+          <span style={{ color: 'var(--ink-mute)', fontSize: 13 }}>to</span>
           <Input type="time" value={to} onChange={e => applyHours(true, from, e.target.value)} aria-label="To" style={{ width: 140 }} />
         </div>
       )}
@@ -496,7 +496,7 @@ function KidAccess({ person, ov, onChange }) {
 
 const rowStyle = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-  minHeight: 56, padding: '8px 0', borderTop: '0.5px solid var(--line)',
+  minHeight: 48, padding: '8px 0', borderTop: '0.5px solid var(--line)',
 }
 
 function CapabilityMatrix({ person, ov, version }) {
@@ -536,16 +536,16 @@ function CapabilityMatrix({ person, ov, version }) {
     return () => { live = false }
   }, [person.ref, person.role, version]) // eslint-disable-line
 
-  if (!rows) return <div style={{ color: 'var(--ink-mute)', fontSize: 15 }}>Checking…</div>
+  if (!rows) return <div style={{ color: 'var(--ink-mute)', fontSize: 13 }}>Checking…</div>
   if (!rows.length) return (
-    <div style={{ color: 'var(--ink-mute)', fontSize: 15 }}>
+    <div style={{ color: 'var(--ink-mute)', fontSize: 13 }}>
       No controllable devices in this home yet.</div>
   )
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {rows.map((r, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 17, minHeight: 44 }}>
-          <span style={{ width: 36, height: 36, borderRadius: 'var(--r-ctl)', display: 'grid', placeItems: 'center',
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 15, minHeight: 40 }}>
+          <span style={{ width: 32, height: 32, borderRadius: 'var(--r-ctl)', display: 'grid', placeItems: 'center',
             background: 'var(--surface-2)', color: 'var(--ink-mute)', flexShrink: 0 }}><ClassIcon cls={r.cls} /></span>
           <span style={{ flex: 1, color: 'var(--ink)' }}>{r.label}</span>
           <Pill state={r.state} />
@@ -594,7 +594,7 @@ function Playground({ person, ov, version }) {
   return (
     <div style={card}>
       <Head title="Try a command" sub={`as ${person.name}`} />
-      <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Select label="Device" value={device} onChange={e => setDevice(e.target.value)}
           style={{ width: '100%' }}
           options={tiles.map(d => ({ value: d.ref, label: deviceName(d) }))} />
@@ -618,7 +618,7 @@ function Playground({ person, ov, version }) {
 }
 
 function Decision({ res, loading, channel }) {
-  if (loading && !res) return <div style={{ ...decBox('n'), fontSize: 15, color: 'var(--ink-mute)' }}>Evaluating…</div>
+  if (loading && !res) return <div style={{ ...decBox('n'), fontSize: 13, color: 'var(--ink-mute)' }}>Evaluating…</div>
   if (!res) return null
   const allowed = res.allowed
   const trust = { app: 3, voice: 1, face: 3, nfc: 2 }[channel]
@@ -630,11 +630,11 @@ function Decision({ res, loading, channel }) {
           {allowed
             ? <CheckCircle2 size={24} strokeWidth={1.75} style={{ color: 'var(--ok)', flexShrink: 0 }} />
             : <XCircle size={24} strokeWidth={1.75} style={{ color: 'var(--err)', flexShrink: 0 }} />}
-          <span style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em',
+          <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em',
             color: allowed ? 'var(--ok)' : 'var(--err)' }}>
             {allowed ? 'Allowed' : 'Denied'}</span>
         </div>
-        <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 8,
+        <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 8,
           overflowWrap: 'anywhere' }}>{res.reason}</div>
         {res.obligations?.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
@@ -654,9 +654,9 @@ function Decision({ res, loading, channel }) {
         )}
         {res.trace?.length > 0 && (
           <details style={{ marginTop: 12, borderTop: '0.5px solid var(--line)' }}>
-            <summary style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-mute)', cursor: 'pointer', minHeight: 44, display: 'flex', alignItems: 'center' }}>
+            <summary style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-mute)', cursor: 'pointer', minHeight: 40, display: 'flex', alignItems: 'center' }}>
               How Ziggy decided ({res.trace.length})</summary>
-            <div className="z-code" style={{ fontSize: 13, lineHeight: 1.7,
+            <div className="z-code" style={{ fontSize: 12, lineHeight: 1.7,
               color: 'var(--ink-mute)', overflowWrap: 'anywhere', direction: 'ltr', textAlign: 'start' }}>
               {res.trace.map((t, i) => (
                 <div key={i}>{humanizeTrace(t.stage === 'combine'
@@ -680,11 +680,11 @@ function AuditStrip() {
       <Head title="Recent decisions" sub="attributed" />
       <div style={{ padding: '0 16px 8px' }}>
         {rows.map((r, i) => (
-          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 15, minHeight: 44,
+          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, minHeight: 40,
             padding: '4px 0', borderTop: i ? '0.5px solid var(--line)' : 'none' }}>
             <span className={`z-dot ${r.effect === 'allow' ? 'z-dot-ok' : 'z-dot-err'}`} style={{ flex: 'none' }} />
             <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{(r.subject || '').split(':')[1]}</span>
-            <span className="z-code" style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{r.action}</span>
+            <span className="z-code" style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{r.action}</span>
             <span style={{ color: 'var(--ink-mute)', marginInlineStart: 'auto' }}>{resourceName(r.resource)}</span>
           </div>
         ))}
@@ -696,10 +696,10 @@ function AuditStrip() {
 function decBox(kind) {
   const c = kind === 'y' ? 'var(--ok)' : kind === 'x' ? 'var(--err)' : 'var(--line)'
   return {
-    border: `0.5px solid color-mix(in srgb, ${c} 35%, var(--line))`, borderRadius: 'var(--r-card)', padding: 16,
+    border: `0.5px solid color-mix(in srgb, ${c} 35%, var(--line))`, borderRadius: 'var(--r-card)', padding: 12,
     background: `color-mix(in srgb, ${c} 8%, var(--surface))`,
   }
 }
 function Skeleton() {
-  return <div style={{ ...card, padding: 32, color: 'var(--ink-mute)', fontSize: 15, textAlign: 'center' }}>Loading household…</div>
+  return <div style={{ ...card, padding: 32, color: 'var(--ink-mute)', fontSize: 13, textAlign: 'center' }}>Loading household…</div>
 }

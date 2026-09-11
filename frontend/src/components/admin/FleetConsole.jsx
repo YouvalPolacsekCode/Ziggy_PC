@@ -107,7 +107,7 @@ function Convergence({ versions, total }) {
     return (
       <div className="z-subhead" style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
         <span>All {total} on</span>
-        <span className="z-code" style={{ fontSize: 13, color: 'var(--ink)' }}>{versions.majority}</span>
+        <span className="z-code" style={{ fontSize: 12, color: 'var(--ink)' }}>{versions.majority}</span>
         {/* Canary is meant to run ahead. Say so plainly instead of leaving a
             number that looks like a discrepancy. */}
         {ahead.length > 0 && (
@@ -119,10 +119,10 @@ function Convergence({ versions, total }) {
     )
   }
   return (
-    <div style={{ fontSize: 15, color: 'var(--warn-text)', display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+    <div style={{ fontSize: 13, color: 'var(--warn-text)', display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
       <span>Split across {entries.length} versions:</span>
       {entries.map(([tag, n]) => (
-        <span key={tag} className="z-code" style={{ fontSize: 13 }}>
+        <span key={tag} className="z-code" style={{ fontSize: 12 }}>
           {tag}&nbsp;×{n}
         </span>
       ))}
@@ -162,7 +162,7 @@ function Vitals({ v }) {
   return (
     <div className="z-mono" style={{
       display: 'flex', gap: '4px 16px', flexWrap: 'wrap', alignItems: 'baseline',
-      fontSize: 13, color: 'var(--ink-faint)',
+      fontSize: 12, color: 'var(--ink-faint)',
     }}>
       {cells.map(([k, val]) => (
         <span key={k}>
@@ -220,7 +220,7 @@ function HomeRow({ home, onChanged }) {
             reported {ago(home.silent_for_s)}
           </span>
           <span style={{
-            marginInlineStart: 'auto', fontSize: 13, fontWeight: 600,
+            marginInlineStart: 'auto', fontSize: 12, fontWeight: 600,
             color: fine ? 'var(--ink-mute)' : ui.text,
           }}>
             {ui.label}
@@ -236,7 +236,7 @@ function HomeRow({ home, onChanged }) {
           <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {(home.issues || []).map((issue, i) => (
               <li key={i} style={{
-                fontSize: 15, color: 'var(--ink)', display: 'flex', gap: 8,
+                fontSize: 13, color: 'var(--ink)', display: 'flex', gap: 8,
                 alignItems: 'center',
               }}>
                 {(home.issues || []).length > 1 && <Dot level={issue.level} />}
@@ -270,7 +270,7 @@ function HomeRow({ home, onChanged }) {
               )
             })}
             {result && (
-              <span style={{ fontSize: 15, color: result.ok ? 'var(--ok-text)' : 'var(--err-text)' }}>
+              <span style={{ fontSize: 13, color: result.ok ? 'var(--ok-text)' : 'var(--err-text)' }}>
                 {result.text}
               </span>
             )}
@@ -354,10 +354,10 @@ function Activity({ rows }) {
               display: 'flex', gap: 12, padding: '8px 0', alignItems: 'baseline',
               borderTop: newDay ? 'none' : '0.5px dashed var(--line)',
             }}>
-              <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink-faint)', flexShrink: 0 }}>
+              <span className="z-mono" style={{ fontSize: 12, color: 'var(--ink-faint)', flexShrink: 0 }}>
                 {clockOf(r.ts)}
               </span>
-              <span style={{ fontSize: 15, color: 'var(--ink)', minWidth: 0 }}>
+              <span style={{ fontSize: 13, color: 'var(--ink)', minWidth: 0 }}>
                 <span style={{ fontWeight: 600 }}>{activitySubject(r)}</span>
                 {' '}
                 <span style={{ color: r.ok === 0 ? 'var(--err-text)' : 'var(--ink-mute)' }}>
@@ -396,7 +396,7 @@ function SignIn({ relayUrl, onDone }) {
   return (
     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <p className="z-subhead" style={{ margin: 0 }}>
-        Sign in to <span className="z-code" style={{ fontSize: 13 }}>{relayUrl || 'the relay'}</span> to
+        Sign in to <span className="z-code" style={{ fontSize: 12 }}>{relayUrl || 'the relay'}</span> to
         see every home. This browser will remember you.
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -411,7 +411,7 @@ function SignIn({ relayUrl, onDone }) {
           Sign in
         </button>
       </div>
-      {error && <span style={{ fontSize: 15, color: 'var(--err-text)' }}>{error}</span>}
+      {error && <span style={{ fontSize: 13, color: 'var(--err-text)' }}>{error}</span>}
     </form>
   )
 }
@@ -480,7 +480,7 @@ export default function FleetConsole() {
           </span>
           <span style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             {loadedAt && (
-              <span className="z-mono" style={{ fontSize: 13, color: 'var(--ink-faint)' }}>
+              <span className="z-mono" style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
                 {loadedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
@@ -518,7 +518,7 @@ export default function FleetConsole() {
       {needsAuth && <SignIn relayUrl={relayUrl} onDone={load} />}
 
       {error && !needsAuth && (
-        <p style={{ margin: 0, fontSize: 15, color: 'var(--err-text)' }}>{error}</p>
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--err-text)' }}>{error}</p>
       )}
 
       {/* ── 2. How is each home? ────────────────────────────────────────── */}

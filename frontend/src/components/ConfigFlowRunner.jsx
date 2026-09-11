@@ -145,7 +145,7 @@ export default function ConfigFlowRunner({ flowId, title, onDone, onCancel, onGo
         const label = f.label || f.name
         if (f.type === 'boolean') {
           return (
-            <label key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, fontSize: 17, lineHeight: '22px', color: 'var(--ink)' }}>
+            <label key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 40, fontSize: 15, lineHeight: '22px', color: 'var(--ink)' }}>
               <input type="checkbox" checked={!!input[f.name]} onChange={(e) => set(e.target.checked)} style={{ width: 20, height: 20 }} /> {label}
             </label>
           )
@@ -153,7 +153,7 @@ export default function ConfigFlowRunner({ flowId, title, onDone, onCancel, onGo
         if (Array.isArray(f.options) && f.options.length) {
           return (
             <div key={f.name}>
-              <label style={{ display: 'block', fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{label}</label>
+              <label style={{ display: 'block', fontSize: 13, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{label}</label>
               <select value={val} onChange={(e) => set(e.target.value)} className="z-input"
                 style={{ height: 44, padding: '0 16px' }}>
                 <option value="" />
@@ -164,14 +164,14 @@ export default function ConfigFlowRunner({ flowId, title, onDone, onCancel, onGo
         }
         return (
           <div key={f.name}>
-            <label style={{ display: 'block', fontSize: 15, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{label}</label>
+            <label style={{ display: 'block', fontSize: 13, lineHeight: '20px', fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{label}</label>
             <input type={/pass|token|pin/i.test(f.name) ? 'password' : 'text'} value={val}
               onChange={(e) => set(e.target.value)} dir="auto" className="z-input"
               style={{ height: 44, padding: '0 16px', boxSizing: 'border-box' }} />
           </div>
         )
       })}
-      {step.errors?.base && <div role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)' }}>{step.errors.base}</div>}
+      {step.errors?.base && <div role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)' }}>{step.errors.base}</div>}
       <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
         <button onClick={() => send(input)} disabled={busy} className={btnCls(true)} style={btn()}>
           {fields.length === 0 ? t('wizard.configFlow.confirm') : t('wizard.configFlow.submit')} {!busy && <Send size={18} strokeWidth={1.75} aria-hidden />}

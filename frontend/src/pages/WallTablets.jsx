@@ -42,18 +42,18 @@ function relTime(ts) {
 
 const card = {
   background: 'var(--surface)', border: '0.5px solid var(--line)',
-  borderRadius: 'var(--r-card)', padding: 16, marginBottom: 12,
+  borderRadius: 'var(--r-card)', padding: 12, marginBottom: 12,
 }
 
 // Active-filter chip: surface-2 fill + ink + hairline. Never inverted, never
 // accent — the PIN gate is a state, not the screen's primary action.
 function chipStyle(on) {
   return {
-    minHeight: 44, padding: '0 16px', borderRadius: 999,
+    minHeight: 40, padding: '0 16px', borderRadius: 999,
     background: on ? 'var(--surface-2)' : 'transparent',
     color: on ? 'var(--ink)' : 'var(--ink-mute)',
     border: '0.5px solid var(--line)',
-    fontSize: 15, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0,
+    fontSize: 13, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0,
     transition: 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard)',
   }
 }
@@ -109,8 +109,8 @@ function TabletCard({ tablet, onChanged }) {
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 17, color: 'var(--ink)' }}>{tablet.display_name}</div>
-          <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>
+          <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)' }}>{tablet.display_name}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>
             {tablet.room ? `${tablet.room} · ` : ''}last seen {relTime(tablet.last_seen)}
           </div>
         </div>
@@ -124,11 +124,11 @@ function TabletCard({ tablet, onChanged }) {
           const on = policy?.capabilities?.[c.key] !== false
           const pinned = policy?.pin_required?.includes(c.key)
           return (
-            <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '8px 0',
+            <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 0',
                                       borderBottom: '0.5px solid var(--line)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{c.label}</div>
-                <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>{c.hint}</div>
+                <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{c.label}</div>
+                <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{c.hint}</div>
               </div>
               {on && (
                 <button
@@ -157,9 +157,9 @@ function TabletCard({ tablet, onChanged }) {
           />
         </div>
         <button onClick={savePin} className="z-btn-secondary">{pin ? 'Save PIN' : 'Clear PIN'}</button>
-        {policy?.has_pin && <span style={{ fontSize: 15, color: 'var(--ok-text)' }}>PIN is set</span>}
+        {policy?.has_pin && <span style={{ fontSize: 13, color: 'var(--ok-text)' }}>PIN is set</span>}
       </div>
-      {msg && <div style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 8 }}>{msg}</div>}
+      {msg && <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 8 }}>{msg}</div>}
     </div>
   )
 }
@@ -216,14 +216,14 @@ export default function WallTablets() {
       </div>
 
       <div style={card}>
-        <div style={{ fontWeight: 600, fontSize: 17, color: 'var(--ink)', marginBottom: 4 }}>Pair a new tablet</div>
-        <p style={{ fontSize: 15, color: 'var(--ink-mute)', margin: '0 0 12px' }}>
+        <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)', marginBottom: 4 }}>Pair a new tablet</div>
+        <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: '0 0 12px' }}>
           Open <span className="z-code">/wall</span> on the tablet, tap “Pair tablet”, and enter this code.
         </p>
         {code ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <div className="z-code" style={{ fontSize: 34, fontWeight: 700, lineHeight: '41px', color: 'var(--ink)' }}>{code.code}</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
+            <div style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
               expires in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
             </div>
           </div>
@@ -232,14 +232,14 @@ export default function WallTablets() {
         )}
       </div>
 
-      {error && <div style={{ color: 'var(--err-text)', fontSize: 15, marginBottom: 12 }}>{error}</div>}
+      {error && <div style={{ color: 'var(--err-text)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
       {loading ? (
-        <p style={{ fontSize: 15, color: 'var(--ink-mute)' }}>Loading…</p>
+        <p style={{ fontSize: 13, color: 'var(--ink-mute)' }}>Loading…</p>
       ) : tablets.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 32 }}>
-          <p style={{ fontSize: 17, color: 'var(--ink)' }}>No tablets paired yet.</p>
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 4 }}>Generate a code above and enter it on the tablet.</p>
+          <p style={{ fontSize: 15, color: 'var(--ink)' }}>No tablets paired yet.</p>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 4 }}>Generate a code above and enter it on the tablet.</p>
         </div>
       ) : (
         tablets.map((tb) => <TabletCard key={tb.id} tablet={tb} onChanged={load} />)

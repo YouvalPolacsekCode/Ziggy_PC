@@ -291,10 +291,10 @@ function YtmPasteSheet({ open, member, onClose, onSubmit, busy, t }) {
             <X size={20} strokeWidth={1.75} />
           </button>
         </div>
-        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="bg-warn-soft" style={{
             display: 'flex', gap: 12, alignItems: 'flex-start',
-            color: 'var(--warn-text)', padding: '12px 16px', borderRadius: 'var(--r-ctl)', fontSize: 15, lineHeight: '20px',
+            color: 'var(--warn-text)', padding: '12px 16px', borderRadius: 'var(--r-ctl)', fontSize: 13, lineHeight: '20px',
           }}>
             <AlertTriangle size={20} strokeWidth={1.75} style={{ color: 'var(--warn)', flexShrink: 0 }} />
             <span>{t('media.ytmAdvancedNotice')}</span>
@@ -313,7 +313,7 @@ function YtmPasteSheet({ open, member, onClose, onSubmit, busy, t }) {
             placeholder='{"cookie": "...", "x-goog-authuser": "0", ...}'
             spellCheck={false}
             className="z-input z-code"
-            style={{ fontSize: 13, lineHeight: '18px', height: 160, padding: 12, resize: 'vertical', boxSizing: 'border-box' }}
+            style={{ fontSize: 12, lineHeight: '18px', height: 160, padding: 12, resize: 'vertical', boxSizing: 'border-box' }}
           />
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="z-btn-secondary" style={{ flex: 1 }} onClick={onClose}>{t('common.cancel')}</button>
@@ -329,7 +329,7 @@ function YtmPasteSheet({ open, member, onClose, onSubmit, busy, t }) {
 
 function Section({ title, subtitle, children }) {
   return (
-    <section className="z-card" style={{ marginBottom: 24, padding: 16 }}>
+    <section className="z-card" style={{ marginBottom: 24, padding: 12 }}>
       <div style={{ marginBottom: 12 }}>
         <h2 className="z-headline">{title}</h2>
         {subtitle && <p className="z-footnote" style={{ marginTop: 2 }}>{subtitle}</p>}
@@ -344,11 +344,11 @@ function Empty({ text }) {
 function Banner({ kind = 'ok', children }) {
   return <div className={kind === 'ok' ? 'bg-ok-soft' : 'bg-warn-soft'} style={{
     color: kind === 'ok' ? 'var(--ok-text)' : 'var(--warn-text)',
-    padding: '12px 16px', borderRadius: 'var(--r-ctl)', fontSize: 15, lineHeight: '20px', marginBottom: 16,
+    padding: '12px 16px', borderRadius: 'var(--r-ctl)', fontSize: 13, lineHeight: '20px', marginBottom: 16,
   }}>{children}</div>
 }
 
-const row = { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', minHeight: 56, borderTop: '0.5px solid var(--line)' }
+const row = { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', minHeight: 48, borderTop: '0.5px solid var(--line)' }
 
 const overlay = { position: 'fixed', inset: 0, background: 'var(--backdrop)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 220 }
 const modal   = { width: '100%', maxWidth: 520, background: 'var(--surface)', borderStartStartRadius: 'var(--r-sheet)', borderStartEndRadius: 'var(--r-sheet)', paddingBottom: 'env(safe-area-inset-bottom, 0)', maxHeight: '90vh', overflow: 'auto' }

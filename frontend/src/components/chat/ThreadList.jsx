@@ -31,7 +31,7 @@ export default function ThreadList({ onSwitch }) {
                 aria-current={active ? 'true' : undefined}
                 onClick={() => onSwitch?.(th.thread_id)}
                 style={{
-                  width: '100%', minHeight: 56, boxSizing: 'border-box',
+                  width: '100%', minHeight: 48, boxSizing: 'border-box',
                   display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'center', gap: 2,
                   padding: '8px 12px', borderRadius: 'var(--r-ctl)',
                   background: active ? 'var(--surface-2)' : 'transparent',
@@ -44,7 +44,7 @@ export default function ThreadList({ onSwitch }) {
                   <span
                     className="ziggy-thread-title"
                     dir="auto"
-                    style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 600, lineHeight: '22px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, lineHeight: '22px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   >
                     {th.title || t('nav.ziggy')}
                   </span>

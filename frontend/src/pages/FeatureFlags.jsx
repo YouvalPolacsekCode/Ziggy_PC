@@ -66,7 +66,7 @@ export default function FeatureFlags() {
         overflow: 'hidden',
       }}>
         {!loaded && (
-          <div style={{ padding: '24px 16px', fontSize: 15, color: 'var(--ink-mute)', textAlign: 'center' }}>
+          <div style={{ padding: '24px 16px', fontSize: 13, color: 'var(--ink-mute)', textAlign: 'center' }}>
             {t('featureFlags.loading')}
           </div>
         )}
@@ -75,13 +75,13 @@ export default function FeatureFlags() {
             key={key}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              minHeight: 56, padding: '12px 16px', gap: 12,
+              minHeight: 48, padding: '12px 16px', gap: 12,
               borderBottom: idx === arr.length - 1 ? 'none' : '0.5px solid var(--line)',
             }}
           >
             <div style={{ minWidth: 0 }}>
-              <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{t(label)}</p>
-              <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginTop: 2 }}>{t(subtitle)}</p>
+              <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t(label)}</p>
+              <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{t(subtitle)}</p>
             </div>
             <Toggle
               checked={!!features[key]}

@@ -186,14 +186,14 @@ function CommunityCard({ template, isHe, t, onConfigure }) {
   const desc = (isHe && template.description_he) ? template.description_he : (template.description || '').split('\n')[0]
   return (
     <div style={{
-      padding: 16, borderRadius: 'var(--r-card)',
+      padding: 12, borderRadius: 'var(--r-card)',
       background: 'var(--surface)', border: '0.5px solid var(--line)',
       display: 'flex', alignItems: 'flex-start', gap: 16,
     }} dir="auto">
       <div aria-hidden="true" style={{
-        width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+        width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'var(--surface-2)', color: 'var(--ink-2)', fontSize: 22, lineHeight: 1,
+        background: 'var(--surface-2)', color: 'var(--ink-2)', fontSize: 20, lineHeight: 1,
       }}>{template.icon || <Puzzle size={22} strokeWidth={1.75} />}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p className="z-headline" style={{ margin: '0 0 2px' }} dir="auto">{name}</p>

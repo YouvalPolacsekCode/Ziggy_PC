@@ -52,7 +52,7 @@ function SourcePill({ src }) {
 
 // Borderless 44×44 target for a card-level icon action.
 const ghostIcon = {
-  width: 44, height: 44, borderRadius: 'var(--r-ctl)', background: 'transparent',
+  width: 40, height: 40, borderRadius: 'var(--r-ctl)', background: 'transparent',
   border: 'none', cursor: 'pointer', color: 'var(--ink-mute)', padding: 0,
   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
 }
@@ -96,18 +96,18 @@ function ProfileAvatar({ name, selected, count, onClick }) {
     >
       <span style={{
         width: 52, height: 52, borderRadius: '50%', background: color, color: '#fff',
-        fontSize: 20, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 18, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center',
         border: selected ? '2px solid var(--ink)' : '2px solid transparent', boxSizing: 'border-box',
         boxShadow: selected ? '0 0 0 3px color-mix(in srgb, var(--ink) 12%, transparent)' : 'none',
         transition: 'box-shadow var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
       }}>
         {initial}
       </span>
-      <span style={{ fontSize: 15, fontWeight: selected ? 600 : 500, color: selected ? 'var(--ink)' : 'var(--ink-mute)', lineHeight: 1.2 }}>
+      <span style={{ fontSize: 13, fontWeight: selected ? 600 : 500, color: selected ? 'var(--ink)' : 'var(--ink-mute)', lineHeight: 1.2 }}>
         {name}
       </span>
       {count > 0 && (
-        <span style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{count}</span>
+        <span style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{count}</span>
       )}
     </button>
   )
@@ -126,7 +126,7 @@ function FactCard({ entry, onEdit, onDelete }) {
       layout
       initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: 6 }}
       transition={T_ENTER}
-      style={{ padding: 16, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)' }}
+      style={{ padding: 12, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)' }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <SourcePill src={src} />
@@ -139,8 +139,8 @@ function FactCard({ entry, onEdit, onDelete }) {
           </button>
         </div>
       </div>
-      <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 4, textTransform: 'capitalize' }}>{sub.replace(/_/g, ' ')}</p>
-      <p style={{ fontSize: 17, color: 'var(--ink)', lineHeight: 1.45, textWrap: 'pretty' }}>{value}</p>
+      <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 4, textTransform: 'capitalize' }}>{sub.replace(/_/g, ' ')}</p>
+      <p style={{ fontSize: 15, color: 'var(--ink)', lineHeight: 1.45, textWrap: 'pretty' }}>{value}</p>
     </motion.div>
   )
 }
@@ -226,7 +226,7 @@ function SearchField({ value, onChange, placeholder }) {
 function ProfileChip({ label, active, onClick }) {
   return (
     <button onClick={onClick} aria-pressed={active} style={{
-      minHeight: 44, padding: '0 16px', borderRadius: 999, fontSize: 15, fontWeight: 500, cursor: 'pointer',
+      minHeight: 40, padding: '0 16px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer',
       fontFamily: 'inherit', textTransform: 'capitalize',
       background: active ? 'var(--surface-2)' : 'transparent',
       color: active ? 'var(--ink)' : 'var(--ink-mute)',
@@ -252,7 +252,7 @@ export function MemoryPanel() {
       {s.loading && <div style={{ height: 60, borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)' }} />}
 
       {!s.loading && s.entries.length === 0 && (
-        <div style={{ textAlign: 'center', padding: 32, color: 'var(--ink-mute)', fontSize: 15 }}>{t('memory.empty')}</div>
+        <div style={{ textAlign: 'center', padding: 32, color: 'var(--ink-mute)', fontSize: 13 }}>{t('memory.empty')}</div>
       )}
 
       {s.profiles.length > 0 && (
@@ -319,7 +319,7 @@ export default function Memory() {
       {/* Info banner */}
       <div style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <Brain size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0, marginTop: 1 }} />
-        <p style={{ fontSize: 15, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+        <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
           {t('memory.infoBanner')} <span className="z-code">youval_coffee</span>{t('memory.infoBannerAfter')}
         </p>
       </div>
@@ -340,8 +340,8 @@ export default function Memory() {
       {/* Empty */}
       {!loading && entries.length === 0 && (
         <div style={{ textAlign: 'center', padding: 32 }}>
-          <p style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('memory.noMemoriesTitle')}</p>
-          <p style={{ fontSize: 15, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('memory.noMemoriesHelp')}</p>
+          <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>{t('memory.noMemoriesTitle')}</p>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('memory.noMemoriesHelp')}</p>
           <button onClick={() => setShowAdd(true)} className="z-btn-secondary">{t('common.add')}</button>
         </div>
       )}
@@ -370,7 +370,7 @@ export default function Memory() {
                   <h2 className="z-title" style={{ margin: 0, textTransform: 'capitalize' }}>
                     {activeProfile}
                   </h2>
-                  <p style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{t(activeFacts.length === 1 ? 'memory.fact' : 'memory.facts', { n: activeFacts.length })}</p>
+                  <p style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>{t(activeFacts.length === 1 ? 'memory.fact' : 'memory.facts', { n: activeFacts.length })}</p>
                 </div>
 
                 {/* Facts grid: 2-col on wide, 1-col on narrow */}
@@ -389,9 +389,9 @@ export default function Memory() {
                   <button
                     onClick={() => { setNewKey(activeProfile === 'general' ? '' : `${activeProfile}_`); setNewValue(''); setShowAdd(true) }}
                     style={{
-                      padding: 16, borderRadius: 'var(--r-card)', minHeight: 84,
+                      padding: 12, borderRadius: 'var(--r-card)', minHeight: 84,
                       background: 'var(--bg-2)', border: '0.5px dashed var(--line-2)',
-                      color: 'var(--ink-mute)', fontSize: 15, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer',
+                      color: 'var(--ink-mute)', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                     }}
                   >
@@ -409,8 +409,8 @@ export default function Memory() {
       <Modal open={!!editEntry} onClose={() => setEditEntry(null)} title={t('memory.modalEditTitle')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
-            <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 4 }}>{t('memory.labelKey')}</p>
-            <p className="z-code" style={{ fontSize: 15, color: 'var(--ink)', padding: '12px 16px', borderRadius: 'var(--r-ctl)', background: 'var(--bg-2)' }}>{editEntry?.key}</p>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 4 }}>{t('memory.labelKey')}</p>
+            <p className="z-code" style={{ fontSize: 13, color: 'var(--ink)', padding: '12px 16px', borderRadius: 'var(--r-ctl)', background: 'var(--bg-2)' }}>{editEntry?.key}</p>
           </div>
           <Input label={t('memory.labelValue')} value={editValue} onChange={e => setEditValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleEditSave()} autoFocus />
           <button onClick={handleEditSave} disabled={!editValue.trim() || editSaving} className="z-btn-primary" style={{ width: '100%' }}>
@@ -425,7 +425,7 @@ export default function Memory() {
           <Input label={t('memory.labelKey')} placeholder={t('memory.keyPlaceholder')} value={newKey} onChange={e => setNewKey(e.target.value)} autoFocus />
           <Input label={t('memory.labelValue')} placeholder={t('memory.valuePlaceholder')} value={newValue} onChange={e => setNewValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()} />
           {(newKey || newValue) && (
-            <p style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
+            <p style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
               {t('memory.preview', { key: newKey || t('memory.previewKeyHolder'), value: newValue || t('memory.previewValueHolder') })}
             </p>
           )}

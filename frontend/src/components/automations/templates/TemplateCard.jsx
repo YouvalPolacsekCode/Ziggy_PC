@@ -66,7 +66,7 @@ function TemplateCard({ template, onConfigure, showTriggerChip = true }) {
       onClick={() => setExpanded(v => !v)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(v => !v) } }}
       style={{
-        padding: 16, borderRadius: 'var(--r-card)',
+        padding: 12, borderRadius: 'var(--r-card)',
         background: 'var(--surface)', border: '0.5px solid var(--line)',
         display: 'flex', alignItems: 'flex-start', gap: 16,
         cursor: 'pointer', userSelect: 'none',
@@ -74,9 +74,9 @@ function TemplateCard({ template, onConfigure, showTriggerChip = true }) {
       dir="auto"
     >
       <div aria-hidden="true" style={{
-        width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+        width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'var(--surface-2)', color: 'var(--ink-2)', fontSize: 22, lineHeight: 1,
+        background: 'var(--surface-2)', color: 'var(--ink-2)', fontSize: 20, lineHeight: 1,
       }}>
         {template.icon || <Sparkles size={22} strokeWidth={1.75} />}
       </div>

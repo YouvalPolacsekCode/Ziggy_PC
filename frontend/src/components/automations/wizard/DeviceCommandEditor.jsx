@@ -59,7 +59,7 @@ function DeviceCommandEditor({ value, onChange }) {
         const label = `${f.label}${f.required ? ' *' : ''}`
         if (f.kind === 'boolean') {
           return (
-            <div key={f.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 44 }}>
+            <div key={f.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 40 }}>
               <span className="z-body" dir="auto">{label}</span>
               <Toggle
                 checked={Boolean(params[f.name] ?? f.default ?? false)}

@@ -61,7 +61,7 @@ const STEP_TYPES = [
 const selectStyle = {
   width: '100%', height: 38, padding: '0 28px 0 12px',
   background: 'var(--surface)', border: '0.5px solid var(--line)',
-  borderRadius: 10, color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13,
+  borderRadius: 10, color: 'var(--ink)', fontFamily: 'inherit', fontSize: 12,
   outline: 'none', appearance: 'none',
   backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.4)' d='M0 0h10L5 6z'/></svg>")`,
   backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
@@ -106,7 +106,7 @@ function SendIntentEditor({ value, onChange }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', gap: 8 }}>
         <Input placeholder={t('automations.sendIntent.placeholder')} value={value} onChange={e => onChange(e.target.value)} style={{ flex: 1 }} dir="auto" />
-        <button onClick={() => setShowT(v => !v)} style={{ padding: '0 12px', borderRadius: 10, background: 'var(--bg-2)', border: '0.5px solid var(--line)', color: 'var(--ink-mute)', cursor: 'pointer', fontSize: 14, flexShrink: 0 }}>📝</button>
+        <button onClick={() => setShowT(v => !v)} style={{ padding: '0 12px', borderRadius: 10, background: 'var(--bg-2)', border: '0.5px solid var(--line)', color: 'var(--ink-mute)', cursor: 'pointer', fontSize: 13, flexShrink: 0 }}>📝</button>
       </div>
       {showT && (
         <div style={{ borderRadius: 10, border: '0.5px solid var(--line)', overflow: 'hidden', background: 'var(--surface)' }}>
@@ -362,7 +362,7 @@ export function RoutineWizard({ initial, onSave, onClose }) {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {ICONS.map(ic => (
                     <button key={ic} onClick={() => setIcon(ic)} style={{
-                      width: 36, height: 36, borderRadius: 10, fontSize: 18,
+                      width: 32, height: 32, borderRadius: 10, fontSize: 17,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       background: ic === icon ? `color-mix(in srgb, var(--accent) 12%, var(--surface))` : 'var(--bg-2)',
                       border: ic === icon ? '1.5px solid var(--accent)' : '0.5px solid var(--line)',
@@ -394,7 +394,7 @@ export function RoutineWizard({ initial, onSave, onClose }) {
                 {t('routines.addStep')}
               </button>
               {showErrors && firstInvalidIdx !== -1 && (
-                <p style={{ fontSize: 13, color: 'var(--err)', textAlign: 'center', marginTop: 4 }}>
+                <p style={{ fontSize: 12, color: 'var(--err)', textAlign: 'center', marginTop: 4 }}>
                   {t('routines.stepInvalid', { n: firstInvalidIdx + 1 })}
                 </p>
               )}
@@ -404,9 +404,9 @@ export function RoutineWizard({ initial, onSave, onClose }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ padding: '16px 16px', borderRadius: 10, background: 'var(--bg-2)', border: '0.5px solid var(--line)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                  <span style={{ fontSize: 22 }}>{icon}</span>
+                  <span style={{ fontSize: 20 }}>{icon}</span>
                   <div>
-                    <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }} dir="auto">{name}</p>
+                    <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 13 }} dir="auto">{name}</p>
                     {description && <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }} dir="auto">{description}</p>}
                   </div>
                 </div>
@@ -473,17 +473,17 @@ const RoutineCard = React.memo(function RoutineCard({ routine, onView, onEdit, o
       }}>
         {/* Tinted icon square — matches AutomationCard's left affordance */}
         <div style={{
-          width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+          width: 34, height: 34, borderRadius: 10, flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: `color-mix(in srgb, ${tint} 12%, var(--surface-2))`,
-          fontSize: 18,
+          fontSize: 17,
         }}>
           {routine.icon || '⚡'}
         </div>
 
         {/* Name + description + meta pills */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p dir="auto" style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <p dir="auto" style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 13, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {routineName}
           </p>
           {routine.description && (
@@ -498,7 +498,7 @@ const RoutineCard = React.memo(function RoutineCard({ routine, onView, onEdit, o
             }}>
               ROUTINE
             </span>
-            <span style={{ fontSize: 13, color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums', }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums', }}>
               {stepCount} step{stepCount !== 1 ? 's' : ''}
             </span>
           </div>
@@ -548,11 +548,11 @@ function RoutineViewModal({ routine, onEdit, onRun, onClose }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 10, background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: 'color-mix(in srgb, var(--ok) 12%, var(--surface))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
           {routine.icon || '⚡'}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p dir="auto" style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 15 }}>{routineName}</p>
+          <p dir="auto" style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 13 }}>{routineName}</p>
           {routine.description && <p dir="auto" style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>{routineDesc}</p>}
         </div>
       </div>
@@ -560,7 +560,7 @@ function RoutineViewModal({ routine, onEdit, onRun, onClose }) {
       <div>
         <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('routines.stepsCount', { n: steps.length })}</p>
         {steps.length === 0
-          ? <p style={{ fontSize: 13, color: 'var(--ink-faint)', fontStyle: 'italic' }}>{t('routines.noStepsConfigured')}</p>
+          ? <p style={{ fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic' }}>{t('routines.noStepsConfigured')}</p>
           : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {steps.map((s, i) => (
@@ -617,16 +617,16 @@ const SuggestedRoutineCard = React.memo(function SuggestedRoutineCard({ template
         display: 'flex', alignItems: 'flex-start', gap: 12,
       }}>
         <div style={{
-          width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+          width: 34, height: 34, borderRadius: 10, flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: `color-mix(in srgb, ${tint} 12%, var(--surface-2))`,
-          fontSize: 18,
+          fontSize: 17,
         }}>
           {template.icon || '⚡'}
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14, letterSpacing: '-0.01em' }}>
+          <p style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 13, letterSpacing: '-0.01em' }}>
             {template.name}
           </p>
           {template.description && (
@@ -642,7 +642,7 @@ const SuggestedRoutineCard = React.memo(function SuggestedRoutineCard({ template
               {t('routines.suggested.tag')}
             </span>
             {stepCount > 0 && (
-              <span style={{ fontSize: 13, color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums', }}>
+              <span style={{ fontSize: 12, color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums', }}>
                 {stepCount} step{stepCount !== 1 ? 's' : ''}
               </span>
             )}
@@ -733,7 +733,7 @@ export function RoutinesListPanel({ embedded = false }) {
 
       {!loading && routines.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('routines.empty')}</p>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 4 }}>{t('routines.empty')}</p>
           <p style={{ fontSize: 12, color: 'var(--ink-mute)', marginBottom: 16 }}>{t('routines.emptyHint')}</p>
           {!embedded && (
             <button onClick={() => setShowWizard(true)} className="z-btn-secondary" style={{ padding: '8px 16px', borderRadius: 10, fontFamily: 'inherit' }}>{t('routines.create')}</button>
@@ -756,7 +756,7 @@ export function RoutinesListPanel({ embedded = false }) {
             marginTop: 8, width: '100%', padding: '12px',
             borderRadius: 16, background: 'var(--surface)',
             border: '1px dashed var(--line-2)',
-            color: 'var(--ink-2)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            color: 'var(--ink-2)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'inherit',
           }}
         >
@@ -795,7 +795,7 @@ export default function Routines() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
           <p className="z-eyebrow" style={{ marginBottom: 4 }}>Sequences of steps</p>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Routines</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Routines</h1>
           <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontVariantNumeric: 'tabular-nums', }}>{routines.length} routine{routines.length !== 1 ? 's' : ''}</p>
         </div>
       </div>

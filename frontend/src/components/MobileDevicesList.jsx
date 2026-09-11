@@ -59,7 +59,7 @@ export function MobileDevicesList() {
 
   return (
     <section className="z-card-soft" style={{
-      padding: 16,
+      padding: 12,
       display: 'flex', flexDirection: 'column', gap: 8,
     }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -78,7 +78,7 @@ export function MobileDevicesList() {
       </header>
 
       {error && (
-        <div role="alert" style={{ fontSize: 15, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>
+        <div role="alert" style={{ fontSize: 13, lineHeight: '20px', color: 'var(--err-text)' }}>{error}</div>
       )}
 
       {!loading && devices.length === 0 && (
@@ -89,12 +89,12 @@ export function MobileDevicesList() {
 
       {devices.map(d => (
         <div key={d.device_id} className="z-card-sm" style={{
-          display: 'flex', alignItems: 'center', gap: 12, minHeight: 56,
+          display: 'flex', alignItems: 'center', gap: 12, minHeight: 48,
           padding: '8px 8px 8px 16px',
         }}>
           <Smartphone size={24} strokeWidth={1.75} aria-hidden style={{ color: 'var(--ink-2)', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 17, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {d.model || platformLabel(d)}
               <span className="z-footnote" style={{ marginInlineStart: 8 }}>
                 {platformLabel(d)} {d.os_version ? `· ${d.os_version}` : ''}

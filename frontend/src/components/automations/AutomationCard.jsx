@@ -72,14 +72,14 @@ const AutomationCard = React.memo(function AutomationCard({
   return (
     <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={T_ENTER} data-automation-id={automation.id}>
       <div style={{
-        padding: 16, borderRadius: 'var(--r-card)', background: 'var(--surface)',
+        padding: 12, borderRadius: 'var(--r-card)', background: 'var(--surface)',
         border: `0.5px solid ${hasOfflineDep ? 'color-mix(in srgb, var(--warn) 40%, var(--line))' : 'var(--line)'}`,
         boxShadow: highlighted ? '0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent)' : 'none',
         transition: 'box-shadow var(--dur-state) var(--ease-standard)',
         display: 'flex', alignItems: 'flex-start', gap: 16,
       }}>
         <div aria-hidden="true" style={{
-          width: 44, height: 44, borderRadius: 'var(--r-ctl)', flexShrink: 0,
+          width: 40, height: 40, borderRadius: 'var(--r-ctl)', flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: 'var(--surface-2)', color: automation.enabled ? 'var(--ink-2)' : 'var(--ink-faint)',
         }}>
@@ -112,7 +112,7 @@ const AutomationCard = React.memo(function AutomationCard({
             {actions.map(({ onClick, color, title, path }) => (
               <button
                 key={title} onClick={onClick} title={title} aria-label={title}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color, width: 44, height: 44, padding: 0, borderRadius: 'var(--r-ctl)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color, width: 40, height: 40, padding: 0, borderRadius: 'var(--r-ctl)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">{path}</svg>
               </button>

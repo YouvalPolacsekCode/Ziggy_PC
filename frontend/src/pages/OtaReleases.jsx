@@ -24,7 +24,7 @@ function ReleaseRow({ release }) {
   const t = useT()
   const digestEntries = Object.entries(release.image_digests || {})
   return (
-    <div style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--line)', minHeight: 56 }}>
+    <div style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--line)', minHeight: 48 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <span className="z-chip z-mono">#{release.id}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -44,7 +44,7 @@ function ReleaseRow({ release }) {
       {digestEntries.length > 0 && (
         <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)' }}>
           {digestEntries.map(([img, dig]) => (
-            <p key={img} className="z-code" style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: '18px', wordBreak: 'break-all' }}>
+            <p key={img} className="z-code" style={{ fontSize: 12, color: 'var(--ink-mute)', lineHeight: '18px', wordBreak: 'break-all' }}>
               {img}: {dig}
             </p>
           ))}
@@ -57,7 +57,7 @@ function ReleaseRow({ release }) {
 function CohortRow({ cohort }) {
   const t = useT()
   return (
-    <div style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12, minHeight: 56 }}>
+    <div style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12, minHeight: 48 }}>
       <Layers size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <p className="z-headline">{cohort.cohort_name}</p>
@@ -131,7 +131,7 @@ function ReleaseModal({ open, onClose, onCreated }) {
           placeholder='{"ziggy-edge": "sha256:abc...", "homeassistant": "sha256:def..."}'
           dir="ltr"
           className="z-input z-code"
-          style={{ minHeight: 96, padding: 12, fontSize: 13, lineHeight: '18px', boxSizing: 'border-box', resize: 'vertical' }} />
+          style={{ minHeight: 84, padding: 12, fontSize: 12, lineHeight: '18px', boxSizing: 'border-box', resize: 'vertical' }} />
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
         <button onClick={onClose} className="z-btn-secondary" style={{ flex: 1 }}>{t('common.cancel')}</button>
@@ -245,13 +245,13 @@ export default function OtaReleases() {
       </div>
 
       {!isRelayConfigured() && (
-        <div className="z-card-soft" style={{ padding: 16, marginBottom: 16 }}>
+        <div className="z-card-soft" style={{ padding: 12, marginBottom: 16 }}>
           <p className="z-subhead">{t('otaPage.relayNotConfigured')}</p>
         </div>
       )}
 
       {error && (
-        <div className="z-alert-warn" style={{ marginBottom: 16, padding: '12px 16px', border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', fontSize: 15, color: 'var(--warn-text)' }}>
+        <div className="z-alert-warn" style={{ marginBottom: 16, padding: '12px 16px', border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', fontSize: 13, color: 'var(--warn-text)' }}>
           {error}
         </div>
       )}
