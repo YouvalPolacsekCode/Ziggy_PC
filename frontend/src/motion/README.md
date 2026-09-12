@@ -12,8 +12,15 @@ bring Lumen's look with it. Where the text below says *Lumen* it means that
 exploration, not anything in this repository.
 
 `<html data-motion="off">` restores the app exactly as it was before this layer
-existed. Press **m** to flip it, or start with `?motion=off`. That is the
-rollback path, so keep it honest: see the note in `flag.js`.
+existed. Set it with **`?motion=off`**, which sticks in that browser until
+`?motion=on`. That is the rollback path, so keep it honest: see the note in
+`flag.js`.
+
+There is deliberately no on-screen switch and no keyboard shortcut. An earlier
+build had both, plus a tuner with speed and curve dials; all of it was review
+instrumentation, and a real home is not a review. The `m` shortcut was actively
+unsafe — a stray keypress outside a text field stripped the app of its motion
+with nothing to explain why.
 
 ```
 src/motion/
@@ -29,7 +36,7 @@ src/motion/
                  (its @import of controls.css MUST stay at the top of the file:
                   an @import after any rule is invalid and is dropped silently)
   controls.css   the feel of sliders, toggles and power buttons
-  MotionRoot.jsx mounts the layer, renders the toggle
+  MotionRoot.jsx mounts the layer (press + haptics + motion.css); renders nothing
 ```
 
 ## Why a layer and not a redesign
@@ -43,10 +50,12 @@ app's *feel*, not its *look*, is what needs work first.
 From Apple's HIG (Motion, Feedback, Gestures, Accessibility) and Emil
 Kowalski's animation work:
 
-- Motion answers an action. Nothing loops for decoration. The single exception
-  is the occupancy dot, which breathes because "occupied right now" is a
-  continuously true reading rather than an event, and the word beside it
-  carries the same fact so nothing is conveyed by motion alone.
+- Motion answers an action. **Nothing loops for decoration** — and unlike the
+  first draft of this document, there is now no exception. A breathing
+  occupancy dot was designed and specified here, and nothing in the app ever
+  emitted the attribute for it, so it never existed. It is listed below as
+  unwired rather than quietly deleted, because "specified but never emitted" is
+  exactly the failure mode this file exists to prevent.
 - Entrances use a strong ease-out; **exits are always faster than entrances**.
   Never `ease-in`, which delays the first frame, exactly when the eye is
   watching hardest.
@@ -79,8 +88,8 @@ Kowalski's animation work:
 | `data-motion-reveal` | a disclosure panel | its content fades in behind the expansion |
 | `data-motion-chevron` + `data-open` | a disclosure chevron | rotates |
 | `data-motion-nav` + `data-tucked` | the bottom nav | tucks away on scroll down |
-| `data-motion-nav-hl` | the nav's active highlight | slides between tabs |
-| `data-motion-live="true"` | the occupancy dot when occupied | breathes |
+| `data-motion-nav-hl` | the **sidebar**'s active highlight | slides between items |
+| `data-motion-live="true"` | **UNWIRED** — nothing emits this | would breathe; see the rules above |
 | `data-scrubbing="true"` | a control mid-drag | kills the fill transition so it tracks the finger |
 | `data-motion-hold` + `data-motion-grow` | a slider being held | the control grows under the finger |
 | `data-motion-ring` | a power/toggle button | hover ring, pointer devices only |
@@ -129,8 +138,12 @@ promotion just drops the background location. Back, refresh and sharing
 therefore all work, and a cold deep link renders the full page exactly as it
 always did.
 
-On a phone it rises from the bottom to about 55% with a grabber and the full
-detent machinery. At 768px and up it docks as a 320px panel against the trailing
+On a phone it rises from the bottom to 72% with a grabber and the full detent
+machinery. It was 55%, which cut the control in half and left a light's power
+button below the fold — see the note on `DETENTS` in `DeviceSheet.jsx`, and the
+one on `height` in `sheet.css` explaining why the panel must be pinned to the
+layer for a detent fraction to mean anything.
+At 768px and up it docks as a 320px panel against the trailing
 edge, which is what Lumen does at wide sizes, and matches the width of the
 Recent Activity rail the dashboard already has. No grabber and no drag there,
 because neither means anything in a side panel; the header carries an expand

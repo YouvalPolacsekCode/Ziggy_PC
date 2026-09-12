@@ -1860,26 +1860,20 @@ export default function AIChat({ docked = false }) {
           <h1 className="z-display" style={{ margin: 0, minWidth: 0, flexShrink: 0 }}>{t('chat.headerTitle')}</h1>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0 }}>
-          {/* Rehearsal mode — Ziggy replies and speaks, but nothing reaches
-              the home. Loud on purpose while on (warn tint + the banner
-              below): the user must never wonder why the light didn't come on. */}
-          {rehearsal !== null && (
-            <button
-              type="button"
-              onClick={onToggleRehearsal}
-              className={`z-chip${rehearsal ? ' bg-warn-soft border-warn-soft' : ''}`}
-              title={rehearsal ? t('chat.rehearsalOnTitle') : t('chat.rehearsalOffTitle')}
-              aria-pressed={rehearsal}
-              style={{
-                minHeight: 40, cursor: 'pointer', fontFamily: 'inherit',
-                fontWeight: rehearsal ? 600 : 500,
-                color: rehearsal ? 'var(--warn-text)' : 'var(--ink-mute)',
-              }}
-            >
-              <span className="z-dot" aria-hidden="true" style={{ background: rehearsal ? 'var(--warn)' : 'var(--ink-faint)' }} />
-              {rehearsal ? t('chat.rehearsalOn') : t('chat.rehearsalOff')}
-            </button>
-          )}
+          {/* The rehearsal TOGGLE used to live here and was removed: it put a
+              permanent control in the chat header for a mode almost nobody
+              wants, and the one thing it is for — "talk to Ziggy without
+              touching the house" — is not worth a standing button in the place
+              you go to actually control the house.
+
+              The MODE itself is untouched. It is still server-owned
+              (/assistant/rehearsal), still respected everywhere, and still
+              reachable — the API and the voice path can both turn it on. What
+              is deliberately kept is the way OUT: the full-width banner below
+              renders whenever rehearsal is on and taps to go live. Removing
+              that as well would let a home sit in rehearsal with Ziggy
+              answering cheerfully while no light ever moves, and no way back.
+              If this ever becomes user-facing again, it belongs in Settings. */}
 
           {/* Diagnostic mode — deeper "why did that happen" answers. Server-
               owned; shown only while on. Tap = leave (sends the toggle phrase). */}

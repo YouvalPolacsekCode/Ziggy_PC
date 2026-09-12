@@ -33,13 +33,29 @@ function readInitial() {
   return true
 }
 
+// An explicit ?motion= choice STICKS.
+//
+// This used to be read-only, and the only thing that ever wrote to storage was
+// the on-screen toggle. When that toggle was removed, `?motion=off` silently
+// became a one-page-load effect: navigate anywhere and the layer came back.
+// That quietly destroyed the rollback, because "add ?motion=off" is now the
+// only way a home can turn this layer off at all, and a rollback that forgets
+// itself on the next tap is not a rollback.
+function persistExplicitChoice() {
+  try {
+    const q = new URLSearchParams(window.location.search).get('motion')
+    if (q === 'on' || q === '1') localStorage.setItem(KEY, 'on')
+    else if (q === 'off' || q === '0') localStorage.setItem(KEY, 'off')
+  } catch { /* private mode — the flag still applies for this load */ }
+}
+
 let on = typeof window === 'undefined' ? false : readInitial()
 
 function apply() {
   document.documentElement.setAttribute('data-motion', on ? 'on' : 'off')
 }
 
-if (typeof window !== 'undefined') apply()
+if (typeof window !== 'undefined') { persistExplicitChoice(); apply() }
 
 export const isMotionOn = () => on
 
@@ -50,7 +66,10 @@ export function setMotion(next) {
   subs.forEach((fn) => fn(on))
 }
 
-export function toggleMotion() { setMotion(!on) }
+// `setMotion` is kept although nothing calls it today: it is the one
+// programmatic way in, and the obvious home for this is a Settings row rather
+// than the floating pill that used to live over the app. `toggleMotion` was
+// removed with that pill — a blind flip is only ever useful to a button.
 
 export function onMotionChange(fn) {
   subs.add(fn)
