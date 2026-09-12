@@ -583,8 +583,14 @@ export default function Automations() {
       {/* Library — OOTB curated templates + community blueprints. Relocated
           from the old Templates tab into a modal so the Automations tab stays a
           clean "what's running" list. Configuring one closes the library and
-          hands off to the matching wizard. */}
-      <Modal open={showLibrary} onClose={() => setShowLibrary(false)} title={t('automations.libraryTitle')} maxWidth={620}>
+          hands off to the matching wizard.
+
+          `sheet`: on a phone this is a long list you come up to browse and
+          flick away, not a dialog you dismiss — so it opts into the app's one
+          sheet surface (drag by the header or by the list while it is at its
+          top, drag up for the whole thing). On a wide screen, and with motion
+          off, it is the same 620px dialog as before. */}
+      <Modal sheet open={showLibrary} onClose={() => setShowLibrary(false)} title={t('automations.libraryTitle')} maxWidth={620}>
         <TemplatesTab
           onConfigureNative={(tpl) => { setShowLibrary(false); handleConfigureTemplate(tpl) }}
           onConfigureCommunity={(blueprintId) => { setShowLibrary(false); setCommunityTarget(blueprintId) }}
@@ -594,8 +600,11 @@ export default function Automations() {
       </Modal>
 
       {/* Header "+" chooser — the one create entry point: a blank Automatic
-          wizard, a blank On-demand wizard, or the Library of ready recipes. */}
-      <Modal open={showCreateChooser} onClose={() => setShowCreateChooser(false)} title={t('automations.createChooserTitle')} maxWidth={420}>
+          wizard, a blank On-demand wizard, or the Library of ready recipes.
+          Same `sheet` opt-in as the Library: three tall touch targets raised
+          from the bottom of a phone, the unchanged 420px dialog everywhere
+          else. */}
+      <Modal sheet open={showCreateChooser} onClose={() => setShowCreateChooser(false)} title={t('automations.createChooserTitle')} maxWidth={420}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {[
             { Icon: Zap,      label: t('automations.tabAutomatic'),    desc: t('automations.createAutomaticDesc'),

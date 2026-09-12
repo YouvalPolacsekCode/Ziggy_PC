@@ -6,8 +6,15 @@ import { Toggle } from '../components/ui/Toggle'
 import { Button } from '../components/ui/Button'
 import { DeviceControls, TOGGLEABLE_DOMAINS, IRRemoteButton, isEntityOn } from '../components/ui/DeviceControls'
 import { DeviceRemote as UnifiedDeviceRemote } from '../components/device/DeviceRemote'
-import { commandAvailable, getKind, kindMeta, sendDeviceCommand, KIND } from '../lib/devices'
+import { commandAvailable, deviceFacts, getKind, isLightKind, kindMeta, sendDeviceCommand, KIND } from '../lib/devices'
 import { DeviceIcon } from '../lib/deviceIcons'
+import { isMotionOn, useMotionOn } from '../motion/flag'
+import { isReduced } from '../motion/motion'
+import { useScrub } from '../motion/gestures'
+// See DeviceCard.jsx / Slider.jsx: motion.css's trailing @import of
+// controls.css is invalid CSS and is dropped silently, so the hover-ring rules
+// are pulled in directly wherever they are used.
+import '../motion/controls.css'
 import { EntitySelect } from '../components/ui/EntitySelect'
 import { Modal } from '../components/ui/Modal'
 import { useDeviceStore } from '../stores/deviceStore'
@@ -32,6 +39,83 @@ function _fmtAgo(isoOrDateStr) {
   if (diffMin < 60) return `${diffMin}m ago`
   if (diffMin < 1440) return `${Math.round(diffMin / 60)}h ago`
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+// ── Motion-layer helpers (this page only) ───────────────────────────────────
+//
+// This page owns its own card components rather than using
+// components/device/DeviceCard.jsx, so it has to emit the same hooks by hand.
+// Everything below is gated on the flag: with `data-motion="off"` the DOM and
+// the behaviour are exactly what they were.
+
+// The hover ring is drawn as a box-shadow on the control itself
+// (motion/controls.css). The shared `Toggle` takes no pass-through props, so
+// the only way to give it the ring is a wrapper that traces the same box —
+// 36×20 at radius 999, i.e. the switch's own outline. Mounted ONLY while the
+// layer is on, so with it off the markup is untouched.
+function RingWrap({ children }) {
+  const motionOn = useMotionOn()
+  if (!motionOn) return children
+  return (
+    <span
+      data-motion-ring
+      style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 999, flexShrink: 0 }}
+    >
+      {children}
+    </span>
+  )
+}
+
+// A fold that actually opens — the same implementation as
+// components/rooms/RoomOccupancyPanel.jsx's `Reveal`, for the same reason:
+// clipping cannot move layout, so a clip-only reveal plays inside a box that
+// already jumped to full height. `grid-template-rows: 0fr → 1fr` on a wrapper
+// whose only child hides its overflow animates the height itself (240ms open,
+// 180ms closed — exits are always faster; both live in motion/motion.css).
+//
+// The two requestAnimationFrames are load-bearing: React can commit the
+// mounted-and-closed state and the open state inside one frame, and then the
+// browser only ever sees the end value — which is the jump this replaces.
+//
+// Under reduced motion a fold should simply be open, and with the layer off
+// this component is never rendered at all (the caller keeps its framer path).
+function Disclosure({ open, children }) {
+  const animated = isMotionOn() && !isReduced()
+  const [mounted, setMounted] = useState(open)
+  const [expanded, setExpanded] = useState(open)
+
+  useEffect(() => {
+    if (!animated) return undefined
+    if (open) {
+      setMounted(true)
+      let inner = 0
+      const outer = requestAnimationFrame(() => {
+        inner = requestAnimationFrame(() => setExpanded(true))
+      })
+      return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
+    }
+    setExpanded(false)
+    const id = setTimeout(() => setMounted(false), 180)
+    return () => clearTimeout(id)
+  }, [open, animated])
+
+  if (!animated) return open ? children : null
+  if (!mounted) return null
+  return (
+    <div
+      data-motion-disclosure=""
+      data-open={expanded ? 'true' : 'false'}
+      // Only ever true while the fold is closing — the closed state is not
+      // rendered at all — so nothing readable is hidden from a screen reader
+      // for longer than the collapse takes.
+      aria-hidden={expanded ? undefined : 'true'}
+      style={{ display: 'grid', gridTemplateRows: expanded ? '1fr' : '0fr' }}
+    >
+      {/* The clip is what lets the row size below its content's automatic
+          minimum; without it the grid refuses to collapse to 0fr. */}
+      <div style={{ overflow: 'hidden', minHeight: 0 }}>{children}</div>
+    </div>
+  )
 }
 
 const IR_TYPE_ICONS = {
@@ -59,8 +143,18 @@ function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, age
   const t = useT()
   const [open, setOpen] = useState(false)
   const [pos, setPos]   = useState({ top: 0, left: 0 })
+  // Setting an assumed state is a real round-trip to the hub. It had no
+  // in-flight state at all, so the chip sat there looking like nothing had
+  // happened until the toast landed.
+  const [pending, setPending] = useState(false)
   const btnRef  = useRef(null)
   const menuRef = useRef(null)
+
+  const setState = async (id, s) => {
+    setPending(true)
+    try { await onIrStateChange(id, s) }
+    finally { setPending(false) }
+  }
 
   const handleOpen = (e) => {
     e.stopPropagation()
@@ -108,6 +202,7 @@ function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, age
           ? t('devices.irAssumedTooltipStale', { hours: Math.round(ageHours) })
           : t('devices.irAssumedTooltipNormal', { confidence: irConfidence })}
         className={chipClass}
+        data-pending={pending ? 'true' : undefined}
       >
         <span>{assumedState ?? t('common.unknown')}</span>
         {acFacts.length > 0 && (
@@ -127,7 +222,7 @@ function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, age
             <p className="px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-wider text-ink-mute">{t('devices.setAssumedState')}</p>
             {irStateOptions.map((s) => (
               <button key={s}
-                onClick={() => { onIrStateChange(irDevice.id, s); setOpen(false) }}
+                onClick={() => { setState(irDevice.id, s); setOpen(false) }}
                 className={cn('w-full text-left px-3 py-2 text-xs capitalize hover:bg-surface-2', assumedState === s ? 'text-accent font-semibold' : 'text-ink-2')}
               >
                 {assumedState === s && <span className="text-accent mr-1 text-[10px]">✓</span>}{s}
@@ -135,7 +230,7 @@ function AssumedStatePicker({ irDevice, assumedState, irConfidence, isStale, age
             ))}
             <div className="border-t border-line mt-1">
               <button
-                onClick={() => { onIrStateChange(irDevice.id, 'unknown'); setOpen(false) }}
+                onClick={() => { setState(irDevice.id, 'unknown'); setOpen(false) }}
                 className="w-full text-left px-3 py-2 text-xs text-ink-mute hover:bg-surface-2"
               >{t('devices.clearAssumption')}</button>
             </div>
@@ -156,9 +251,15 @@ function CompactAcStepper({ entity }) {
   const addToast = useUIStore.getState().addToast
   const upOk   = commandAvailable(entity, 'temp_up')
   const downOk = commandAvailable(entity, 'temp_down')
+  // An IR temp step is a blaster round-trip with nothing optimistic behind it.
+  // Track it so the stepper can breathe until the hub answers; the guard is
+  // deliberately absent so a double-tap still sends twice, exactly as before.
+  const [pending, setPending] = useState(false)
   const fire = async (cmd) => {
+    setPending(true)
     try { await sendDeviceCommand(entity, cmd) }
     catch (e) { addToast(e.message || t('devices.commandFailed'), 'error') }
+    finally { setPending(false) }
   }
   const memTemp = entity?._irDevice?.ac_memory?.temp ?? null
 
@@ -170,6 +271,9 @@ function CompactAcStepper({ entity }) {
         disabled={!enabled}
         aria-label={label}
         title={enabled ? label : t('devices.commandNotLearned', { label })}
+        // Hover ring — drawn as a box-shadow in motion/controls.css, so it
+        // follows the button's own 6px radius and cannot nudge the row.
+        data-motion-ring
         style={{
           width: 22, height: 22,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -196,6 +300,7 @@ function CompactAcStepper({ entity }) {
   }
   return (
     <div onClick={(e) => e.stopPropagation()}
+      data-pending={pending ? 'true' : undefined}
       style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
       {arrow(downOk, 'down', () => fire('temp_down'), t('devices.cooler'))}
       <span className="z-mono" style={{
@@ -748,6 +853,9 @@ const IR_DEFAULT_QUICK = [{ cmd: 'power', icon: '⏻', label: 'Power' }]
 
 function IRQuickControls({ device, onCommand }) {
   const t = useT()
+  // Which quick command is in the air. One at a time is enough: these are
+  // fire-and-forget IR sends and only the button you pressed should breathe.
+  const [pendingCmd, setPendingCmd] = useState(null)
   const dtype   = device.device_type || device.type || ''
   const learned = new Set(device.learned_commands || [])
   const cmds    = device.commands || {}
@@ -781,8 +889,14 @@ function IRQuickControls({ device, onCommand }) {
         return (
           <button
             key={cmd}
-            onClick={() => onCommand(device.id, cmd)}
+            onClick={async () => {
+              setPendingCmd(cmd)
+              try { await onCommand(device.id, cmd) }
+              finally { setPendingCmd(null) }
+            }}
             title={localized}
+            data-motion-ring
+            data-pending={pendingCmd === cmd ? 'true' : undefined}
             className="flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-2 text-ink-2 hover:bg-line transition-colors text-xs font-medium"
           >
             <span className="text-[11px]">{icon}</span>
@@ -801,6 +915,13 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
   const totalCount = Object.keys(device.commands || {}).length
   const room = (device.room || '').replace(/_/g, ' ')
   const [showStatePicker, setShowStatePicker] = useState(false)
+  const [statePending, setStatePending] = useState(false)
+
+  const setAssumed = async (id, s) => {
+    setStatePending(true)
+    try { await onStateChange(id, s) }
+    finally { setStatePending(false) }
+  }
 
   // Universal state engine — derives values + confidence band from the
   // canonical device.state record. Falls back to legacy fields when the
@@ -854,11 +975,16 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
   // (which still reads acFacts) doesn't change shape.
   const acFacts = stateFacts
 
+  // An IR remote has no reported state, only an assumption — but "we believe
+  // this is on" is still the fact the tile is showing, so it drives the same
+  // arrival/ignition hooks every other device tile uses.
+  const isOnState = assumedState != null && assumedState !== 'off'
+
   return (
-    <Card className="p-4">
+    <Card className="p-4" data-on={String(isOnState)}>
       <div className="flex items-start justify-between gap-3">
       <div className="flex items-start gap-3">
-        <div className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center shrink-0">
+        <div data-motion-icon className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center shrink-0">
           <Icon className="w-4 h-4 text-accent" />
         </div>
         <div>
@@ -878,6 +1004,7 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
               <button
                 onClick={() => setShowStatePicker((v) => !v)}
                 title={t('devices.irAssumedTooltipPlain')}
+                data-pending={statePending ? 'true' : undefined}
                 className={cn(
                   'flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors',
                   assumedState === 'on' || (assumedState && assumedState !== 'off')
@@ -924,7 +1051,7 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
                     {stateOptions.map((s) => (
                       <button
                         key={s}
-                        onClick={() => { onStateChange(device.id, s); setShowStatePicker(false) }}
+                        onClick={() => { setAssumed(device.id, s); setShowStatePicker(false) }}
                         className={cn(
                           'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors capitalize',
                           assumedState === s ? 'text-accent font-semibold' : 'text-ink-2'
@@ -936,7 +1063,7 @@ function IRDeviceCard({ device, onDelete, onEdit, onStateChange, onCommand }) {
                     ))}
                     <div className="border-t border-line mt-1 pt-1 pb-1">
                       <button
-                        onClick={() => { onStateChange(device.id, 'unknown'); setShowStatePicker(false) }}
+                        onClick={() => { setAssumed(device.id, 'unknown'); setShowStatePicker(false) }}
                         className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-mute hover:bg-surface-2 transition-colors"
                       >
                         {t('devices.clearAssumption')}
@@ -1017,6 +1144,7 @@ function buildGroupFilters(entities, irEntities) {
 // before render — see `smartSensorEntries` in the Devices component.
 function SmartSensorCard({ entity, lang }) {
   const t = useT()
+  const motionOn = useMotionOn()
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -1075,14 +1203,22 @@ function SmartSensorCard({ entity, lang }) {
       transition={{ duration: 0.15 }}
     >
       <Card
-        className="p-4 transition-all duration-200"
+        // See DeviceCard below: with the layer on the shared `[data-on]` rule
+        // owns the state transition, so the blanket one steps aside. Off, this
+        // is the class list it has always had.
+        className={cn('p-4', motionOn ? null : 'transition-all duration-200')}
+        // "Occupied" is this tile's on-state: it arrives in 220ms and leaves
+        // in 160ms like every other device, and the icon gets the same
+        // ignition pop. `unavailable` is neither on nor a lie about being off.
+        data-on={String(isOccupied && !isUnavailable)}
+        data-pending={deleting ? 'true' : undefined}
         style={{
           background: `color-mix(in srgb, var(--accent) 5%, var(--surface))`,
           border: `0.5px solid color-mix(in srgb, var(--accent) 22%, var(--line))`,
         }}
       >
         <div className="flex items-start justify-between mb-2">
-          <div style={{
+          <div data-motion-icon style={{
             width: 40, height: 40, borderRadius: 12,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: `color-mix(in srgb, var(--accent) 18%, var(--surface))`,
@@ -1251,6 +1387,7 @@ function _isSmartSensorRecord(d) {
 function CollapsibleGroup({ label, count, open, onToggle, children, action, room, onRoomClick }) {
   const t = useT()
   const photo = room ? getRoomPhoto(room) : null
+  const motionOn = useMotionOn()
   return (
     <div style={{ marginBottom: 20 }}>
       {/* Room header — matches design's RoomBlock header */}
@@ -1265,7 +1402,21 @@ function CollapsibleGroup({ label, count, open, onToggle, children, action, room
             <span dir="auto" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.005em' }}>{label}</span>
             {count != null && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginInlineStart: 6 }}>{count === 1 ? t('devices.deviceCountOne') : t('devices.deviceCountMany', { n: count })}</span>}
           </div>
-          <span style={{ color: 'var(--ink-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
+          {/* The rotation itself is unchanged — same glyph, same 180°. What
+              changes with the layer on is who owns the curve: the inline
+              `transition` would outrank motion.css's chevron rule and the
+              hook would be silently dead, so it is dropped only while the
+              layer is on and restored verbatim when it is off. */}
+          <span
+            data-motion-chevron
+            data-open={open ? 'true' : 'false'}
+            style={{
+              color: 'var(--ink-faint)',
+              transform: open ? 'rotate(180deg)' : 'none',
+              ...(motionOn ? null : { transition: 'transform 0.2s' }),
+              flexShrink: 0,
+            }}
+          >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
           </span>
         </button>
@@ -1277,13 +1428,17 @@ function CollapsibleGroup({ label, count, open, onToggle, children, action, room
         )}
         {action && <div style={{ flexShrink: 0 }}>{action}</div>}
       </div>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} style={{ overflow: 'hidden' }}>
-            {children}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {motionOn ? (
+        <Disclosure open={open}>{children}</Disclosure>
+      ) : (
+        <AnimatePresence initial={false}>
+          {open && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} style={{ overflow: 'hidden' }}>
+              {children}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
     </div>
   )
 }
@@ -1702,6 +1857,74 @@ const DeviceCard = forwardRef(function DeviceCard({
     : (assumedState != null) ? 'estimated'
     : 'unknown'
 
+  // ── Motion layer ──────────────────────────────────────────────────────────
+  const motionOn = useMotionOn()
+  // A command this card fired is in the air. Neither the HA toggle nor the IR
+  // toggle had any in-flight state: both flipped optimistically and then said
+  // nothing until the hub answered. Tracked, never guarded — a second tap
+  // still sends a second command, exactly as it did before.
+  const [pending, setPending] = useState(false)
+  // Live brightness while a scrub is in progress. `null` at rest, so the
+  // resting state line is byte-identical to what it always rendered.
+  const [scrubValue, setScrubValue] = useState(null)
+
+  const runToggle = async (entityId, v) => {
+    setPending(true)
+    try { await onToggle(entityId, v) }
+    finally { setPending(false) }
+  }
+
+  // Scrub-to-dim. A horizontal drag across a dimmable light that is ON sets
+  // its brightness without opening anything; a press that doesn't move is
+  // still a tap, and a mostly-vertical drag still scrolls the page — useScrub
+  // owns that three-way disambiguation. The real command goes once on
+  // release, never per frame: one radio call, not forty.
+  // Only derived when the layer is on — with it off this page does exactly
+  // the work it did before, per card, per render.
+  const facts = motionOn ? deviceFacts(entity) : null
+  const scrubbable = !!facts
+    && !isIr
+    && !isHidden
+    && isLightKind(facts.kind)
+    && facts.isAvailable
+    && facts.isOn
+    && facts.brightness != null
+    && commandAvailable(entity, 'set_brightness')
+
+  const scrub = useScrub({
+    value: scrubValue ?? facts?.brightness ?? 100,
+    min: 1, max: 100, step: 5,
+    enabled: scrubbable,
+    onChange: setScrubValue,
+    onCommit: async (v) => {
+      setScrubValue(null)
+      setPending(true)
+      try { await sendDeviceCommand(entity, 'set_brightness', { value: v }) }
+      catch (e) { useUIStore.getState().addToast(e.message || t('devices.controlFailed'), 'error') }
+      finally { setPending(false) }
+    },
+    // Tapping this card's body has never done anything (navigation is the
+    // chevron, control is the toggle), so a tap stays a no-op.
+    onTap: () => {},
+  })
+
+  const scrubHandlers = scrubbable ? {
+    onPointerDown: (e) => {
+      // Never steal the gesture from something the person is actually using:
+      // the toggle, the menu, the chevron, a field in the expanded remote.
+      if (e.target?.closest?.('button, a, input, select, textarea, [role="switch"], [role="slider"], [data-no-swipe]')) return
+      scrub.handlers.onPointerDown(e)
+    },
+  } : null
+
+  // The disclosure chevron on "Show controls". Same glyph, same 180° — the
+  // inline transition just has to go when the layer is on, or it outranks
+  // motion.css and the hook is dead.
+  const chevronStyle = {
+    transform: controlsExpanded ? 'rotate(180deg)' : 'none',
+    ...(motionOn ? null : { transition: 'transform 0.2s' }),
+  }
+
   return (
     <motion.div
       ref={ref} layout
@@ -1710,10 +1933,26 @@ const DeviceCard = forwardRef(function DeviceCard({
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ duration: 0.15 }}
     >
-      <Card className={cn('p-4 transition-all duration-200', isActive && !isHidden && 'shadow-card-hover')}>
+      <Card
+        // `transition-all duration-200` is the same kind of trap an inline
+        // transition is: it would fight the shared `[data-on]` rule for the
+        // same longhands. motion.css out-specifies it, but the rule is only
+        // ever one bundler reorder from a tie — so it is dropped while the
+        // layer is on and restored verbatim when it is off.
+        className={cn('p-4', motionOn ? null : 'transition-all duration-200', isActive && !isHidden && 'shadow-card-hover')}
+        // The on-state arrives in 220ms and leaves in 160ms; the icon box
+        // below gets the ignition pop. Both are drawn by motion/motion.css —
+        // nothing here changes at rest.
+        data-on={String(isOn)}
+        data-pending={pending ? 'true' : undefined}
+        // A horizontal scrub has to beat the scroller to the gesture; a
+        // vertical one still belongs to the page.
+        style={scrubbable ? { touchAction: 'pan-y' } : undefined}
+        {...(scrubHandlers || null)}
+      >
         {/* ── Card header ── */}
         <div className="flex items-start justify-between mb-3">
-          <div style={{
+          <div data-motion-icon style={{
             width: 40, height: 40, borderRadius: 12, fontSize: 21,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             position: 'relative',
@@ -1746,26 +1985,32 @@ const DeviceCard = forwardRef(function DeviceCard({
               <ChevronRight size={14} className="icon-flip-rtl" />
             </button>
             {isToggleable && (
-              <Toggle checked={isOn} onCheckedChange={(v) => onToggle(entity.entity_id, v)} />
+              <RingWrap>
+                <Toggle checked={isOn} onCheckedChange={(v) => runToggle(entity.entity_id, v)} />
+              </RingWrap>
             )}
             {/* IR power toggle — mirrors the HA Toggle above so AC/TV/fan
                 IR cards have a one-tap power switch right in the header.
                 Optimistically flips the assumed_state so the slider position
                 rotates instantly; reverts on send failure. */}
             {isIr && kindMeta(getKind(entity)).toggle && commandAvailable(entity, 'toggle') && (
-              <Toggle
-                checked={isOn}
-                onCheckedChange={async () => {
-                  const irId = irDevice?.id
-                  if (!irId) return
-                  const store = useDeviceStore.getState()
-                  const prev = irDevice?.assumed_state
-                  const next = isOn ? 'off' : 'on'
-                  store.updateIrAssumedState?.(irId, next)
-                  try { await sendDeviceCommand(entity, 'toggle') }
-                  catch { store.updateIrAssumedState?.(irId, prev ?? 'unknown') }
-                }}
-              />
+              <RingWrap>
+                <Toggle
+                  checked={isOn}
+                  onCheckedChange={async () => {
+                    const irId = irDevice?.id
+                    if (!irId) return
+                    const store = useDeviceStore.getState()
+                    const prev = irDevice?.assumed_state
+                    const next = isOn ? 'off' : 'on'
+                    store.updateIrAssumedState?.(irId, next)
+                    setPending(true)
+                    try { await sendDeviceCommand(entity, 'toggle') }
+                    catch { store.updateIrAssumedState?.(irId, prev ?? 'unknown') }
+                    finally { setPending(false) }
+                  }}
+                />
+              </RingWrap>
             )}
             {isIr ? (
               <IRCardMenu
@@ -1848,7 +2093,8 @@ const DeviceCard = forwardRef(function DeviceCard({
               >
                 {controlsExpanded ? t('devices.hideControls') : t('devices.showControls')}
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
-                  style={{ transform: controlsExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                  data-motion-chevron data-open={controlsExpanded ? 'true' : 'false'}
+                  style={chevronStyle}>
                   <path d="M6 9l6 6 6-6"/>
                 </svg>
               </button>
@@ -1873,6 +2119,10 @@ const DeviceCard = forwardRef(function DeviceCard({
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <p className={cn(colorClass, 'truncate min-w-0 flex-1')}>
                 {stateLabel}
+                {/* Mid-scrub only: the value has to be visible while the
+                    finger is setting it. `null` at rest, so this renders
+                    nothing at all unless a drag is actually in progress. */}
+                {scrubValue != null ? ` · ${scrubValue}%` : ''}
                 {!isControllable && stateSecondary && (
                   <span className="text-ink-faint font-normal ml-1">· {stateSecondary}</span>
                 )}
@@ -1889,7 +2139,8 @@ const DeviceCard = forwardRef(function DeviceCard({
                 >
                   {controlsExpanded ? t('devices.hideControls') : t('devices.showControls')}
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
-                    style={{ transform: controlsExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                    data-motion-chevron data-open={controlsExpanded ? 'true' : 'false'}
+                    style={chevronStyle}>
                     <path d="M6 9l6 6 6-6"/>
                   </svg>
                 </button>
@@ -2554,7 +2805,7 @@ export default function Devices() {
           open={blastersOpen}
           onToggle={() => setBlastersOpen(v => !v)}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
+          <div data-motion-stagger="" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
             {blasters.map(b => {
               const host = b.ip || b.last_seen_ip || ''
               const color = b.status === 'online' ? 'var(--ok)' : b.status === 'stale' ? 'var(--warn)' : 'var(--err)'
@@ -2684,7 +2935,7 @@ export default function Devices() {
           <>
             {roomGroups.map(({ room, items }) => (
               <CollapsibleGroup key={room.id} label={translateNamePhrase(room.name, lang)} count={items.length} open={!collapsedGroups.has(room.id)} onToggle={() => toggleGroup(room.id)} room={room} onRoomClick={() => navigate(`/rooms/${room.id}`)}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+                <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {items.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
                   </AnimatePresence>
@@ -2705,7 +2956,7 @@ export default function Devices() {
                 open={!collapsedGroups.has('__smart_sensors__')}
                 onToggle={() => toggleGroup('__smart_sensors__')}
               >
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+                <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {smartSensorEntries.map(entity => (
                       <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} />
@@ -2716,7 +2967,7 @@ export default function Devices() {
             )}
             {noRoomItems.length > 0 && (
               <CollapsibleGroup label="No Room" count={noRoomItems.length} open={!collapsedGroups.has('__noroom__')} onToggle={() => toggleGroup('__noroom__')}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+                <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {noRoomItems.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
                   </AnimatePresence>
@@ -2725,7 +2976,7 @@ export default function Devices() {
             )}
             {unroomedItems.length > 0 && (
               <CollapsibleGroup label="Unassigned" count={unroomedItems.length} open={!collapsedGroups.has('__unassigned__')} onToggle={() => toggleGroup('__unassigned__')}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+                <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {unroomedItems.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity, true)} />)}
                   </AnimatePresence>
@@ -2745,7 +2996,7 @@ export default function Devices() {
           <>
             {groups.map(g => (
               <CollapsibleGroup key={g.id} label={groupLabel(g.id)} count={g.items.length} open={!collapsedGroups.has(g.id)} onToggle={() => toggleGroup(g.id)}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+                <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {g.items.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
                   </AnimatePresence>
@@ -2762,7 +3013,7 @@ export default function Devices() {
                 open={!collapsedGroups.has('__smart_sensors__')}
                 onToggle={() => toggleGroup('__smart_sensors__')}
               >
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+                <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {smartSensorEntries.map(entity => (
                       <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} />
@@ -2786,7 +3037,7 @@ export default function Devices() {
           open={!collapsedGroups.has('__smart_sensors_only__')}
           onToggle={() => toggleGroup('__smart_sensors_only__')}
         >
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
+          <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
             <AnimatePresence mode="popLayout">
               {filtered.map(entity => (
                 <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} />
@@ -2798,7 +3049,7 @@ export default function Devices() {
 
       {/* Unassigned flat view */}
       {domain === 'unassigned' && filtered.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+        <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
           <AnimatePresence mode="popLayout">
             {filtered.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity, true)} />)}
           </AnimatePresence>
@@ -2807,7 +3058,7 @@ export default function Devices() {
 
       {/* No Room flat view */}
       {domain === 'noroom' && filtered.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+        <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
           <AnimatePresence mode="popLayout">
             {filtered.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
           </AnimatePresence>

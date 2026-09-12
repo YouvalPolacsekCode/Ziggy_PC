@@ -25,6 +25,12 @@ import { cn, formatEntityState, humanizeSlug } from '../lib/utils'
 import { findRoomMetric, averageRoomMetric, roomOccupancy, fusedOccupancyIdSet, inferBinarySensorClass } from '../lib/devices'
 import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto, storeCustomDataUrl, removeCustomPhoto, resizeImageToDataUrl } from '../lib/roomPhotos'
 import { useT, useTranslatedName } from '../lib/i18n'
+// ── Motion layer ──────────────────────────────────────────────────────────────
+// Feel only. Every hook below is a no-op while `<html data-motion="off">`, and
+// every CSS rule they trigger is scoped under [data-motion="on"], so the
+// resting Rooms page is byte-for-byte the one that shipped.
+import { useLongPress } from '../motion/gestures'
+import { captureOriginFromEvent, useMorphTarget } from '../motion/morph'
 
 // DOMAIN_GROUPS and domainGroup imported from domainRegistry.js
 const ROOM_DOMAIN_GROUPS = DOMAIN_GROUPS
@@ -94,12 +100,49 @@ const canHover = () => {
   try { return window.matchMedia('(hover: hover)').matches } catch { return false }
 }
 
+// Long-press outcome for a room tile: every light in the room follows the
+// majority — if any of them is on, the press turns them all off. The forced
+// refetch is the same catch-up the rest of the page uses, because a
+// multi-entity command is exactly the case where a dropped state_changed
+// leaves tiles lying about what they are.
+async function toggleRoomLights(room, roomLabel, addToast, t) {
+  const lights = (room.devices || []).filter(d => {
+    const domain = d.domain || d.entity_id?.split('.')[0]
+    return domain === 'light' && d.entity_id
+  })
+  if (!lights.length) return
+  const anyOn = lights.some(d => d.ha_state === 'on')
+  try {
+    await Promise.all(lights.map(d => controlDevice(d.entity_id, anyOn ? 'turn_off' : 'turn_on')))
+    addToast(`${roomLabel} · ${anyOn ? t('rooms.offToast') : t('rooms.onToast')}`, 'success')
+    try { await useDeviceStore.getState().fetchAll({ force: true }) } catch {}
+  } catch (e) {
+    addToast(e?.message || t('rooms.failedShort'), 'error')
+  }
+}
+
 function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
   const t = useT()
   const roomName = useTranslatedName(room.name)
+  const addToast = useUIStore(s => s.addToast)
   const [hovered, setHovered] = useState(false)
   const photo = getRoomPhoto(room)
   const hasActive = room.activeCount > 0
+
+  // Tap still opens the room, and hands the shared-element morph the rectangle
+  // the photo occupied so the room page can start from it. A 480ms press
+  // toggles the room's lights instead. With the layer off useLongPress returns
+  // the plain onClick it was given, so this is exactly today's behaviour —
+  // and because the inner element is a real <button>, Enter and Space come
+  // through the same onTap path and get the same transition.
+  const press = useLongPress({
+    ms: 480,
+    onTap: (e) => {
+      captureOriginFromEvent(`room:${room.id}`, e, '[data-room-photo]')
+      onClick?.(e)
+    },
+    onLongPress: () => toggleRoomLights(room, roomName, addToast, t),
+  })
 
   // Chips read white-on-glass over a photo; on a plain tile they sit on
   // surface-2, so they become ink-on-surface with a hairline instead.
@@ -119,9 +162,13 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={T_ENTER}
       onMouseEnter={() => canHover() && setHovered(true)} onMouseLeave={() => setHovered(false)}
       className={photo ? undefined : 'z-room-plain'}
+      // The box that actually holds the room photo — the rounded, clipped
+      // tile, not the button inside it. This is the rectangle the room hero
+      // morphs out of.
+      data-room-photo=""
       style={{ position: 'relative', borderRadius: 'var(--r-card)', overflow: 'hidden', cursor: 'pointer', height: 'var(--rooms-tile-h)' }}
     >
-      <button onClick={onClick} style={{
+      <button {...press} style={{
         width: '100%', height: '100%', padding: 0, border: 'none', background: 'transparent',
         cursor: 'pointer', display: 'block', position: 'relative', color: 'inherit',
       }}>
@@ -708,7 +755,7 @@ export function RoomsList() {
                — fewer accidental drags on the high-traffic Rooms page.
             3. Drag handle is an explicit affordance for mouse + touch. */}
       {!reorderMode && (
-        <div className="z-rooms-grid">
+        <div className="z-rooms-grid" data-motion-stagger="">
           {/* Stale-while-revalidate: only show skeleton on a true cold start
               (no rooms cached at all). On a back-nav refresh, show the
               cached tiles immediately — they update in place when the new
@@ -903,10 +950,34 @@ function VirtualDeviceRow({ device, onTrigger, triggering }) {
         <p dir="auto" className="z-subhead" style={{ marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{device.capability}</p>
       </div>
       <button onClick={() => onTrigger(device)} disabled={isTriggering} title={t('rooms.run')} aria-label={t('rooms.run')}
+        data-pending={isTriggering ? 'true' : undefined}
         className="z-icon-btn" style={{ color: isTriggering ? 'var(--ink-faint)' : 'var(--ok-text)', cursor: isTriggering ? 'default' : 'pointer' }}>
         {isTriggering ? <Loader2 size={18} strokeWidth={1.75} className="z-spin" /> : <Play size={18} strokeWidth={1.75} />}
       </button>
     </div>
+  )
+}
+
+// Run-now for a room automation. Extracted from the row's inline handler only
+// so the in-flight state has somewhere to live: firing an automation is a
+// command to the hub like any other, and the control should say so until it
+// answers. Same markup, same copy, same colour.
+function AutomationRunButton({ automation, addToast, t }) {
+  const [pending, setPending] = useState(false)
+  const run = async (e) => {
+    e.stopPropagation()
+    if (pending) return
+    setPending(true)
+    try { await triggerAutomation(automation.id); addToast(t('rooms.triggered', { name: automation.name }), 'success') }
+    catch (err) { addToast(err?.userMessage || t('rooms.failedShort'), 'error') }
+    finally { setPending(false) }
+  }
+  return (
+    <button onClick={run}
+      data-pending={pending ? 'true' : undefined}
+      className="z-icon-btn" style={{ color: 'var(--ok-text)' }} title={t('rooms.runNow')} aria-label={t('rooms.runNow')}>
+      <Play size={18} strokeWidth={1.75} />
+    </button>
   )
 }
 
@@ -1090,11 +1161,33 @@ export function RoomDetail() {
   const [triggering, setTriggering] = useState(null)
   const [roomAutomations, setRoomAutomations] = useState([])
   const [showHiddenDevices, setShowHiddenDevices] = useState(false)
+  // The room-level lights sweep is several commands at once, so it is the one
+  // control on this page most likely to outrun the hub. `Toggle` takes a fixed
+  // prop list, so the attribute goes on the row that contains it — the row IS
+  // the control. Feeds data-pending only; nothing about the row's resting
+  // appearance changes.
+  const [allLightsPending, setAllLightsPending] = useState(false)
   // Header kebab menu — popover with Edit / Delete actions.
   const [menuOpen,    setMenuOpen]    = useState(false)
   const [editRoom,    setEditRoom]    = useState(null)
   const [deleteRoom_, setDeleteRoom]  = useState(null)
   const menuRef = useRef(null)
+  // Shared-element morph: the room tile that was tapped recorded its
+  // rectangle, and the hero starts from it and animates to its own.
+  // `heroContentRef` is the title overlay, which fades in behind the motion
+  // rather than stretching with the box. `heroFollowRef` is everything below
+  // the hero, which rises in after it — without that the body of the room was
+  // already sitting there before the hero had finished moving, and on desktop
+  // (where the tile and the hero are close in size) that was most of why the
+  // transition read as nothing at all. If no origin was recorded — deep link,
+  // back button, stale capture, motion off, reduced motion — the hook does
+  // nothing at all and the page renders exactly as it does today.
+  const heroContentRef = useRef(null)
+  const heroFollowRef  = useRef(null)
+  const heroRef = useMorphTarget(`room:${roomId}`, {
+    contentRef: heroContentRef,
+    followRef:  heroFollowRef,
+  })
 
   // Click-outside / Escape to close the kebab popover.
   useEffect(() => {
@@ -1237,9 +1330,11 @@ export function RoomDetail() {
     const targets = roomLights.filter((d) => isEntityOn(d) !== on)
     if (!targets.length) return
     for (const d of targets) updateEntityState(d.entity_id, on ? 'on' : 'off')
+    setAllLightsPending(true)
     const results = await Promise.allSettled(
       targets.map((d) => controlDevice(d.entity_id, on ? 'turn_on' : 'turn_off')),
     )
+    setAllLightsPending(false)
     const failed = targets.filter((_, i) => results[i].status === 'rejected')
     for (const d of failed) updateEntityState(d.entity_id, on ? 'off' : 'on')
     if (failed.length) addToast(t('rooms.failedShort'), 'error')
@@ -1333,7 +1428,7 @@ export function RoomDetail() {
   return (
     <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto' }}>
       {/* Hero — 160px, rounded bottom. Photo + scrim, or a plain surface. */}
-      <div className={photo ? undefined : 'z-room-plain'} style={{ position: 'relative', height: 160, overflow: 'hidden', borderRadius: '0 0 24px 24px' }}>
+      <div ref={heroRef} className={photo ? undefined : 'z-room-plain'} style={{ position: 'relative', height: 160, overflow: 'hidden', borderRadius: '0 0 24px 24px' }}>
         {photo && (
           <>
             <img src={photo} alt={roomName} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
@@ -1410,7 +1505,7 @@ export function RoomDetail() {
         </div>
 
         {/* Title block — name, then one line of facts */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '0 20px 16px', color: heroInk }}>
+        <div ref={heroContentRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '0 20px 16px', color: heroInk }}>
           <h1 dir="auto" className="z-display" style={{ margin: 0, color: heroInk, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roomName}</h1>
           <p className="z-mono" style={{ fontSize: 13, lineHeight: '20px', color: heroMute, margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {heroFacts.join(' · ')}
@@ -1418,11 +1513,17 @@ export function RoomDetail() {
         </div>
       </div>
 
-      <div style={{ padding: '16px 20px 24px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* Everything below the hero. The ref is the morph's "follow" target —
+          it is animated only while a shared-element transition is actually
+          running, and never touched otherwise, so this is the same box it has
+          always been. The modals deliberately stay OUTSIDE it: a transform on
+          an ancestor becomes the containing block for a fixed child, which
+          would strand every Modal on this page inside a 760px column. */}
+      <div ref={heroFollowRef} style={{ padding: '16px 20px 24px', display: 'flex', flexDirection: 'column', gap: 24 }}>
         {/* Room-level control: every light in the room, one switch. Skipped
             when the room has no reachable lights. */}
         {roomLights.length > 0 && (
-          <div className="z-card" style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 16px' }}>
+          <div className="z-card" data-pending={allLightsPending ? 'true' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 16px' }}>
             <Lightbulb size={20} strokeWidth={1.75} aria-hidden style={{ color: lightsOnCount > 0 ? 'var(--ink)' : 'var(--ink-mute)', flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{t('rooms.lights')}</p>
@@ -1470,7 +1571,11 @@ export function RoomDetail() {
                 </div>
               )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+              {/* Stagger sits on the groups, not on the tiles inside them: the
+                  groups arrive in order, and each DeviceCard keeps its own
+                  press feedback (a filled stagger animation would pin its
+                  transform and swallow the press scale). */}
+              <div data-motion-stagger="" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                 {deviceGroups.map(group => {
                   // Resolve each room device to its canonical entity shape from
                   // the store (proper _ir / _linkedIr markers, full attributes).
@@ -1517,10 +1622,7 @@ export function RoomDetail() {
                         {a.description && <p dir="auto" className="z-subhead" style={{ marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.description}</p>}
                       </div>
                     </button>
-                    <button onClick={async e => { e.stopPropagation(); try { await triggerAutomation(a.id); addToast(t('rooms.triggered', { name: a.name }), 'success') } catch (err) { addToast(err?.userMessage || t('rooms.failedShort'), 'error') } }}
-                      className="z-icon-btn" style={{ color: 'var(--ok-text)' }} title={t('rooms.runNow')} aria-label={t('rooms.runNow')}>
-                      <Play size={18} strokeWidth={1.75} />
-                    </button>
+                    <AutomationRunButton automation={a} addToast={addToast} t={t} />
                     <ChevronRight size={16} strokeWidth={1.75} className="icon-flip-rtl" aria-hidden style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
                   </div>
                 </div>

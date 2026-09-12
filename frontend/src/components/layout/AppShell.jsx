@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, Outlet } from 'react-router-dom'
 import { X, Maximize2 } from 'lucide-react'
 import { Sidebar } from './Sidebar'
@@ -8,7 +8,10 @@ import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { ConnectionStatus } from '../ui/ConnectionStatus'
 import { useChatStore, CHAT_DOCK_QUERY } from '../../stores/chatStore'
 import { useMediaQuery } from '../../wall/useMediaQuery'
-import { useT } from '../../lib/i18n'
+import { useIsRTL, useT } from '../../lib/i18n'
+import { useMotionOn } from '../../motion/flag'
+import { useScrollChrome, useSwipeBack } from '../../motion/gestures'
+import { haptic } from '../../motion/motion'
 import AIChat from '../../pages/AIChat'
 import { ChatBubble } from '../chat/ChatBubble'
 import { ChatSheet } from '../chat/ChatSheet'
@@ -16,6 +19,41 @@ import { ChatSheet } from '../chat/ChatSheet'
 // Width of the wide-screen chat dock. Beside the 196px sidebar this leaves a
 // comfortable page column from the 1024px breakpoint (CHAT_DOCK_MIN_WIDTH) up.
 const CHAT_DOCK_W = 400
+
+// Routes that are "one level in" — the ones where a back gesture has an
+// obvious meaning. Everything else keeps the plain behaviour.
+const DETAIL_RE = /^\/(?:rooms|devices|remote|ir-walk|settings)\/[^/]+/
+
+// ── Nav ↔ chat-bubble coupling (motion only) ──────────────────────────────
+// The floating chat bubble is not inside the nav — it is a viewport-fixed FAB
+// whose own CSS pins it to the nav's band (`calc(var(--nav-h) + …)`), and
+// chatBubble.css already notes that where there is no bottom nav the bubble
+// must not be left hovering over "60px of empty air". So when the bar tucks,
+// the bubble goes with it: they are one piece of chrome, they recede together
+// and return together on the first upward scroll.
+//
+// The alternative — sliding the bubble down to the safe-area floor — would
+// mean driving `.z-chat-bubble`'s transform from out here, and that channel
+// already has two owners (its `:active` press and its `[data-open]` swap). A
+// third writer is how a FAB ends up stranded mid-air. Opacity is the
+// vocabulary the bubble already uses to step aside, on its own token, so the
+// coupling borrows it rather than inventing one.
+//
+// Written as a sibling rule because <BottomNav> and <ChatBubble> are siblings
+// in the shell, and it is rendered only while the flag is on, so with
+// data-motion="off" neither the rule nor the <style> node exists.
+//
+// Stated positively under `no-preference` rather than as a reduced-motion
+// revert: under reduced motion the bar does not tuck at all (motion.css pins
+// it), so a revert would have to out-specify the bubble's own [data-open]
+// rule and would then drag the bubble back out from under an open chat sheet.
+const CHAT_BUBBLE_TUCK_CSS = `
+@media (prefers-reduced-motion: no-preference) {
+  [data-motion="on"] [data-motion-nav][data-tucked="true"] ~ .z-chat-bubble {
+    opacity: 0;
+    pointer-events: none;
+  }
+}`
 
 // ── Chat dock (wide screens) ──────────────────────────────────────────────────
 // When a chat card navigates to an object's page on a wide screen, the chat
@@ -94,11 +132,37 @@ function ChatDock() {
 
 export function AppShell({ connected }) {
   const location = useLocation()
+  const navigate = useNavigate()
   const isChatRoute = location.pathname.startsWith('/chat')
   const mainRef = useRef(null)
   const chatDock = useChatStore((s) => s.chatDock)
   const wide = useMediaQuery(CHAT_DOCK_QUERY)
   const showDock = chatDock && wide && !isChatRoute
+
+  // ── Motion layer ─────────────────────────────────────────────────────
+  // Everything below is additive and gated: with data-motion="off" the hooks
+  // bail out, the enter wrapper is not rendered, and this component produces
+  // exactly the DOM and the behaviour it did before.
+  const motionOn = useMotionOn()
+  const rtl = useIsRTL()
+  const isDetail = DETAIL_RE.test(location.pathname)
+  const [navTucked, setNavTucked] = useState(false)
+
+  // Swipe back: the <main> scroller follows the finger from the leading edge
+  // and commits past 30% of the width or on a 500px/s flick. The hook
+  // direction-locks, refuses to start on top of a control, and springs back
+  // below the threshold, so the gesture is always cancellable.
+  const onBack = useCallback(() => {
+    haptic('medium')
+    navigate(-1)
+  }, [navigate])
+  useSwipeBack(mainRef, onBack, { enabled: motionOn && isDetail && !isChatRoute, rtl })
+
+  // Bottom-nav tuck. onDirection fires 'up' whenever the scroller is back at
+  // the top, so the bar always returns there.
+  const { onScroll } = useScrollChrome(mainRef, {
+    onDirection: useCallback((dir) => setNavTucked(dir === 'down'), []),
+  })
 
   // Reset the scroll container to the top on every route change. React Router
   // doesn't do this, so navigating from a scrolled list (e.g. the Devices
@@ -118,6 +182,26 @@ export function AppShell({ connected }) {
     } catch { /* SSR / non-DOM */ }
   }, [location.pathname])
 
+  // Motion: land every route with the bar shown and <main> untransformed.
+  // A committed swipe-back leaves main translated off-screen (that IS the
+  // exit), and the gesture hook only clears it when it unbinds — which does
+  // not happen when one detail route replaces another. Clearing here, before
+  // paint, means the new page can never arrive off-screen.
+  useLayoutEffect(() => {
+    setNavTucked(false)
+    const el = mainRef.current
+    if (!el) return
+    el.style.transition = ''
+    el.style.transform = ''
+    el.style.willChange = ''
+  }, [location.pathname])
+
+  const routed = (
+    <ErrorBoundary label={`route:${location.pathname}`} key={location.pathname} fullHeight={false}>
+      <Outlet />
+    </ErrorBoundary>
+  )
+
   return (
     // Use dvh (via --vh) so the shell tracks the *visible* viewport as
     // mobile browser chrome and the on-screen keyboard show/hide. Safe-area
@@ -129,6 +213,7 @@ export function AppShell({ connected }) {
 
       <main
         ref={mainRef}
+        onScroll={motionOn ? onScroll : undefined}
         className={`flex-1 min-w-0 ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto scrollbar-thin pb-nav'}`}
         style={{
           background: 'var(--bg)',
@@ -157,19 +242,27 @@ export function AppShell({ connected }) {
                 fades out, and the visible area goes blank.
             Pages just snap in — 0.15s of animation isn't worth a recurring
             black-screen failure mode. ErrorBoundary keyed on pathname still
-            resets per-route. */}
-        <ErrorBoundary label={`route:${location.pathname}`} key={location.pathname} fullHeight={false}>
-          <Outlet />
-        </ErrorBoundary>
+            resets per-route.
+
+            The motion layer does NOT reintroduce one. The enter below is a
+            keyed CSS animation on a wrapper that mounts with the new route —
+            no AnimatePresence, no exit, no handshake that can be dropped, and
+            nothing that can leave a page stuck at opacity: 0. With the flag
+            off the wrapper is not rendered at all. */}
+        {motionOn ? (
+          <div data-motion-enter key={location.pathname}>{routed}</div>
+        ) : routed}
       </main>
 
       {/* Wide-screen chat dock: DOM order after <main> puts it at the
           inline-end side in both LTR and RTL (flex row follows direction). */}
       {showDock && <ChatDock />}
 
-      <BottomNav connected={connected} />
+      <BottomNav connected={connected} tucked={motionOn && navTucked} />
       {/* Phone chat surface. Fixed-position, so DOM order only matters for
-          stacking ties: after the nav (z-30), before toasts (z-60). */}
+          stacking ties: after the nav (z-30), before toasts (z-60) — and, with
+          motion on, for the sibling rule that tucks the bubble with the bar. */}
+      {motionOn && <style>{CHAT_BUBBLE_TUCK_CSS}</style>}
       <ChatBubble />
       <ChatSheet />
       <ToastContainer />

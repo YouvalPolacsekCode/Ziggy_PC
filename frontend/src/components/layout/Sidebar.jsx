@@ -1,9 +1,11 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { Sun, Moon, Wifi, WifiOff, Home, Grid2x2, Cpu, Zap, MessageCircle, Bell, CheckSquare, Settings, ShieldAlert } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useAuthStore } from '../../stores/authStore'
 import { useFeature } from '../../stores/featuresStore'
-import { useT } from '../../lib/i18n'
+import { useLang, useT } from '../../lib/i18n'
+import { useMotionOn } from '../../motion/flag'
 
 const ROLE_ORDER = ['user', 'admin', 'super_admin']
 function hasRole(userRole, minRole) {
@@ -26,18 +28,91 @@ const SECONDARY_BASE = [
   { to: '/settings', Icon: Settings,    labelKey: 'nav.settings' },
 ]
 
-function NavItem({ to, Icon, label }) {
+function NavItem({ to, Icon, label, inMotionGroup }) {
   const location = useLocation()
   const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
   return (
     <NavLink
       to={to}
       className={`z-nav-item ${active ? 'active' : ''}`}
-      style={{ textDecoration: 'none' }}
+      // position: relative only lifts the item into the same paint layer as
+      // the highlight travelling behind it. Nothing moves.
+      style={{ textDecoration: 'none', ...(inMotionGroup ? { position: 'relative' } : null) }}
+      data-motion-nav-cell={inMotionGroup ? 'true' : undefined}
     >
       <Icon size={18} strokeWidth={active ? 2 : 1.75} color={active ? 'var(--ink)' : 'var(--ink-mute)'} style={{ flexShrink: 0 }} />
       <span style={{ flex: 1 }}>{label}</span>
     </NavLink>
+  )
+}
+
+// A nav group whose active surface slides between its items instead of
+// teleporting. The highlight draws EXACTLY what `.z-nav-item.active` draws —
+// var(--surface-2) on a 0.5px var(--line) border at var(--r-ctl) — and
+// motion.css suppresses the item's own background while the highlight is
+// present (data-motion-hl), so this is a hand-over, not a second surface, and
+// the resting sidebar is pixel-identical either way.
+function NavGroup({ items, t, motionOn, ...navProps }) {
+  const location = useLocation()
+  const navRef = useRef(null)
+  const [hl, setHl] = useState(null)
+  const lang = useLang()
+
+  const activeIndex = items.findIndex(p => (
+    p.to === '/' ? location.pathname === '/' : location.pathname.startsWith(p.to)
+  ))
+
+  useLayoutEffect(() => {
+    if (!motionOn) { setHl(null); return }
+    const measure = () => {
+      const nav = navRef.current
+      if (!nav) return
+      const cell = nav.querySelectorAll('[data-motion-nav-cell]')[activeIndex]
+      if (activeIndex < 0 || !cell) { setHl(null); return }
+      setHl({ y: cell.offsetTop, h: cell.offsetHeight })
+    }
+    measure()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
+    if (ro && navRef.current) ro.observe(navRef.current)
+    window.addEventListener('resize', measure)
+    return () => { ro?.disconnect(); window.removeEventListener('resize', measure) }
+    // lang is in here because a longer label can wrap an item to a second line.
+  }, [motionOn, activeIndex, items.length, lang])
+
+  return (
+    <nav
+      ref={navRef}
+      data-motion-nav-group={motionOn ? 'true' : undefined}
+      // Only hand the active surface over once the highlight actually exists,
+      // so a failed measurement can never leave the active item looking
+      // inactive.
+      data-motion-hl={motionOn && hl ? 'true' : undefined}
+      style={{
+        display: 'flex', flexDirection: 'column', gap: 4,
+        ...(motionOn ? { position: 'relative' } : null),
+      }}
+      {...navProps}
+    >
+      {motionOn && hl && (
+        <div
+          data-motion-nav-hl
+          aria-hidden="true"
+          style={{
+            position: 'absolute', left: 0, right: 0, top: 0,
+            height: hl.h,
+            transform: `translate3d(0, ${hl.y}px, 0)`,
+            background: 'var(--surface-2)',
+            border: '0.5px solid var(--line)',
+            borderRadius: 'var(--r-ctl)',
+            boxSizing: 'border-box',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+      {items.map(p => (
+        <NavItem key={p.to} to={p.to} Icon={p.Icon} label={t(p.labelKey)} inMotionGroup={motionOn} />
+      ))}
+    </nav>
   )
 }
 
@@ -53,6 +128,7 @@ export function Sidebar({ connected }) {
   const { theme, toggleTheme } = useUIStore()
   const { role } = useAuthStore()
   const t = useT()
+  const motionOn = useMotionOn()
   const isSuperAdmin = hasRole(role, 'super_admin')
   const taskTrackingEnabled = useFeature('task_tracking')
   const SECONDARY = SECONDARY_BASE.filter(item =>
@@ -99,17 +175,13 @@ export function Sidebar({ connected }) {
       </div>
 
       {/* Primary nav */}
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {PRIMARY.map(p => <NavItem key={p.to} to={p.to} Icon={p.Icon} label={t(p.labelKey)} />)}
-      </nav>
+      <NavGroup items={PRIMARY} t={t} motionOn={motionOn} />
 
       {/* Divider */}
       <div style={{ height: 1, background: 'var(--line)', margin: '12px 0' }} />
 
       {/* Secondary nav */}
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {SECONDARY.map(p => <NavItem key={p.to} to={p.to} Icon={p.Icon} label={t(p.labelKey)} />)}
-      </nav>
+      <NavGroup items={SECONDARY} t={t} motionOn={motionOn} />
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />

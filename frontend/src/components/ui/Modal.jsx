@@ -3,11 +3,57 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
 import { useT } from '../../lib/i18n'
 import { T_STATE, T_ENTER } from '../../lib/motion'
+import { isMotionOn } from '../../motion/flag'
+import { SheetSurface, useWideFrame } from '../../motion/SheetSurface'
 
 // Modal — Title 3 (20px) header, 44px close target, sheet radius, one enter
 // curve. `fullScreen` is the phone-sheet form: it fills the viewport and
 // clears the system bars itself.
-export function Modal({ open, onClose, title, children, className, maxWidth = 520, fullScreen = false }) {
+//
+// `sheet` is the one opt-in: a caller whose dialog is really "a thing that
+// comes up from the bottom of a phone" (the Actions create chooser, the
+// Library) can ask for the app's sheet surface instead of a centred dialog.
+// It is a narrow-screen, motion-on presentation only — on a wide screen, and
+// with `data-motion="off"`, a `sheet` modal renders as the identical centred
+// dialog it always did.
+//
+// The split is a component boundary on purpose: a call site that does not pass
+// `sheet` reaches BaseModal directly, with the same hooks in the same order and
+// not one line of new work. Nothing about the other 40 call sites changes.
+export function Modal(props) {
+  if (props.sheet && !props.fullScreen && isMotionOn()) return <SheetModal {...props} />
+  return <BaseModal {...props} />
+}
+
+// Peek at 60% of the viewport, or the content's own height when that is
+// smaller — a short chooser sizes itself, a long list gets a drag to the top.
+const SHEET_DETENTS = [0.6, 1]
+const SHEET_ELASTIC = { top: 0.12, bottom: 1 }
+const SHEET_CLASSES = { panel: 'z-msheet', head: 'z-msheet-head', body: 'z-msheet-body scrollbar-thin' }
+
+function SheetModal({ open, onClose, title, children, sheet: _sheet, ...rest }) {
+  const wide = useWideFrame()
+  // The docked 320px panel is too narrow for a 520–620px chooser, so the wide
+  // frame stays the dialog this has always been.
+  if (wide) return <BaseModal open={open} onClose={onClose} title={title} {...rest}>{children}</BaseModal>
+  return (
+    <SheetSurface
+      open={open}
+      onClose={onClose}
+      title={title}
+      detents={SHEET_DETENTS}
+      dragElastic={SHEET_ELASTIC}
+      bodyDrag
+      closeButton
+      restoreFocus
+      classNames={SHEET_CLASSES}
+    >
+      {children}
+    </SheetSurface>
+  )
+}
+
+function BaseModal({ open, onClose, title, children, className, maxWidth = 520, fullScreen = false }) {
   const t = useT()
   return (
     <Dialog.Root open={open} onOpenChange={(v) => !v && onClose?.()}>

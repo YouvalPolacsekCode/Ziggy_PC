@@ -1,0 +1,340 @@
+/* ── Ziggy motion layer ──────────────────────────────────────────────────
+ *
+ * Feel only. Every rule here is a transition, an animation or a transform on
+ * a transient state. Nothing sets a colour, size, radius, spacing, font or
+ * layout value, so with `data-motion="off"` the app is pixel-for-pixel what
+ * it was.
+ *
+ * THIS FILE EXTENDS THE HIG v2 TOKENS, IT DOES NOT COMPETE WITH THEM.
+ * index.css already defines the app's motion vocabulary:
+ *     --dur-press 120ms · --dur-state 200ms · --dur-enter 240ms
+ *     --ease-standard cubic-bezier(0.2, 0, 0, 1)
+ *     --ease-enter    cubic-bezier(0.16, 1, 0.3, 1)
+ * Those stay authoritative for everything they already cover: hover, press,
+ * a value changing in place, something appearing. This layer adds only what
+ * that vocabulary has no word for — gesture-driven surfaces and movement
+ * across a distance — and derives from those tokens wherever it can, so the
+ * two never disagree about what "an entrance" feels like.
+ *
+ * Hooks components emit: see src/motion/README.md.
+ */
+
+@import './controls.css';
+
+[data-motion="on"] {
+  /* Aliases onto the app's own tokens: one vocabulary, not two. */
+  --m-std:   var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+  --m-out:   var(--ease-enter, cubic-bezier(0.16, 1, 0.3, 1));
+
+  /* What HIG v2 has no token for: movement across a distance. A strong
+   * ease-out covers ~90% of its travel in the first third of its duration —
+   * right for a 4px press, and on a 400px hero it reads as a snap followed by
+   * a crawl, which is what "not smooth" usually means. The glide keeps speed
+   * through the middle so a large surface reads as one continuous movement. */
+  --m-glide: cubic-bezier(0.33, 0.68, 0.15, 1);
+  --m-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --m-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* Durations scale with distance; --m-scale is the live tuner's dial. */
+  --m-scale: 1;
+  --m-dur-press: calc(var(--dur-press, 120ms) * var(--m-scale));
+  --m-dur-ui:    calc(var(--dur-enter, 240ms) * var(--m-scale));
+  --m-dur-page:  calc(340ms * var(--m-scale));
+  --m-dur-large: calc(560ms * var(--m-scale));
+}
+
+/* ── Press ───────────────────────────────────────────────────────────────
+ * The only signal that the interface heard you before the radio answers.
+ * Set by src/motion/pressLayer.js on whatever you actually pressed. */
+
+[data-motion="on"] [data-pressing] {
+  transition: transform 160ms var(--m-out);
+}
+[data-motion="on"] [data-pressing="sm"] { transform: scale(0.97); }
+[data-motion="on"] [data-pressing="lg"] { transform: scale(0.985); }
+
+/* Anything pressable settles back on release at the same rate. */
+[data-motion="on"] button,
+[data-motion="on"] [role="button"],
+[data-motion="on"] a[href],
+[data-motion="on"] [tabindex="0"] {
+  transition: transform 160ms var(--m-out);
+}
+
+/* ── State change ────────────────────────────────────────────────────────
+ * A light coming on should arrive, not cut. Entering the on-state takes
+ * 220ms, leaving it 160ms: exits are always faster than entrances, which is
+ * what keeps an interface feeling responsive rather than sluggish.
+ * These properties are set inline by the components, and an inline value
+ * animates perfectly well as long as CSS supplies the transition. */
+
+[data-motion="on"] [data-on] {
+  transition:
+    background-color 160ms var(--m-out),
+    color 160ms var(--m-out),
+    border-color 160ms var(--m-out),
+    box-shadow 160ms var(--m-out);
+}
+[data-motion="on"] [data-on="true"] {
+  transition-duration: 220ms;
+}
+[data-motion="on"] [data-on] * {
+  transition:
+    background-color 160ms var(--m-out),
+    color 160ms var(--m-out),
+    border-color 160ms var(--m-out);
+}
+[data-motion="on"] [data-on="true"] * {
+  transition-duration: 220ms;
+}
+
+/* Ignition: the icon blooms once as the device comes on. 6% overshoot on
+ * scale only — the same curve Lumen uses for a light well igniting. */
+[data-motion="on"] [data-on="true"] [data-motion-icon] {
+  animation: zm-ignite 360ms var(--m-out) backwards;
+}
+@keyframes zm-ignite {
+  0%   { transform: scale(0.94); }
+  60%  { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+/* ── Generic surfaces ────────────────────────────────────────────────────
+ * Cards, chips and rows change colour under the person's control often
+ * enough that a curve reads as quality and a cut reads as a glitch. Short,
+ * and only on colour. */
+
+[data-motion="on"] .z-card,
+[data-motion="on"] .z-card-soft,
+[data-motion="on"] .z-card-sm,
+[data-motion="on"] .z-chip,
+[data-motion="on"] .z-pill,
+[data-motion="on"] .z-icon-btn,
+[data-motion="on"] .z-btn-primary,
+[data-motion="on"] .z-btn-secondary,
+[data-motion="on"] .z-nav-item,
+[data-motion="on"] .z-input {
+  transition:
+    background-color 200ms var(--m-std),
+    color 200ms var(--m-std),
+    border-color 200ms var(--m-std),
+    box-shadow 200ms var(--m-std),
+    transform 160ms var(--m-out);
+}
+
+/* Toggle: the knob is a physical object, so it moves on the strong curve
+ * rather than the linear-ish default. Size and colour are untouched. */
+[data-motion="on"] .z-toggle { transition: background-color 200ms var(--m-std); }
+[data-motion="on"] .z-toggle::after { transition: transform 220ms var(--m-out); }
+
+/* Slider fills track the finger exactly while dragging and smooth out
+ * afterwards; a transition during a drag reads as lag. */
+[data-motion="on"] .z-slider-fill { transition: transform 140ms var(--m-out); }
+[data-motion="on"] [data-scrubbing="true"] .z-slider-fill,
+[data-motion="on"] [data-scrubbing="true"] ~ * .z-slider-fill { transition: none; }
+
+/* ── Page enter ──────────────────────────────────────────────────────────
+ * A quiet rise, no exit animation. There is deliberately no exit handshake
+ * here: AppShell's own comment records two attempts at an exit-based page
+ * transition that black-screened the app when the handshake was dropped. */
+
+[data-motion="on"] [data-motion-enter] {
+  animation: zm-page-in var(--m-dur-page) var(--m-glide) backwards;
+}
+@keyframes zm-page-in {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Stagger: lists and grids arrive in order rather than all at once. Capped
+ * at eight so a long list never makes you wait for the bottom of it. */
+[data-motion="on"] [data-motion-stagger] > * {
+  /* `backwards`, never `both`: a `both` fill keeps contributing this
+   * animation's final `transform: none` forever, and an animation origin
+   * outranks a plain rule — which silently killed the press scale on every
+   * staggered tile. `backwards` fills only before the animation starts. */
+  animation: zm-item-in var(--m-dur-ui) var(--m-glide) backwards;
+}
+/* `--zm-stagger-from` lets a container that is ITSELF still arriving push the
+ * whole stagger behind it (see the disclosure below). Default 0ms, so every
+ * existing grid and list keeps exactly the timing it had. */
+[data-motion="on"] [data-motion-stagger] > *:nth-child(1) { animation-delay: var(--zm-stagger-from, 0ms); }
+[data-motion="on"] [data-motion-stagger] > *:nth-child(2) { animation-delay: calc(var(--zm-stagger-from, 0ms) + 35ms); }
+[data-motion="on"] [data-motion-stagger] > *:nth-child(3) { animation-delay: calc(var(--zm-stagger-from, 0ms) + 70ms); }
+[data-motion="on"] [data-motion-stagger] > *:nth-child(4) { animation-delay: calc(var(--zm-stagger-from, 0ms) + 105ms); }
+[data-motion="on"] [data-motion-stagger] > *:nth-child(5) { animation-delay: calc(var(--zm-stagger-from, 0ms) + 140ms); }
+[data-motion="on"] [data-motion-stagger] > *:nth-child(6) { animation-delay: calc(var(--zm-stagger-from, 0ms) + 175ms); }
+[data-motion="on"] [data-motion-stagger] > *:nth-child(7) { animation-delay: calc(var(--zm-stagger-from, 0ms) + 210ms); }
+[data-motion="on"] [data-motion-stagger] > *:nth-child(n+8) { animation-delay: calc(var(--zm-stagger-from, 0ms) + 240ms); }
+@keyframes zm-item-in {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── Disclosure ──────────────────────────────────────────────────────────
+ * THE ONE PLACE THIS LAYER ANIMATES A LAYOUT PROPERTY, deliberately.
+ *
+ * Clipping alone could not open a fold. `clip-path` does not affect layout,
+ * so the panel took its full height in a single frame — shoving everything
+ * below it down in one jump — and the clip reveal then played inside a box
+ * that had already arrived, which is why it was invisible. A jump is worse
+ * than the cost of the reflow, and opening a fold is a rare interaction, not
+ * a per-frame one.
+ *
+ * The technique is `grid-template-rows: 0fr → 1fr` on a wrapper whose only
+ * child hides its overflow (the overflow is what lets the row collapse below
+ * its content's automatic minimum size). No measurement, no JS height loop,
+ * no per-frame layout read from script — the compositor still does the work,
+ * the main thread just relayouts. Everything else in this file remains
+ * transform/opacity/clip only.
+ *
+ * The markup hook is emitted by the component (see RoomOccupancyPanel's
+ * `Reveal`): the wrapper only exists while the layer is on. */
+
+[data-motion="on"] [data-motion-disclosure] {
+  transition: grid-template-rows var(--m-dur-page) var(--m-glide);
+}
+/* Exits are always faster than entrances. */
+[data-motion="on"] [data-motion-disclosure][data-open="false"] {
+  transition-duration: 180ms;
+}
+/* Rows inside a fold wait for the fold. A stagger that starts while the
+ * container is still opening is two animations arguing over the same pixels;
+ * 200ms puts the first row just under the lip of the expansion. */
+[data-motion="on"] [data-motion-disclosure] { --zm-stagger-from: 200ms; }
+
+[data-motion="on"] [data-motion-reveal] {
+  animation: zm-reveal 240ms var(--m-out) backwards;
+}
+/* Inside a height-animating fold the content arrives just BEHIND the
+ * expansion rather than with it — the container says "there is more here",
+ * the text says what it is. */
+[data-motion="on"] [data-motion-disclosure] [data-motion-reveal] {
+  animation: zm-reveal 240ms var(--m-out) 60ms backwards;
+}
+@keyframes zm-reveal {
+  from { opacity: 0; clip-path: inset(0 0 100% 0 round 12px); }
+  to   { opacity: 1; clip-path: inset(0 0 0 0 round 12px); }
+}
+[data-motion="on"] [data-motion-chevron] { transition: transform 200ms var(--m-out); }
+[data-motion="on"] [data-motion-chevron][data-open="true"] { transform: rotate(180deg); }
+
+/* ── Bottom nav ──────────────────────────────────────────────────────────
+ * Tucks away as you scroll down, returns as you scroll up. The sliding
+ * highlight is drawn by the component; this is only its motion. */
+
+[data-motion="on"] [data-motion-nav] {
+  transition: transform 240ms var(--m-out), opacity 200ms var(--m-std);
+}
+[data-motion="on"] [data-motion-nav][data-tucked="true"] {
+  transform: translate3d(0, calc(100% + 12px), 0);
+  opacity: 0;
+}
+[data-motion="on"] [data-motion-nav-hl] {
+  transition: transform 320ms var(--m-out), width 320ms var(--m-out), height 320ms var(--m-out), opacity 200ms var(--m-std);
+}
+
+/* Sidebar: the active surface moves to the sliding highlight, which draws the
+ * SAME values the active item drew (var(--surface-2) on a 0.5px var(--line)
+ * border, radius 8). Handing it over rather than doubling it is what keeps
+ * the resting sidebar pixel-identical. Only applies once the highlight has
+ * actually been measured (data-motion-hl). */
+[data-motion="on"] [data-motion-nav-group][data-motion-hl="true"] .z-nav-item.active {
+  background: transparent;
+  border-color: transparent;
+}
+[data-motion="on"] [data-motion-nav-group][data-motion-hl="true"] .z-nav-item.active:hover {
+  background: transparent;
+}
+
+/* ── More menu ───────────────────────────────────────────────────────────
+ * Enter only. The popover stays a plain conditional (see BottomNav's comment
+ * about AnimatePresence stalling and trapping taps), so there is no exit
+ * animation and no unmount to wait on — both elements still disappear the
+ * frame showMore flips to false. transform-origin is set inline, at the
+ * measured centre of the More tab, so the menu grows out of the thing you
+ * pressed. */
+
+[data-motion="on"] [data-motion-more] {
+  animation: zm-more-in 200ms var(--m-out) backwards;
+}
+@keyframes zm-more-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+[data-motion="on"] [data-motion-more-backdrop] {
+  animation: zm-fade-in 160ms var(--m-std) backwards;
+}
+
+/* ── Sheets and modals ───────────────────────────────────────────────────
+ * The drawer curve on the way in, faster and plainer on the way out. */
+
+[data-motion="on"] [data-motion-sheet] { touch-action: pan-y; }
+[data-motion="on"] [data-motion-grabber] { transition: opacity 200ms var(--m-std), transform 200ms var(--m-out); }
+
+/* ── Live status ─────────────────────────────────────────────────────────
+ * The one loop in the whole layer, and it earns it: a room that is occupied
+ * right now is a continuously true reading, not an event. It stops dead
+ * under reduced motion, and the state is always also carried by a word. */
+
+[data-motion="on"] [data-motion-live="true"] {
+  animation: zm-breathe 4s ease-in-out infinite;
+}
+@keyframes zm-breathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+/* A command in flight: the control dims slightly until the hub answers.
+ * Optimistic UI lies; this tells the truth without blocking anything. */
+[data-motion="on"] [data-pending="true"] { animation: zm-pending 1.1s ease-in-out infinite; }
+@keyframes zm-pending {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.62; }
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────
+ * Not "no motion": colour and opacity still carry meaning, because removing
+ * them would remove information. What goes is travel, scale, and every loop.
+ * Honours the OS setting directly as well as our own mirrored attribute, so
+ * it is right even before the JS has run. */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-motion="on"] [data-pressing] { transform: none; }
+  [data-motion="on"] [data-on="true"] [data-motion-icon] { animation: none; }
+  [data-motion="on"] [data-motion-enter],
+  [data-motion="on"] [data-motion-stagger] > * {
+    animation: zm-fade-in 160ms var(--m-out) backwards;
+  }
+  [data-motion="on"] [data-motion-reveal] { animation: zm-fade-in 140ms var(--m-out) backwards; }
+  /* A fold opens at once, and only fades. The wrapper is not even rendered
+   * under reduced motion — these are the belt to that component's braces,
+   * for the case where the OS setting flips while a panel is already open. */
+  [data-motion="on"] [data-motion-disclosure] { transition: none; }
+  [data-motion="on"] [data-motion-disclosure] [data-motion-reveal] { animation: zm-fade-in 140ms var(--m-out) backwards; }
+  [data-motion="on"] [data-motion-disclosure] { --zm-stagger-from: 0ms; }
+  [data-motion="on"] [data-motion-live="true"] { animation: none; opacity: 0.9; }
+  [data-motion="on"] [data-pending="true"] { animation: none; opacity: 0.75; }
+  [data-motion="on"] [data-motion-nav][data-tucked="true"] { transform: none; opacity: 1; }
+  /* The highlight still marks the active tab, it just stops travelling. */
+  [data-motion="on"] [data-motion-nav-hl] { transition: opacity 160ms var(--m-std); }
+  [data-motion="on"] [data-motion-more] { animation: zm-fade-in 140ms var(--m-out) backwards; }
+}
+[data-motion-reduced="true"][data-motion="on"] [data-pressing] { transform: none; }
+[data-motion-reduced="true"][data-motion="on"] [data-motion-live="true"] { animation: none; opacity: 0.9; }
+[data-motion-reduced="true"][data-motion="on"] [data-on="true"] [data-motion-icon] { animation: none; }
+[data-motion-reduced="true"][data-motion="on"] [data-motion-nav][data-tucked="true"] { transform: none; opacity: 1; }
+[data-motion-reduced="true"][data-motion="on"] [data-motion-nav-hl] { transition: opacity 160ms var(--m-std); }
+[data-motion-reduced="true"][data-motion="on"] [data-motion-disclosure] { transition: none; --zm-stagger-from: 0ms; }
+
+@keyframes zm-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Hygiene ─────────────────────────────────────────────────────────────
+ * Never let the layer break the keyboard, and never let a transform trap a
+ * fixed child (a transformed ancestor becomes the containing block). */
+
+[data-motion="on"] :focus-visible { transition: none !important; }
+[data-motion="on"] [data-pressing] :is([style*="position: fixed"], .fixed) { transform: none; }

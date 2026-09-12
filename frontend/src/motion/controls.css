@@ -1,0 +1,176 @@
+/* ── Controls: the feel of the things you actually hold ───────────────────
+ *
+ * Split out of motion.css so control work and shell work never collide in
+ * one file. Same contract: scoped under [data-motion="on"], transitions and
+ * transforms only, nothing changes at rest.
+ *
+ * HOUSE RULE (see motion.css): animations fill `backwards`, never `both`.
+ *
+ * HOW THIS FILE LOADS. motion.css opens with `@import './controls.css'`, at
+ * the top of the file where an @import is valid — that is the intended
+ * include. It is ALSO imported directly by the components that depend on it
+ * (Slider.jsx, DeviceControls.jsx, DeviceCard.jsx), because an @import that
+ * ever drifts below a rule is invalid CSS and postcss-import drops it
+ * silently, which is exactly how these rules once went missing from the
+ * bundle. Same module either way, included once. Since load order is then up
+ * to the module graph rather than to that @import, nothing here relies on
+ * source order: every rule that could tie with one in motion.css doubles its
+ * own attribute to out-specify it. The doubling is load-bearing; it is not a
+ * typo.
+ *
+ * Hooks a control emits (the components in components/ui set these):
+ *
+ *   data-motion-hold="true"   this control is being held right now
+ *   data-motion-grow="…"      what grows while it is held:
+ *                               track   the 8px Radix slider track
+ *                               bar     the 34px gradient bar
+ *                               well    the 128px vertical brightness well
+ *   data-motion-ring          a power/toggle control that takes a hover ring
+ *
+ * `data-motion-hold` is set only when the layer is on AND reduced motion is
+ * off, so the growth is already gated in JS; the reduced-motion block below
+ * is the belt to that pair of braces.
+ *
+ * Thumbs and handles are NOT here: those elements already carry an inline
+ * transform for their press state, and an inline value outranks a rule, so
+ * their growth is tuned where it already lives (Slider.jsx,
+ * DeviceControls.jsx). The tracks had no transform of their own, so they are
+ * cleanest to own from here.
+ */
+
+[data-motion="on"] {
+  /* The hover ring. Not a new colour: --ink mixed down to a hairline weight,
+     so it reads on the light ground and on the dark one, and never competes
+     with the accent that :focus-visible draws. */
+  --m-ring: color-mix(in srgb, var(--ink) 16%, transparent);
+}
+
+/* ── 1. A held control grows ──────────────────────────────────────────────
+ * Lumen's idea: the thing under your finger becomes the thing you are
+ * looking at. Cross-axis scale only, centred, so the track gets thicker
+ * without the value position appearing to move — and because it is a
+ * transform, nothing reflows and the fill still tracks the finger exactly.
+ * Grabbing takes 160ms; letting go is faster, like every other exit here. */
+
+[data-motion="on"] [data-motion-grow][data-motion-grow] {
+  transform-origin: center center;
+  transition: transform 130ms var(--m-out);
+}
+[data-motion="on"] [data-motion-hold="true"] [data-motion-grow][data-motion-grow],
+[data-motion="on"] [data-motion-hold="true"][data-motion-grow][data-motion-grow] {
+  transition-duration: 160ms;
+}
+
+/* TUNED FOR THIS DESIGN, WHICH IS BIGGER THAN THE ONE THESE NUMBERS CAME
+   FROM. The ratio is not the thing being kept constant — the travel at the
+   edge is. Anything under about 1px of edge movement is not felt; anything
+   over about 3px stops reading as the control responding and starts reading
+   as the layout moving. Every amount below lands inside that band:
+
+     track  8px → 10.8px   1.35×   +1.4px per edge
+     bar   34px → 38.1px   1.12×   +2.0px per edge
+     well 128px → 133.8px  1.045×  +2.9px per side
+
+   The HIG pass's 44px minimum is the slider's *hit target* (the Radix root),
+   not its visible track, so the bar it draws is still 8px and still takes the
+   hairline's full 1.35× — a bigger control does not mean a bigger swell. */
+[data-motion="on"] [data-motion-hold="true"] [data-motion-grow="track"][data-motion-grow],
+[data-motion="on"] [data-motion-hold="true"][data-motion-grow="track"][data-motion-grow] {
+  transform: scaleY(1.35);
+}
+/* The 34px gradient bar cannot take 1.35×: that is a 12px jump. Note its
+   thumb rides INSIDE it here (unlike the Radix slider, where the thumb is a
+   sibling), so the 28px knob would be stretched into an ellipse by this
+   scale — DeviceControls.jsx divides this exact number back out of the
+   thumb's own transform. If you change 1.12, change it there too. */
+[data-motion="on"] [data-motion-hold="true"] [data-motion-grow="bar"][data-motion-grow],
+[data-motion="on"] [data-motion-hold="true"][data-motion-grow="bar"][data-motion-grow] {
+  transform: scaleY(1.12);
+}
+/* The brightness well is 128px wide and its cross-axis is horizontal; it
+   only needs to swell under the hand, not double. */
+[data-motion="on"] [data-motion-hold="true"] [data-motion-grow="well"][data-motion-grow],
+[data-motion="on"] [data-motion-hold="true"][data-motion-grow="well"][data-motion-grow] {
+  transform: scaleX(1.045);
+}
+
+/* The Radix thumb's position is owned by a wrapper span the component never
+ * gets to touch (it carries Radix's own `left`/`right` and the centring
+ * transform), so its settle has to come from here. Without it the fill glides
+ * to a value the hub echoed back while the knob — the larger, more visible
+ * object — cuts to it, and the smoothing reads as a glitch rather than as
+ * calm. The Root's only other child is the track, which is excluded by class.
+ * Nothing settles while the finger is down: that would be lag. */
+[data-motion="on"] [data-motion-slider][data-motion-slider] > span:not(.z-slider-track) {
+  transition: left 140ms var(--m-out), right 140ms var(--m-out);
+}
+[data-motion="on"] [data-motion-slider][data-scrubbing="true"][data-scrubbing] > span:not(.z-slider-track) {
+  transition: none;
+}
+
+/* ── 2. Off slides down, on slides back ───────────────────────────────────
+ * Driven by the device's own reported brightness, so it is state and not
+ * theatre — which means it belongs to the component that holds that state.
+ * The durations live in DeviceControls.jsx next to the value they animate
+ * (260ms out, 300ms back, 180ms for an ordinary value change). Nothing to
+ * declare here; this note is so the next person looks in the right file.
+ *
+ * It is only possible where the level UNMOUNTS when the device is off — the
+ * brightness well. A bar that RESTS at its last level when the light is off
+ * (the gradient brightness/warmth sliders, whose thumb stays put) cannot be
+ * slid without changing the resting appearance, which this layer may not do.
+ * See the note in DeviceControls.jsx. */
+
+/* ── 3. Hover ring on a power/toggle control ──────────────────────────────
+ * Drawn with box-shadow, so it costs no layout and cannot nudge a row: the
+ * ring follows whatever radius the control already has, which on the round
+ * power buttons is a circle. It is NOT :focus-visible — that stays the 2px
+ * accent outline index.css draws, and this never suppresses it (an outline
+ * and a box-shadow are different properties; both can be on at once). */
+
+[data-motion="on"] [data-motion-ring][data-motion-ring] {
+  /* Restates the colour and transform transitions this control would
+     otherwise get from motion.css's generic-surface rule, at exactly that
+     rule's numbers (200ms standard for colour, 160ms ease-enter for the
+     press scale), so adding a ring never costs a control its colour curve or
+     its press. Controls that style themselves inline instead of through a
+     class keep their own inline transition and simply add `box-shadow` to
+     it — an inline value outranks this rule, which is the point. */
+  transition:
+    box-shadow var(--dur-press) var(--ease-standard),
+    background-color var(--dur-state) var(--m-std),
+    color var(--dur-state) var(--m-std),
+    border-color var(--dur-state) var(--m-std),
+    opacity var(--dur-state) var(--m-std),
+    transform 160ms var(--m-out);
+}
+
+/* Pointer-fine only: a touch device would keep the ring stuck on after a tap. */
+@media (hover: hover) and (pointer: fine) {
+  [data-motion="on"] [data-motion-ring][data-motion-ring]:hover:not(:disabled):not([aria-disabled="true"]) {
+    box-shadow: 0 0 0 3px var(--m-ring);
+  }
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────
+ * The growth is travel, so it goes. The ring is information — where the hit
+ * target is — so it stays and simply arrives without the scale-in. */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-motion="on"] [data-motion-hold="true"] [data-motion-grow][data-motion-grow],
+  [data-motion="on"] [data-motion-hold="true"][data-motion-grow][data-motion-grow] {
+    transform: none;
+    transition: none;
+  }
+  [data-motion="on"] [data-motion-ring][data-motion-ring] {
+    transition:
+      background-color var(--dur-state) var(--m-std),
+      color var(--dur-state) var(--m-std),
+      border-color var(--dur-state) var(--m-std);
+  }
+}
+[data-motion-reduced="true"][data-motion="on"] [data-motion-hold="true"] [data-motion-grow][data-motion-grow],
+[data-motion-reduced="true"][data-motion="on"] [data-motion-hold="true"][data-motion-grow][data-motion-grow] {
+  transform: none;
+  transition: none;
+}

@@ -9,7 +9,7 @@ import { useUIStore } from '../stores/uiStore'
 import { useFeature } from '../stores/featuresStore'
 import { useWsMessages } from '../hooks/useWebSocket'
 import { greetingByTime, humanizeSlug, entityDisplayName } from '../lib/utils'
-import { getActivity, getActiveAnomalies, getHealth, getPresencePersons, sendDirectIntent } from '../lib/api'
+import { getActivity, getActiveAnomalies, getHealth, getPresencePersons, sendDirectIntent, controlDevice } from '../lib/api'
 import { getRoomPhoto } from '../lib/roomPhotos'
 import { findRoomMetric, roomOccupancy, deviceFacts, sendDeviceCommand } from '../lib/devices'
 import { DeviceIcon } from '../lib/deviceIcons'
@@ -18,6 +18,13 @@ import { SystemHealthBanner } from '../components/ui/SystemHealthBanner'
 import { Modal } from '../components/ui/Modal'
 import { Pencil, Play, Sparkles, Check, ChevronRight, ChevronDown, Home, User, Zap } from 'lucide-react'
 import { useT, t as tt, useLang, getLang, translateNamePhrase } from '../lib/i18n'
+// ── Motion layer ──────────────────────────────────────────────────────────────
+// Feel only. Every hook below is a no-op while `<html data-motion="off">`, and
+// every CSS rule they trigger is scoped under [data-motion="on"], so the
+// resting Dashboard is byte-for-byte the one that shipped.
+import { useMotionOn } from '../motion/flag'
+import { useLongPress, useScrub } from '../motion/gestures'
+import { captureOriginFromEvent } from '../motion/morph'
 
 // ── Room summary builder ──────────────────────────────────────────────────────
 const INACTIVE_STATES = new Set(['off', 'unavailable', 'unknown', 'closed', 'locked', 'disarmed'])
@@ -201,12 +208,63 @@ function QuickControlTile({ entity }) {
   const navigate = useNavigate()
   const addToast = useUIStore(s => s.addToast)
   const [pending, setPending] = useState(false)
+  const motionOn = useMotionOn()
+  // Live brightness while a scrub is in flight. Null at rest, so the tile
+  // shows exactly the value it shows today whenever nobody is dragging.
+  const [scrubValue, setScrubValue] = useState(null)
+  // A scrub's own command in flight. Deliberately NOT the `pending` state
+  // above: that one also dims the tile to 0.7 (the design's own rule for a
+  // toggle), and a dip to 0.7 the instant you let go of a drag reads as a
+  // glitch. This one only feeds data-pending, so the tile breathes and keeps
+  // its opacity.
+  const [brightnessPending, setBrightnessPending] = useState(false)
+  // A scrub ends with a click on the same element. That click is the tail of
+  // the drag, not a tap, and must not toggle the light.
+  const scrubbed = useRef(false)
 
-  if (!entity) return null
+  // deviceFacts(null) returns a safe empty shape, so facts can be derived
+  // above the early return and keep the hooks below unconditional.
   const facts = deviceFacts(entity)
-  const isToggleable = facts.meta.toggle && facts.isAvailable
   const on   = facts.isOn
   const tint = facts.tint
+  // Scrubbable only while this is a dimmable light that is actually on: an
+  // off light has no brightness to drag.
+  const canScrub = motionOn
+    && facts.domain === 'light'
+    && facts.isAvailable
+    && on
+    && !!facts.capabilities?.has?.('brightness')
+    && facts.brightness != null
+
+  // The hook owns the three-way tap / vertical-scroll / horizontal-scrub
+  // disambiguation, the selection haptic every 5%, and the data-scrubbing
+  // attribute. onCommit is the only thing that reaches the hub, so a drag
+  // sends one command on release rather than one per frame.
+  const { handlers: scrubHandlers } = useScrub({
+    value: scrubValue ?? facts.brightness ?? 0,
+    min: 1, max: 100, step: 5,
+    enabled: canScrub,
+    onChange: setScrubValue,
+    onCommit: async (v) => {
+      scrubbed.current = true
+      setScrubValue(v)
+      setBrightnessPending(true)
+      try { await sendDeviceCommand(entity, 'set_brightness', { value: v }) }
+      catch (e) { addToast(e?.message || tt('rooms.failedShort'), 'error') }
+      // Hold the dragged value until HA's own state_changed lands, otherwise
+      // the label snaps back to the old brightness for a frame.
+      finally {
+        setBrightnessPending(false)
+        setTimeout(() => setScrubValue(null), 600)
+      }
+    },
+    // A press that never moved is a tap, and the tile's own onClick already
+    // owns that path.
+    onTap: () => {},
+  })
+
+  if (!entity) return null
+  const isToggleable = facts.meta.toggle && facts.isAvailable
 
   const open = () => navigate(`/devices/${encodeURIComponent(facts.id)}`)
   const toggle = async () => {
@@ -232,9 +290,11 @@ function QuickControlTile({ entity }) {
   const arrowColor = on ? 'var(--bg)' : 'var(--ink-mute)'
   const subColor   = on ? 'color-mix(in srgb, var(--bg) 70%, transparent)' : 'var(--ink-mute)'
 
+  // Same line, same format — it just tracks the finger while a scrub is live.
+  const shownBrightness = scrubValue ?? facts.brightness
   const sub = (() => {
     if (!facts.isAvailable) return tt('common.offline')
-    if (facts.brightness != null && on) return `${facts.stateLabel} · ${facts.brightness}%`
+    if (shownBrightness != null && on) return `${facts.stateLabel} · ${shownBrightness}%`
     return facts.stateLabel
   })()
 
@@ -245,7 +305,16 @@ function QuickControlTile({ entity }) {
   // pill flipped state — which made the two surfaces feel like two
   // different products. `data-tile-stop` lets the arrow swallow its own
   // click without re-firing the tile handler.
+  // Never start a scrub on the arrow: the hook captures the pointer, and a
+  // captured pointer retargets the click to the tile, which would toggle the
+  // light instead of opening its page.
+  const handlePointerDown = (e) => {
+    if (e.target?.closest?.('[data-tile-stop]')) return
+    scrubHandlers.onPointerDown(e)
+  }
+
   const handleClick = (e) => {
+    if (scrubbed.current) { scrubbed.current = false; return }
     if (e.target?.closest('[data-tile-stop]')) return
     if (isToggleable) toggle()
     else open()
@@ -254,6 +323,11 @@ function QuickControlTile({ entity }) {
   return (
     <button
       onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      // The state hooks the motion layer reads: 220ms to arrive, 160ms to
+      // leave, a breath while the hub has been asked and has not answered.
+      data-on={String(on)}
+      data-pending={(pending || brightnessPending) ? 'true' : undefined}
       style={{
         position: 'relative',
         padding: 12, borderRadius: 'var(--r-card)', minHeight: 96,
@@ -261,11 +335,18 @@ function QuickControlTile({ entity }) {
         border: '0.5px solid var(--line)',
         display: 'flex', flexDirection: 'column', gap: 12,
         textAlign: 'start', fontFamily: 'inherit', cursor: 'pointer',
-        transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
+        // THE TRAP. An inline `transition` outranks the stylesheet, so leaving
+        // this here silently kills the 220-in / 160-out arrival that
+        // [data-on] is supposed to give the tile. With the layer on,
+        // motion.css owns the transition; with it off, the design's own
+        // symmetric var(--dur-state) rule is restored verbatim.
+        transition: motionOn ? undefined : 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard)',
         opacity: pending ? 0.7 : 1,
+        // Let a horizontal drag be a scrub while a vertical one still scrolls.
+        ...(canScrub ? { touchAction: 'pan-y' } : null),
       }}
     >
-      <span style={{
+      <span data-motion-icon="" style={{
         width: 32, height: 32, borderRadius: 'var(--r-ctl)', flexShrink: 0,
         background: iconBg, color: iconColor,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -311,6 +392,52 @@ function QuickControlTile({ entity }) {
       </span>
     </button>
   )
+}
+
+// ── Room-tile interaction ─────────────────────────────────────────────────────
+// Long-press outcome: every light in the room follows the majority — if any of
+// them is on, the press turns them all off. Uses the same catch-up refetch the
+// shortcut handlers below use, because a multi-entity command is exactly the
+// case where a dropped state_changed leaves tiles lying.
+async function toggleRoomLights(room, roomLabel, addToast) {
+  const lights = (room.devices || []).filter(d => {
+    const domain = d.domain || d.entity_id?.split('.')[0]
+    return domain === 'light' && d.entity_id
+  })
+  if (!lights.length) return
+  const anyOn = lights.some(d => d.ha_state === 'on')
+  try {
+    await Promise.all(lights.map(d => controlDevice(d.entity_id, anyOn ? 'turn_off' : 'turn_on')))
+    addToast(`${roomLabel} · ${anyOn ? tt('rooms.offToast') : tt('rooms.onToast')}`, 'success')
+    try { await useDeviceStore.getState().fetchAll({ force: true }) } catch {}
+  } catch (e) {
+    addToast(e?.message || tt('rooms.failedShort'), 'error')
+  }
+}
+
+// Tap opens the room and hands the shared-element morph the rectangle the
+// photo occupied, so the room page can start from it. A 480ms press toggles
+// the room's lights instead. Both degrade to nothing with the layer off:
+// useLongPress hands back the plain onClick it was given, and captureOrigin
+// refuses to record anything.
+//
+// The rectangle is resolved through `[data-room-photo]` rather than trusting
+// whatever node the handlers happen to be spread on. This dashboard has two
+// different room-tile surfaces — the phone carousel and the desktop grid — and
+// the morph is only honest if both hand over the box that actually holds the
+// photo. The attribute marks that box on each of them, and matches the one the
+// Rooms page uses.
+function useRoomTileMotion(room, roomLabel) {
+  const navigate = useNavigate()
+  const addToast = useUIStore(s => s.addToast)
+  return useLongPress({
+    ms: 480,
+    onTap: (e) => {
+      captureOriginFromEvent(`room:${room.id}`, e, '[data-room-photo]')
+      navigate(`/rooms/${room.id}`)
+    },
+    onLongPress: () => toggleRoomLights(room, roomLabel, addToast),
+  })
 }
 
 // ── Room tile face — shared by the phone carousel and the desktop grid ────────
@@ -429,7 +556,6 @@ const C_PAD = 20    // horizontal padding inside scroll container
 
 function RoomsCarousel({ sortedRooms, ziggyRooms }) {
   const t = useT()
-  const navigate  = useNavigate()
   const scrollRef = useRef(null)
   const tileRefs  = useRef([])
   const [activeIdx, setActiveIdx] = useState(0)
@@ -500,13 +626,34 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
           {sortedRooms.map((summary, idx) => {
             const room = ziggyRooms.find(r => r.id === summary.id)
             if (!room) return null
-            const photo = getRoomPhoto(room)
-            const isActive = idx === activeIdx
             return (
-              <div
+              <CarouselRoomTile
                 key={room.id}
-                ref={el => { tileRefs.current[idx] = el }}
-                onClick={() => navigate(`/rooms/${room.id}`)}
+                room={room}
+                summary={summary}
+                isActive={idx === activeIdx}
+                tileRef={el => { tileRefs.current[idx] = el }}
+              />
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// One carousel tile. Extracted only so the long-press / morph hook can live on
+// a component instead of inside a .map(); the markup is unchanged.
+function CarouselRoomTile({ room, summary, isActive, tileRef }) {
+  const lang = useLang()
+  const roomLabel = translateNamePhrase(room.name, lang)
+  const press = useRoomTileMotion(room, roomLabel)
+  const photo = getRoomPhoto(room)
+  return (
+              <div
+                ref={tileRef}
+                {...press}
+                data-room-photo=""
                 className={photo ? undefined : 'z-room-plain'}
                 style={{
                   position: 'relative', flexShrink: 0,
@@ -528,11 +675,6 @@ function RoomsCarousel({ sortedRooms, ziggyRooms }) {
                     status so the peeking edge stays a calm label. */}
                 <RoomTileFace room={room} summary={summary} photo={photo} showParts={isActive} />
               </div>
-            )
-          })}
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -562,7 +704,6 @@ function roomsGridShape(n) {
 
 function RoomsGrid({ sortedRooms, ziggyRooms }) {
   const t = useT()
-  const navigate = useNavigate()
   if (!sortedRooms.length) return null
   const { cols, rows } = roomsGridShape(sortedRooms.length)
   // Cap visible tiles to the grid cell count so the layout never overflows.
@@ -574,23 +715,46 @@ function RoomsGrid({ sortedRooms, ziggyRooms }) {
       <p className="z-eyebrow" style={{ marginBottom: 12 }}>{t('dashboard.rooms')}</p>
       {/* Fixed 200px rows — the page flows; the old viewport-clamp that
           stretched tiles to fill the window is gone. */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-        gridAutoRows: 200,
-        gap: 12,
-      }}>
+      <div
+        data-motion-stagger=""
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+          gridAutoRows: 200,
+          gap: 12,
+        }}
+      >
         {visibleRooms.map(summary => {
           const room = ziggyRooms.find(r => r.id === summary.id)
           if (!room) return null
-          const photo = getRoomPhoto(room)
-          return (
+          return <GridRoomTile key={room.id} room={room} summary={summary} />
+        })}
+      </div>
+    </div>
+  )
+}
+
+// One desktop room tile. Extracted only so the long-press / morph hook can
+// live on a component instead of inside a .map(); the markup is unchanged.
+function GridRoomTile({ room, summary }) {
+  const lang = useLang()
+  const navigate = useNavigate()
+  const roomLabel = translateNamePhrase(room.name, lang)
+  const press = useRoomTileMotion(room, roomLabel)
+  const photo = getRoomPhoto(room)
+  return (
             <div
-              key={room.id}
-              onClick={() => navigate(`/rooms/${room.id}`)}
+              {...press}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/rooms/${room.id}`) }}
+              data-room-photo=""
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                // Same rectangle the pointer path records, so opening a room
+                // from the keyboard gets the same transition rather than a cut.
+                captureOriginFromEvent(`room:${room.id}`, e, '[data-room-photo]')
+                navigate(`/rooms/${room.id}`)
+              }}
               className={photo ? undefined : 'z-room-plain'}
               style={{
                 position: 'relative',
@@ -612,10 +776,6 @@ function RoomsGrid({ sortedRooms, ziggyRooms }) {
             >
               <RoomTileFace room={room} summary={summary} photo={photo} showParts />
             </div>
-          )
-        })}
-      </div>
-    </div>
   )
 }
 
@@ -713,6 +873,9 @@ function ShortcutPill({ type, record, onFire }) {
     <button
       onClick={handle}
       aria-label={label}
+      // Same "asked, not answered yet" breath the device tiles use — firing a
+      // routine is a command in flight like any other.
+      data-pending={pending ? 'true' : undefined}
       style={{
         flexShrink: 0,
         padding: '12px 16px', minHeight: 40, borderRadius: 'var(--r-card)',
@@ -842,6 +1005,10 @@ export default function Dashboard() {
   // background events. Desktop still shows the same data in the rail's
   // always-open card.
   const [recentOpen,          setRecentOpen]          = useState(false)
+  // Which of the rail's Suggested actions is waiting on the hub, if either.
+  // Feeds `data-pending` only — nothing about the buttons' resting appearance
+  // changes, and with the layer off the attribute has no rule behind it.
+  const [suggestionPending,   setSuggestionPending]   = useState(null)
   const { tasks, fetch: fetchTasks }                  = useTaskStore()
   const { fetchAutomations, fetchRoutines, routines, runRoutine } = useAutomationStore()
   const { fetch: fetchSuggestions, pendingCount, pending: pendingSuggestions, accept: acceptSuggestionAction, reject: rejectSuggestionAction } = useSuggestionStore()
@@ -1190,7 +1357,7 @@ export default function Dashboard() {
              redesign vocabulary everywhere. The grid responsively expands
              from 2 columns on phone to 4 columns on tablet+ via the
              z-quick-controls-grid utility (defined in index.css). */
-          <div className="z-quick-controls-grid">
+          <div className="z-quick-controls-grid" data-motion-stagger="">
             {quickControlPicks.map(entity => (
               <QuickControlTile key={entity.entity_id} entity={entity} />
             ))}
@@ -1382,18 +1549,24 @@ export default function Dashboard() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
                 onClick={async () => {
+                  setSuggestionPending('save')
                   try { await acceptSuggestionAction(topSuggestion.id); addToast(t('dashboard.suggestionSaved'), 'success') }
                   catch (e) { addToast(e.message || t('common.failed'), 'error') }
+                  finally { setSuggestionPending(null) }
                 }}
+                data-pending={suggestionPending === 'save' ? 'true' : undefined}
                 className="z-btn-primary"
               >
                 {t('dashboard.save')}
               </button>
               <button
                 onClick={async () => {
+                  setSuggestionPending('reject')
                   try { await rejectSuggestionAction(topSuggestion.id) }
                   catch (e) { addToast(e.message || t('common.failed'), 'error') }
+                  finally { setSuggestionPending(null) }
                 }}
+                data-pending={suggestionPending === 'reject' ? 'true' : undefined}
                 className="z-btn-secondary"
               >
                 {t('dashboard.notNow')}

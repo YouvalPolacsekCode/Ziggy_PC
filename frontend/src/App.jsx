@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
-import { BrowserRouter, Navigate, Outlet, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Navigate, Outlet, Routes, Route, useNavigate, useLocation, useNavigationType } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 // Dashboard is the home route — load eagerly so the first paint after login
 // is a real render, not a Suspense fallback.
@@ -60,7 +60,19 @@ const MediaDiagnostics  = lazy(() => import('./pages/MediaDiagnostics'))
 // Public client-facing marketing site. Lazy so none of it ships in the
 // authenticated app's initial bundle — only the /welcome branch in App() loads it.
 const MarketingSite     = lazy(() => import('./marketing/MarketingSite'))
+// The device sheet. Lazy: a session that never opens a device never downloads
+// the sheet, and it is never on the critical path for the device PAGE, which
+// still renders from its own chunk exactly as before.
+const DeviceSheet       = lazy(() => import('./motion/DeviceSheet'))
 import MobilePresenceBridge from './lib/mobilePresenceBridge'
+import { useMotionOn } from './motion/flag'
+// Statically imported, NOT lazy. MotionRoot is what pulls in motion.css and
+// installs the delegated press + haptic listeners, so if it arrived with a
+// chunk the first painted screen would have no motion rules and no press
+// feedback — and the Dashboard is the first painted screen. It renders no
+// visible chrome in a real home: its tuner is gated to a dev server or an
+// explicit ?tune=1 (see MotionRoot).
+import MotionRoot from './motion/MotionRoot'
 import { useUIStore } from './stores/uiStore'
 import { useWsConnected, useWsMessages } from './hooks/useWebSocket'
 import { useDeviceStore } from './stores/deviceStore'
@@ -263,9 +275,73 @@ function UnauthenticatedGate() {
   return <LoginPage />
 }
 
+// ─── Device sheet presentation (React Router's background-location pattern) ──
+//
+// Many places in the app call navigate('/devices/<id>'). None of them know
+// about the sheet, and none of them should have to: opening a device is a
+// property of the app's motion, not of every card that links to one. So the
+// decision is made once, here, on the location itself.
+//
+// When the location changes to a device route by a PUSH from a known in-app
+// page, that previous page becomes the BACKGROUND: <Routes location={bg}> keeps
+// it mounted and painted exactly where it was (same scroll, same focus target
+// to restore to), and the sheet is presented on top of it.
+//
+// Everything else renders the device page as it always has:
+//   - a cold load or a deep link straight to /devices/<id> (no background yet)
+//   - a back/forward POP onto a device URL (the person asked for that page)
+//   - motion off
+//   - an entity the store hasn't got, where a peek would be an empty box
+//
+// Dragging to the top REPLACES the history entry, which clears the background
+// and lets the real page render at the URL it was already at — so back still
+// returns to where the person started. Closing goes back to the background.
+//
+// Derived DURING RENDER, not in an effect. An effect runs after paint, so the
+// device page would flash for one frame before the sheet decided to front it —
+// which is the exact "page replacing the world" this is meant to remove.
+// Memoised on the location key (plus the flag), so the many re-renders AppRoutes
+// takes from the WS firehose never re-run the decision.
+const _DEVICE_ROUTE_RE = /^\/devices\/([^/]+)\/?$/
+
+function useDeviceSheet() {
+  const location = useLocation()
+  const navType = useNavigationType()
+  const motionOn = useMotionOn()
+  const prevLoc = useRef(null)
+  const decided = useRef({ key: null, sheet: null })
+
+  const key = `${location.key}|${motionOn ? 1 : 0}`
+  if (decided.current.key !== key) {
+    const m = _DEVICE_ROUTE_RE.exec(location.pathname)
+    const entityId = m ? decodeURIComponent(m[1]) : null
+    const present = !!entityId
+      && motionOn
+      && navType === 'PUSH'
+      && !!prevLoc.current
+      // Never present a page over itself — which is what flipping the motion
+      // flag back on while already standing on a device page would otherwise do.
+      && prevLoc.current.pathname !== location.pathname
+      // A peek with no control in it is worse than the page. Read the store
+      // imperatively: this is a decision about the moment of navigation, and
+      // subscribing would re-run it on every WS push.
+      && useDeviceStore.getState().entities.some((e) => e.entity_id === entityId)
+
+    decided.current = { key, sheet: present ? { entityId, background: prevLoc.current } : null }
+    // prevLoc is advanced only when we are NOT presenting — the page underneath
+    // stays the background for as long as the sheet is up.
+    if (!present) prevLoc.current = location
+  }
+
+  return decided.current.sheet
+}
+
 function AppRoutes() {
   const taskTrackingEnabled = useFeature('task_tracking')
   const mediaMusicEnabled   = useFeature('media_music')
+  const location  = useLocation()
+  const navigate  = useNavigate()
+  const sheet     = useDeviceSheet()
   // `connected` only feeds AppShell's offline banner — read it via the
   // narrow context so updateEntityState's per-message work doesn't drag
   // AppShell + Sidebar through a re-render too.
@@ -447,7 +523,7 @@ function AppRoutes() {
         top so it overlays every route, including mobile-onboarding. */}
     <SubscriptionGateBanner />
     <MobileOnboardingRedirector />
-    <Routes>
+    <Routes location={sheet ? sheet.background : location}>
       {/* ── Main consumer app ── */}
       <Route element={<AppShell connected={connected} />}>
         <Route index element={<Dashboard />} />
@@ -563,6 +639,24 @@ function AppRoutes() {
       <Route path="debug" element={<Navigate to="/ops/debug" replace />} />
       <Route path="cloud-admin" element={<Navigate to="/ops/cloud" replace />} />
     </Routes>
+
+    {/* Its own Suspense boundary: sharing the outer one would unmount the
+        background page for the frame the sheet's chunk takes to arrive. */}
+    {sheet && (
+      <Suspense fallback={null}>
+        <DeviceSheet
+          key={sheet.entityId}
+          entityId={sheet.entityId}
+          onClose={() => navigate(-1)}
+          onPromote={() => {
+            // The URL is already right. Replacing it (rather than pushing)
+            // clears the background without adding a history entry, so back
+            // still lands on the page the person opened the device from.
+            navigate(`${location.pathname}${location.search}`, { replace: true })
+          }}
+        />
+      </Suspense>
+    )}
     </Suspense>
   )
 }
@@ -1173,6 +1267,11 @@ export default function App() {
           here (above AppRoutes) keeps listeners attached across route changes
           so a transient screen change can't drop a background event. */}
       <MobilePresenceBridge />
+      {/* The motion layer's one mount point: loads motion.css and installs the
+          delegated press/haptic listeners for the whole app. Above AppRoutes so
+          the listeners survive every route change. With data-motion="off" every
+          rule it loads is inert and the listeners set no attribute. */}
+      <MotionRoot />
       <AppRoutes />
     </BrowserRouter>
   )

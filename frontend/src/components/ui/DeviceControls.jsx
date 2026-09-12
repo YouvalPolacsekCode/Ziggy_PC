@@ -8,6 +8,11 @@ import {
 } from 'lucide-react'
 import { Slider } from './Slider'
 import { T_STATE, SPRING_SHEET } from '../../lib/motion'
+import { isMotionOn, useMotionOn } from '../../motion/flag'
+import { CSS_EASE, haptic, isReduced } from '../../motion/motion'
+// See Slider.jsx: the controls that depend on these rules import them
+// themselves, so a dropped @import can never take them out of the bundle.
+import '../../motion/controls.css'
 
 // ── Chip recipe for every in-card option row (modes, speeds, sources…) ──
 // 13/500 in `.z-chip` tone, 36px tall so a thumb can hit it. Active =
@@ -55,6 +60,44 @@ const _hvacLabel = (t, mode) => {
 // Re-export TOGGLEABLE_DOMAINS derived from registry (keeps external imports working).
 export const TOGGLEABLE_DOMAINS = _REGISTRY_TOGGLEABLE
 
+// ── Motion layer helpers ──────────────────────────────────────────────────────
+// Feel only. Every use is behind `useKinetic()`, which is false with
+// `data-motion="off"` and false again under reduced motion, so the resting
+// appearance and the untouched build are identical either way.
+
+// Subscribed, not sampled: flipping the layer off with the `m` key must put
+// these controls back exactly as they were without waiting for a re-render.
+const useKinetic = () => useMotionOn() && !isReduced()
+
+// A selection tick that fires once per *detent*, never per frame: every 5% on
+// brightness, every 300K on warmth, every degree on temperature.
+function detentTick(ref, value, size) {
+  const next = Math.round(value / size)
+  if (ref.current === null) { ref.current = next; return }
+  if (next === ref.current) return
+  ref.current = next
+  haptic('selection')
+}
+
+// Turning a light off should slide its level down, not cut it; turning it on
+// should slide back to the level the device actually reports. Out is faster
+// than back, as everywhere else. An ordinary value change keeps its own,
+// shorter settle — it is a correction, not an event.
+const POWER_OFF_MS = 260
+const POWER_ON_MS = 300
+const VALUE_MS = 180
+// Grab and release, matching Slider.jsx.
+const HOLD_IN = 160
+const HOLD_OUT = 130
+// The gradient bar's held thickening, duplicated from the `bar` rule in
+// motion/controls.css because this design puts the 28px knob INSIDE the bar:
+// the parent's scaleY would stretch a circle into an ellipse, so the thumb
+// divides it back out. Change one, change the other.
+const BAR_GROW = 1.12
+// How much a held thumb swells. 28px × 1.08 is ~1px of radius, the amount
+// that reads as a grip on a knob this size.
+const THUMB_GROW = 1.08
+
 // Media players report activity via multiple states, not just 'on'
 const MEDIA_ACTIVE = new Set(['on', 'playing', 'paused', 'idle'])
 
@@ -72,12 +115,25 @@ function BrightnessLamp({ value, onChange, onCommit, onTap, isOn, accentColor = 
   const t = useT()
   const trackRef = useRef(null)
   const gesture  = useRef({ ptr: null, startY: 0, startValue: 0, moved: false })
+  const detent   = useRef(null)
   const [dragging, setDragging] = useState(false)
   const pct = Math.max(1, Math.min(100, value))
+  const feel = useKinetic()
+
+  // Was this render caused by the light being switched, or by its level
+  // changing? Only the first earns the longer power curve. Read during
+  // render so the new duration is in place on the very frame the height
+  // changes; the ref catches up after paint. A duration change mid-flight
+  // never disturbs a transition that has already started.
+  const prevOn = useRef(isOn)
+  const powerEdge = prevOn.current !== isOn
+  useEffect(() => { prevOn.current = isOn })
+  const levelMs = powerEdge ? (isOn ? POWER_ON_MS : POWER_OFF_MS) : VALUE_MS
 
   const onPointerDown = (e) => {
     e.currentTarget.setPointerCapture?.(e.pointerId)
     gesture.current = { ptr: e.pointerId, startY: e.clientY, startValue: pct, moved: false }
+    detent.current = null
     setDragging(true)
   }
   const onPointerMove = (e) => {
@@ -86,9 +142,15 @@ function BrightnessLamp({ value, onChange, onCommit, onTap, isOn, accentColor = 
     const dy = g.startY - e.clientY
     if (!g.moved && Math.abs(dy) < 3) return
     g.moved = true
-    const h = trackRef.current.getBoundingClientRect().height
+    // offsetHeight, not the bounding rect: the well is scaled while it is
+    // held, and a measured rect would quietly change the drag's sensitivity
+    // mid-gesture. Layout height is the thing the value was ever mapped to.
+    const h = trackRef.current.offsetHeight
     const delta = (dy / Math.max(1, h)) * 100
-    onChange(Math.max(1, Math.min(100, Math.round(g.startValue + delta))))
+    const next = Math.max(1, Math.min(100, Math.round(g.startValue + delta)))
+    // One tick per 5% of brightness, never one per frame.
+    if (isMotionOn()) detentTick(detent, next, 5)
+    onChange(next)
   }
   const onPointerUp = (e) => {
     const g = gesture.current
@@ -96,6 +158,7 @@ function BrightnessLamp({ value, onChange, onCommit, onTap, isOn, accentColor = 
     e.currentTarget.releasePointerCapture?.(e.pointerId)
     const moved = g.moved
     gesture.current.ptr = null
+    detent.current = null
     setDragging(false)
     if (moved) { onCommit?.(pct) }
     else       { onTap?.() }
@@ -112,6 +175,9 @@ function BrightnessLamp({ value, onChange, onCommit, onTap, isOn, accentColor = 
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        data-scrubbing={feel && dragging ? 'true' : undefined}
+        data-motion-grow="well"
+        data-motion-hold={feel && dragging ? 'true' : undefined}
         style={{
           position: 'relative', width, height, borderRadius: 16,
           background: 'var(--surface-3)', overflow: 'hidden',
@@ -119,21 +185,38 @@ function BrightnessLamp({ value, onChange, onCommit, onTap, isOn, accentColor = 
           cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none',
         }}
       >
-        {isOn && (
+        {/* With the layer on the level stays mounted through the switch, at
+            height 0 and with the handle faded out, so off→on and on→off are
+            a slide rather than a cut. At rest that is the same two invisible
+            elements as no elements. With the layer off this is the original
+            `isOn &&`, unmounted exactly as before. */}
+        {(isOn || feel) && (
           <>
             <div style={{
               position: 'absolute', left: 0, right: 0, bottom: 0,
-              height: `${pct}%`,
+              height: `${isOn || !feel ? pct : 0}%`,
               background: accentColor,
-              transition: dragging ? 'none' : 'height 0.18s',
+              transition: dragging ? 'none'
+                : feel ? `height ${levelMs}ms ${CSS_EASE.out}` : 'height 0.18s',
             }} />
             <div style={{
               position: 'absolute', left: '22%', right: '22%',
-              bottom: `${pct}%`,
+              bottom: `${isOn || !feel ? pct : 0}%`,
               height: 4, marginBottom: -2,
               background: 'var(--ink)',
               borderRadius: 2,
-              transition: dragging ? 'none' : 'bottom 0.18s',
+              // A firmer handle while it is held — transform only, so the
+              // resting bar is exactly the 4px it has always been. It widens
+              // as well as thickens, because the well it rides in widens too.
+              ...(feel ? {
+                transform: dragging ? 'scaleY(1.5) scaleX(1.12)' : 'scaleY(1) scaleX(1)',
+                opacity: isOn ? 1 : 0,
+              } : null),
+              transition: dragging
+                ? (feel ? `transform ${HOLD_IN}ms ${CSS_EASE.out}` : 'none')
+                : feel
+                  ? `bottom ${levelMs}ms ${CSS_EASE.out}, opacity ${levelMs}ms ${CSS_EASE.out}, transform ${HOLD_OUT}ms ${CSS_EASE.out}`
+                  : 'bottom 0.18s',
             }} />
           </>
         )}
@@ -163,9 +246,14 @@ function Dial({ size = 220, value = 70, max = 100, label, sublabel, color = 'var
 }
 
 // ── Gradient drag slider ───────────────────────────────────────────────────────
-function GradientSlider({ value, onChange, onCommit, min = 0, max = 100, gradient, height = 34 }) {
+function GradientSlider({ value, onChange, onCommit, min = 0, max = 100, gradient, height = 34, hapticStep }) {
   const trackRef = useRef(null)
+  const detent = useRef(null)
+  const [dragging, setDragging] = useState(false)
   const pct = ((value - min) / (max - min)) * 100
+  const feel = useKinetic()
+  // One tick per detent: 5% on brightness, 300K on warmth.
+  const tickSize = hapticStep ?? Math.max(1, (max - min) / 20)
 
   const getValueFromEvent = (e) => {
     const rect = trackRef.current.getBoundingClientRect()
@@ -177,17 +265,25 @@ function GradientSlider({ value, onChange, onCommit, min = 0, max = 100, gradien
   const onPointerDown = (e) => {
     e.currentTarget.setPointerCapture(e.pointerId)
     const v = getValueFromEvent(e)
+    detent.current = null
+    setDragging(true)
+    if (isMotionOn()) detentTick(detent, v, tickSize)
     onChange(v)
   }
   const onPointerMove = (e) => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
-    onChange(getValueFromEvent(e))
+    const v = getValueFromEvent(e)
+    if (isMotionOn()) detentTick(detent, v, tickSize)
+    onChange(v)
   }
   const onPointerUp = (e) => {
     const v = getValueFromEvent(e)
+    detent.current = null
+    setDragging(false)
     onChange(v)
     onCommit?.(v)
   }
+  const onPointerCancel = () => { detent.current = null; setDragging(false) }
 
   return (
     <div
@@ -195,6 +291,13 @@ function GradientSlider({ value, onChange, onCommit, min = 0, max = 100, gradien
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      data-scrubbing={feel && dragging ? 'true' : undefined}
+      // The bar itself is the track here, so it carries both hooks: it
+      // thickens on the strong ease-out while it is held (controls.css) and
+      // the thumb inside it grows with it.
+      data-motion-grow="bar"
+      data-motion-hold={feel && dragging ? 'true' : undefined}
       style={{
         height, borderRadius: 16, position: 'relative',
         background: gradient, border: '0.5px solid var(--line)',
@@ -211,6 +314,23 @@ function GradientSlider({ value, onChange, onCommit, min = 0, max = 100, gradien
         border: '2px solid var(--ink)',
         boxShadow: 'var(--shadow-md)',
         pointerEvents: 'none',
+        // Press firmness, transform only — the resting knob is the same 28px
+        // circle it has always been. `scaleY(1 / BAR_GROW)` divides out the
+        // bar's own thickening, which this thumb inherits as a CHILD of the
+        // scaled element: without it the circle would go visibly oval on
+        // every touch. translateY(-50%) puts the thumb's centre exactly on
+        // the bar's centre line, which is also the bar's transform-origin, so
+        // the thumb stays centred however hard the bar swells.
+        ...(feel ? {
+          transform: dragging
+            ? `translateY(-50%) scale(${THUMB_GROW}) scaleY(${(1 / BAR_GROW).toFixed(4)})`
+            : 'translateY(-50%)',
+          // Exactly on the finger while the drag is live; settles afterwards
+          // so the hub's echo glides in.
+          transition: dragging
+            ? `transform ${HOLD_IN}ms ${CSS_EASE.out}`
+            : `left 140ms ${CSS_EASE.out}, transform ${HOLD_OUT}ms ${CSS_EASE.out}`,
+        } : null),
       }} />
     </div>
   )
@@ -662,6 +782,9 @@ export function LightControls({ entity, onService }) {
             onChange={setColorTemp}
             onCommit={commitTemp}
             min={minK} max={maxK}
+            // Warmth is a ~3800K range, so a twentieth of it would tick every
+            // 190K — too fine to mean anything. One tick per 300K.
+            hapticStep={300}
             gradient="linear-gradient(90deg, #FFB060 0%, #FFE6C0 30%, #FFFFFF 60%, #C0DDFF 100%)"
           />
         </div>
@@ -688,7 +811,7 @@ export function LightControls({ entity, onService }) {
                 <button
                   key={p.name}
                   title={t(p.labelKey)}
-                  onClick={() => onService('turn_on', { rgb_color: rgb })}
+                  onClick={() => { if (isMotionOn()) haptic('light'); onService('turn_on', { rgb_color: rgb }) }}
                   style={{
                     flex: 1, aspectRatio: '1', borderRadius: 10,
                     background: p.hex,
@@ -718,7 +841,7 @@ export function LightControls({ entity, onService }) {
             {['none', ...effectList].map(fx => {
               const active = entity.effect === fx || (!entity.effect && fx === 'none')
               return (
-                <button key={fx} onClick={() => onService('turn_on', { effect: fx === 'none' ? null : fx })}
+                <button key={fx} onClick={() => { if (isMotionOn()) haptic('light'); onService('turn_on', { effect: fx === 'none' ? null : fx }) }}
                   aria-pressed={active} className={CHIP_CLS} style={chipStyle(active)}>
                   {fx === 'none' ? t('deviceControls.effectNone') : fx.replace(/_/g, ' ')}
                 </button>
@@ -730,7 +853,12 @@ export function LightControls({ entity, onService }) {
 
       {/* Big on/off */}
       <button
-        onClick={() => onService(isOn ? 'turn_off' : 'turn_on', {})}
+        onClick={() => { if (isMotionOn()) haptic('light'); onService(isOn ? 'turn_off' : 'turn_on', {}) }}
+        // Hover ring: the hit target announces itself before the click.
+        // box-shadow, so it costs no layout; see motion/controls.css, which
+        // restates .z-btn-primary's colour and press curves so the ring is
+        // purely additive.
+        data-motion-ring
         className="z-btn-primary"
         style={{ width: '100%', marginTop: 4 }}
       >
@@ -776,7 +904,15 @@ export function ClimateControls({ entity, onService }) {
   const adjustTemp = (delta) => {
     const base = targetTemp ?? currentTemp ?? 22
     const next = Math.round(Math.min(maxTemp, Math.max(minTemp, base + delta)) * 10) / 10
+    // One impact per degree that actually moved — at the end of the range the
+    // number doesn't change, and neither should your thumb feel one.
+    if (isMotionOn() && next !== base) haptic('medium')
     onService('set_temperature', { temperature: next })
+  }
+
+  const setMode = (service, params) => {
+    if (isMotionOn()) haptic('light')
+    onService(service, params)
   }
 
   return (
@@ -810,7 +946,7 @@ export function ClimateControls({ entity, onService }) {
               const Icon = (HVAC_MODE_META[mode] || {}).Icon
               const active = hvacMode === mode
               return (
-                <button key={mode} onClick={() => onService('set_hvac_mode', { hvac_mode: mode })}
+                <button key={mode} onClick={() => setMode('set_hvac_mode', { hvac_mode: mode })}
                   aria-pressed={active} className={CHIP_CLS} style={{ ...chipStyle(active), gap: 6, textTransform: 'none' }}>
                   {Icon && <Icon size={16} strokeWidth={1.75} />}
                   {_hvacLabel(t, mode)}
@@ -827,7 +963,7 @@ export function ClimateControls({ entity, onService }) {
           <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.fanSpeed')}</span>
           <div style={{ display: 'flex', gap: 8 }}>
             {fanModes.map(mode => (
-              <button key={mode} onClick={() => onService('set_fan_mode', { fan_mode: mode })}
+              <button key={mode} onClick={() => setMode('set_fan_mode', { fan_mode: mode })}
                 aria-pressed={fanMode === mode} className={CHIP_CLS} style={{ ...chipStyle(fanMode === mode), flex: 1, justifyContent: 'center' }}>
                 {mode.replace(/_/g, ' ')}
               </button>
@@ -842,7 +978,7 @@ export function ClimateControls({ entity, onService }) {
           <span className="z-eyebrow" style={{ display: 'block', marginBottom: 8 }}>{t('deviceControls.swing')}</span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {swingModes.map(mode => (
-              <button key={mode} onClick={() => onService('set_swing_mode', { swing_mode: mode })}
+              <button key={mode} onClick={() => setMode('set_swing_mode', { swing_mode: mode })}
                 aria-pressed={swingMode === mode} className={CHIP_CLS} style={chipStyle(swingMode === mode)}>
                 {mode.replace(/_/g, ' ')}
               </button>
@@ -853,7 +989,9 @@ export function ClimateControls({ entity, onService }) {
 
       {/* On/Off */}
       <button
-        onClick={() => onService(hvacMode === 'off' ? 'set_hvac_mode' : 'set_hvac_mode', { hvac_mode: hvacMode === 'off' ? (hvacModes.find(m => m !== 'off') || 'cool') : 'off' })}
+        onClick={() => { if (isMotionOn()) haptic('light'); onService(hvacMode === 'off' ? 'set_hvac_mode' : 'set_hvac_mode', { hvac_mode: hvacMode === 'off' ? (hvacModes.find(m => m !== 'off') || 'cool') : 'off' }) }}
+        // Power control: takes the hover ring (see motion/controls.css).
+        data-motion-ring
         className="z-btn-primary"
         style={{ width: '100%' }}
       >
@@ -925,6 +1063,7 @@ export function MediaPlayerControls({ entity, onService }) {
         </button>
         <button
           onClick={() => onService(isPlaying ? 'media_pause' : 'media_play', {})}
+          data-motion-ring
           className="w-11 h-11 rounded-full bg-ink flex items-center justify-center shrink-0 hover:bg-ink-2 transition-colors"
           aria-label={isPlaying ? t('deviceControls.pause') : t('deviceControls.on')}
         >
@@ -946,6 +1085,7 @@ export function MediaPlayerControls({ entity, onService }) {
         <div className="flex items-center gap-2">
           <button
             onClick={() => onService('volume_mute', { is_volume_muted: !isMuted })}
+            data-motion-ring
             style={ICON_BTN_STYLE}
             className="hover:bg-surface-2 transition-colors"
             aria-label={isMuted ? t('deviceControls.muted') : t('deviceControls.remote.mute')}
@@ -1160,6 +1300,7 @@ export function LockControls({ entity, onService }) {
       ) : !isLocked ? (
         <button
           onClick={() => onService('lock', {})}
+          data-motion-ring
           style={{ ...ctrlBtn, width: '100%', background: `color-mix(in srgb, var(--ok) 12%, var(--surface))`, color: 'var(--ok-text)', border: '0.5px solid color-mix(in srgb, var(--ok) 30%, var(--line))' }}
         >
           <Lock size={16} strokeWidth={1.75} /> {t('deviceControls.lock')}
@@ -1183,6 +1324,7 @@ export function LockControls({ entity, onService }) {
       ) : (
         <button
           onClick={() => setConfirming(true)}
+          data-motion-ring
           style={{ ...ctrlBtn, width: '100%', background: `color-mix(in srgb, var(--err) 10%, var(--surface))`, color: 'var(--err-text)', border: '0.5px solid color-mix(in srgb, var(--err) 30%, var(--line))' }}
         >
           <LockOpen size={16} strokeWidth={1.75} /> {t('deviceControls.unlock')}
@@ -1209,11 +1351,11 @@ export function VacuumControls({ entity, onService }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
       {!isCleaning ? (
-        <button onClick={() => onService('start', {})} style={vacBtn('var(--ink)', 'var(--bg)', 'none')}>
+        <button onClick={() => onService('start', {})} data-motion-ring style={vacBtn('var(--ink)', 'var(--bg)', 'none')}>
           <Play size={16} strokeWidth={1.75} /> {t('deviceControls.startVacuum')}
         </button>
       ) : (
-        <button onClick={() => onService('pause', {})} style={vacBtn(`color-mix(in srgb, var(--warn) 10%, var(--surface))`, 'var(--warn-text)', `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))`)}>
+        <button onClick={() => onService('pause', {})} data-motion-ring style={vacBtn(`color-mix(in srgb, var(--warn) 10%, var(--surface))`, 'var(--warn-text)', `0.5px solid color-mix(in srgb, var(--warn) 30%, var(--line))`)}>
           <Pause size={16} strokeWidth={1.75} /> {t('deviceControls.pause')}
         </button>
       )}
@@ -1334,6 +1476,9 @@ export function GenericControls({ entity, onService }) {
               <button
                 key={key}
                 onClick={() => needsConfirm ? setConfirming(key) : onService(action.service, {})}
+                // Only the power actions take the ring; the rest of this row
+                // is ordinary commands, and a ring on everything says nothing.
+                {...(key === 'turn_on' || key === 'turn_off' || key === 'toggle' ? { 'data-motion-ring': '' } : null)}
                 className={cn(
                   'flex-1 flex items-center justify-center gap-1 min-h-[44px] px-3 rounded-[10px] text-subhead font-medium transition-colors',
                   isCurrentAction

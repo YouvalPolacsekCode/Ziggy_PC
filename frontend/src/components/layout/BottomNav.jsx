@@ -1,9 +1,11 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Bell, CheckSquare, MoreHorizontal, Settings, WifiOff, Zap } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { useFeature } from '../../stores/featuresStore'
-import { useT } from '../../lib/i18n'
+import { useIsRTL, useLang, useT } from '../../lib/i18n'
+import { useMotionOn } from '../../motion/flag'
+import { haptic } from '../../motion/motion'
 // Shell line icons live in ZIcon.jsx so the floating chat bubble can reuse
 // the same "Ziggy" sparkle without importing this file's stores.
 import { ZIcon } from './ZIcon'
@@ -51,11 +53,19 @@ const TAB_CELL = {
   WebkitTapHighlightColor: 'transparent',
 }
 
-function Tab({ to, name, label }) {
+function Tab({ to, name, label, motionOn }) {
   const location = useLocation()
   const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
   return (
-    <NavLink to={to} style={{ ...TAB_CELL, textDecoration: 'none' }} aria-current={active ? 'page' : undefined}>
+    <NavLink
+      to={to}
+      style={{ ...TAB_CELL, textDecoration: 'none' }}
+      aria-current={active ? 'page' : undefined}
+      // The only signal that arrives before the route does. Nothing else about
+      // the tap changes.
+      onClick={motionOn ? () => haptic('light') : undefined}
+      data-motion-nav-cell={motionOn ? 'true' : undefined}
+    >
       <ZIcon name={name} size={26} stroke={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
       <span style={{
         ...TAB_LABEL,
@@ -68,13 +78,15 @@ function Tab({ to, name, label }) {
   )
 }
 
-function MoreTab({ active, onClick, expanded, label }) {
+function MoreTab({ active, onClick, expanded, label, motionOn, cellRef }) {
   return (
     <button
+      ref={cellRef}
       type="button"
       onClick={onClick}
       aria-label={label}
       aria-expanded={expanded}
+      data-motion-nav-cell={motionOn ? 'true' : undefined}
       style={{ ...TAB_CELL, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
     >
       <MoreHorizontal size={26} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
@@ -89,11 +101,47 @@ function MoreTab({ active, onClick, expanded, label }) {
   )
 }
 
-export function BottomNav({ connected }) {
+// Is a modal / sheet currently up? The bar must not tuck underneath one —
+// Radix portals its dialogs to <body>, so a childList observer on body is the
+// cheapest honest answer without reaching into Modal.jsx.
+function useOverlayOpen(enabled) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!enabled) { setOpen(false); return }
+    const read = () => setOpen(!!document.querySelector(
+      '[role="dialog"], [role="alertdialog"], [data-motion-sheet]',
+    ))
+    read()
+    const obs = new MutationObserver(read)
+    obs.observe(document.body, { childList: true, subtree: true })
+    return () => obs.disconnect()
+  }, [enabled])
+  return open
+}
+
+// ── On the sliding tab highlight ─────────────────────────────────────────
+// The sidebar gets one (see Sidebar.jsx) because `.z-nav-item.active` already
+// DRAWS a surface — var(--surface-2) on a 0.5px var(--line) border at
+// var(--r-ctl) — so the highlight can take that exact surface over and
+// travel with it, leaving the resting sidebar pixel-identical.
+//
+// This bar has no such surface. In this design an active tab is an ink-weight
+// icon and an ink label on the bare glass; there is nothing behind it (see
+// Tab above). A travelling pill here would therefore not be a hand-over, it
+// would be a new resting surface — a design change, which this layer does not
+// make. So the bar keeps its own active treatment and the highlight is not
+// drawn. Set NAV_HL_SURFACE to 'var(--surface-2)' to opt the bar into the
+// sidebar's treatment; the measurement below already has the geometry.
+const NAV_HL_SURFACE = null
+
+export function BottomNav({ connected, tucked = false }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { role } = useAuthStore()
   const t = useT()
+  const lang = useLang()
+  const rtl = useIsRTL()
+  const motionOn = useMotionOn()
   const [showMore, setShowMore] = useState(false)
 
   // Force-close the More menu on any route change. Defensive against
@@ -112,6 +160,71 @@ export function BottomNav({ connected }) {
   ]
   const isMoreActive = moreItems.some(n => location.pathname.startsWith(n.to))
 
+  // ── Measurement ──────────────────────────────────────────────────────
+  // Two consumers: the More menu's transform-origin (so it grows out of the
+  // tab you pressed) and, if NAV_HL_SURFACE is ever given a value, the
+  // travelling highlight's rectangle. Re-measured on resize, orientation
+  // change and language change — RTL reverses which cell is where, and a
+  // longer label re-flows the row.
+  const gridRef = useRef(null)
+  const moreCellRef = useRef(null)
+  const [hl, setHl] = useState(null)          // { x, y, w, h } in grid coords
+  const [moreOriginX, setMoreOriginX] = useState(null)
+
+  const activeIndex = (() => {
+    const i = PRIMARY_TABS.findIndex(p => (
+      p.to === '/' ? location.pathname === '/' : location.pathname.startsWith(p.to)
+    ))
+    if (i !== -1) return i
+    if (isMoreActive) return PRIMARY_TABS.length
+    return -1                                  // a route with no tab — hide it
+  })()
+
+  useLayoutEffect(() => {
+    if (!motionOn) { setHl(null); setMoreOriginX(null); return }
+    const measure = () => {
+      const grid = gridRef.current
+      if (!grid) return
+      const more = moreCellRef.current
+      if (more) setMoreOriginX(more.offsetLeft + more.offsetWidth / 2 + grid.getBoundingClientRect().left)
+      // Nothing draws the highlight in this design (see NAV_HL_SURFACE), so
+      // measuring it would only cost a second render pass per navigation.
+      if (!NAV_HL_SURFACE) return
+      // Query by attribute rather than child index — the highlight itself is
+      // a child of the grid, so positional indexing would be off by one.
+      const cell = grid.querySelectorAll('[data-motion-nav-cell]')[activeIndex]
+      if (activeIndex < 0 || !cell) { setHl(null); return }
+      // offsetLeft is physical, so this is already correct in RTL, where the
+      // grid reverses the cell order.
+      setHl({
+        x: cell.offsetLeft,
+        y: cell.offsetTop,
+        w: cell.offsetWidth,
+        h: cell.offsetHeight,
+      })
+    }
+    measure()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
+    if (ro && gridRef.current) ro.observe(gridRef.current)
+    window.addEventListener('resize', measure)
+    window.addEventListener('orientationchange', measure)
+    return () => {
+      ro?.disconnect()
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('orientationchange', measure)
+    }
+  }, [motionOn, activeIndex, rtl, lang, moreItems.length, connected])
+
+  // ── Tuck ─────────────────────────────────────────────────────────────
+  // Never while a modal or sheet is up, never while the More menu is open,
+  // never while the offline strip is showing (it is the bar's own message and
+  // must not walk off with it). Reduced motion is handled in motion.css,
+  // which pins the bar in place even when this says tucked — an OS setting
+  // that can flip mid-session is better answered by the media query than by a
+  // value captured at render.
+  const overlayOpen = useOverlayOpen(motionOn)
+  const isTucked = motionOn && tucked && !overlayOpen && !showMore && connected !== false
+
   return (
     <>
       {/* Plain conditional, NO AnimatePresence. The previous version used
@@ -125,11 +238,13 @@ export function BottomNav({ connected }) {
         <>
           <div
             className="fixed inset-0 z-40 md:hidden"
+            data-motion-more-backdrop={motionOn ? 'true' : undefined}
             style={{ background: 'var(--scrim)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
             onClick={() => setShowMore(false)}
           />
           <div
             className="fixed left-0 right-0 z-50 md:hidden"
+            data-motion-more={motionOn ? 'true' : undefined}
             style={{
               // Mirror the bottom-nav's gesture-bar floor so the popover
               // sits the same distance above the bar on both 3-button and
@@ -137,10 +252,20 @@ export function BottomNav({ connected }) {
               bottom: `calc(${ROW_H}px + max(env(safe-area-inset-bottom, 0px), 8px) + 12px)`,
               paddingLeft: 'max(12px, env(safe-area-inset-left, 0px))',
               paddingRight: 'max(12px, env(safe-area-inset-right, 0px))',
-              animation: 'ziggy-sheet-in var(--dur-enter) var(--ease-enter)',
+              // With motion on the enter comes from motion.css instead, which
+              // grows the menu out of the More tab rather than lifting it off
+              // the bar. Both are enter-only; an inline `animation` would win
+              // over the stylesheet, so it is dropped rather than layered.
+              ...(motionOn ? null : { animation: 'ziggy-sheet-in var(--dur-enter) var(--ease-enter)' }),
+              // The wrapper's left edge is the viewport's, so the measured
+              // centre is already local to it. Inert until the CSS enter
+              // animation applies a transform.
+              ...(motionOn && moreOriginX != null
+                ? { transformOrigin: `${Math.round(moreOriginX)}px 100%` }
+                : null),
             }}
           >
-            <style>{`@keyframes ziggy-sheet-in { from { transform: translateY(12px); opacity: 0 } to { transform: none; opacity: 1 } }`}</style>
+            {!motionOn && <style>{`@keyframes ziggy-sheet-in { from { transform: translateY(12px); opacity: 0 } to { transform: none; opacity: 1 } }`}</style>}
             <div style={{
               background: 'var(--surface)', border: '0.5px solid var(--line)',
               borderRadius: 'var(--r-sheet)', boxShadow: 'var(--shadow-lg)',
@@ -175,6 +300,10 @@ export function BottomNav({ connected }) {
 
       <nav
         className="fixed bottom-0 left-0 right-0 z-30 md:hidden"
+        // Tuck hooks. The transform lives in motion.css; with the flag off
+        // neither attribute is emitted and the bar has no transition at all.
+        data-motion-nav={motionOn ? 'true' : undefined}
+        data-tucked={motionOn ? (isTucked ? 'true' : 'false') : undefined}
         style={{
           // NO paddingBottom — we render an explicit safe-area floor sibling
           // below the bar (see below) so the bar's background extends all
@@ -206,14 +335,44 @@ export function BottomNav({ connected }) {
           WebkitBackdropFilter: 'blur(20px)',
           borderTop: '0.5px solid var(--line)',
         }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
-            alignItems: 'stretch',
-            height: ROW_H, maxWidth: 480, margin: '0 auto', padding: '0 4px',
-          }}>
-            {PRIMARY_TABS.map(p => <Tab key={p.to} to={p.to} name={p.name} label={t(p.labelKey)} />)}
-            <MoreTab active={isMoreActive} onClick={() => setShowMore(true)} expanded={showMore} label={t('nav.more')} />
+          <div
+            ref={gridRef}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+              alignItems: 'stretch',
+              height: ROW_H, maxWidth: 480, margin: '0 auto', padding: '0 4px',
+              // Containing block for the highlight only. Nothing moves.
+              ...(motionOn && NAV_HL_SURFACE ? { position: 'relative' } : null),
+            }}
+          >
+            {motionOn && NAV_HL_SURFACE && hl && (
+              <div
+                data-motion-nav-hl
+                aria-hidden="true"
+                style={{
+                  position: 'absolute', left: 0, top: 0,
+                  width: hl.w, height: hl.h,
+                  transform: `translate3d(${hl.x}px, ${hl.y}px, 0)`,
+                  background: NAV_HL_SURFACE,
+                  border: '0.5px solid var(--line)',
+                  borderRadius: 'var(--r-ctl)',
+                  boxSizing: 'border-box',
+                  pointerEvents: 'none',
+                }}
+              />
+            )}
+            {PRIMARY_TABS.map(p => (
+              <Tab key={p.to} to={p.to} name={p.name} label={t(p.labelKey)} motionOn={motionOn} />
+            ))}
+            <MoreTab
+              active={isMoreActive}
+              onClick={() => { if (motionOn) haptic('light'); setShowMore(true) }}
+              expanded={showMore}
+              label={t('nav.more')}
+              motionOn={motionOn}
+              cellRef={moreCellRef}
+            />
           </div>
         </div>
 

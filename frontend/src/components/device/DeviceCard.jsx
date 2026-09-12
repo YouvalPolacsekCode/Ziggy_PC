@@ -32,6 +32,11 @@ import {
 } from 'lucide-react'
 import { deviceFacts, sendDeviceCommand, kindMeta, KIND, isLightKind, commandAvailable } from '../../lib/devices'
 import { DeviceIcon } from '../../lib/deviceIcons'
+import { useMotionOn } from '../../motion/flag'
+import { useScrub } from '../../motion/gestures'
+// See Slider.jsx: the controls that depend on these rules import them
+// themselves, so a dropped @import can never take them out of the bundle.
+import '../../motion/controls.css'
 import { useUIStore } from '../../stores/uiStore'
 import { useDeviceStore } from '../../stores/deviceStore'
 import logger from '../../lib/logger'
@@ -86,12 +91,17 @@ function KindIcon({ kind, customIcon, size = 18, fill = true }) {
 function ToggleButton({ facts, onClick, size = 'sm' }) {
   const dim = 40
   const enabled = commandAvailable(facts.entity, 'toggle')
+  const motionOn = useMotionOn()
   return (
     <button
       onClick={(e) => { e.stopPropagation(); if (enabled) onClick() }}
       disabled={!enabled}
       aria-label={facts.isOn ? i18nT('deviceCard.turnOff') : i18nT('deviceCard.turnOn')}
       title={enabled ? '' : i18nT('deviceCard.powerNotLearned')}
+      // The power button takes the hover ring: on a pointer-fine screen the
+      // hit target is worth announcing before the click. Drawn as a
+      // box-shadow in motion/controls.css, so the row cannot shift.
+      data-motion-ring
       style={{
         width: dim, height: dim, borderRadius: 'var(--r-ctl)',
         background: facts.isOn ? 'var(--ink)' : 'var(--surface-2)',
@@ -99,7 +109,14 @@ function ToggleButton({ facts, onClick, size = 'sm' }) {
         border: '0.5px solid ' + (facts.isOn ? 'var(--ink)' : 'var(--line)'),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         cursor: enabled ? 'pointer' : 'not-allowed',
-        transition: 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard)',
+        // The ring arrives on this button's OWN press curve. Adding
+        // box-shadow here rather than deleting the inline value keeps the
+        // colour timing character-for-character what it is with the layer
+        // off — an inline transition outranks the rule in controls.css, so
+        // the two must not both try to own this property.
+        transition: motionOn
+          ? 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard), box-shadow var(--dur-press) var(--ease-standard)'
+          : 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard)',
         flexShrink: 0,
         opacity: enabled ? 1 : 0.4,
       }}
@@ -141,6 +158,7 @@ function PlayPauseButton({ facts, onCommand }) {
       disabled={!enabled}
       aria-label={playing ? i18nT('common.pause') : i18nT('common.play')}
       title={enabled ? '' : 'play/pause not learned'}
+      data-motion-ring
       style={{
         width: 40, height: 40, borderRadius: '50%',
         background: 'var(--ink)', color: 'var(--bg)',
@@ -324,11 +342,13 @@ function InlineControl({ facts, onCommand, variant }) {
  * `dense` makes the tile smaller for 4-up rows (Dashboard quick controls).
  * Default 3-up sizing is used by the room page light grid.
  */
-function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted' }) {
+function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted', pending = false }) {
   const isOnState    = facts.isOn
   const tint         = facts.tint
   const isToggleable = facts.meta.toggle && facts.isAvailable
   const deviceName   = useTranslatedName(facts.name)
+  const motionOn     = useMotionOn()
+  const [scrubValue, setScrubValue] = useState(null)
 
   // Two visual modes:
   //   'tinted'   — original behavior. Each device kind tints the whole tile
@@ -381,6 +401,29 @@ function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted
     else onOpen()
   }
 
+  // Scrub-to-dim. A horizontal drag across a dimmable light's tile sets its
+  // brightness without opening anything; a tap still toggles and a vertical
+  // drag still belongs to the scroller. useScrub owns that three-way
+  // disambiguation — this only says what the value means and when it is sent.
+  // The command goes on release, never per frame: one radio call, not forty.
+  // `brightness` is declared for every light-kind, IR included, so it is not on
+  // its own a dimmability test. A light that is on and reports a level is one.
+  const scrubbable = motionOn
+    && isLightKind(facts.kind)
+    && facts.isAvailable
+    && facts.isOn
+    && facts.brightness != null
+    && commandAvailable(facts.entity, 'set_brightness')
+  const scrub = useScrub({
+    value: scrubValue ?? facts.brightness ?? 100,
+    min: 1, max: 100, step: 5,
+    enabled: scrubbable,
+    onChange: setScrubValue,
+    onCommit: (v) => { setScrubValue(null); onCommand('set_brightness', { value: v }) },
+    onTap: handleClick,
+  })
+  const shownBrightness = scrubValue ?? facts.brightness
+
   // Dimensions per density. Dense is sized for the 4-col home grid; both
   // keep the name at Headline/Subhead size and the arrow at a 32px target
   // (above the 28pt minimum; 44 would dominate a 128px tile).
@@ -397,7 +440,17 @@ function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted
 
   return (
     <button
-      onClick={handleClick}
+      // While the tile is scrubbable the POINTER path belongs to useScrub —
+      // it decides whether a press was a tap, a scrub or a scroll, and a
+      // click firing as well would toggle the light at the end of every
+      // drag. The keyboard path must survive that: Enter and Space on a
+      // native button produce a click with `detail === 0`, which no pointer
+      // ever does, so this keeps the tile operable without a keyboard-only
+      // branch and without double-firing.
+      onClick={scrubbable ? (e) => { if (e.detail === 0) handleClick(e) } : handleClick}
+      {...(scrubbable ? scrub.handlers : null)}
+      data-on={String(isOnState)}
+      data-pending={pending ? 'true' : undefined}
       style={{
         position: 'relative', width: '100%',
         aspectRatio, minHeight,
@@ -406,10 +459,17 @@ function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted
         border: '0.5px solid ' + borderColor,
         textAlign: 'start', cursor: 'pointer', fontFamily: 'inherit',
         display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-        transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)',
+        // THE TRAP: with the layer on, the shared `[data-on]` rule owns the
+        // state transition (220ms in, 160ms out) and an inline transition
+        // here would outrank it and silently kill the hook. Off, this is
+        // character-for-character the value it has always had.
+        ...(motionOn ? null : { transition: 'background var(--dur-state) var(--ease-standard), color var(--dur-state) var(--ease-standard), border-color var(--dur-state) var(--ease-standard)' }),
+        // A horizontal scrub has to beat the scroller to the gesture; a
+        // vertical one still belongs to the page.
+        ...(scrubbable ? { touchAction: 'pan-y' } : null),
       }}
     >
-      <div style={{
+      <div data-motion-icon style={{
         width: iconBoxSize, height: iconBoxSize, borderRadius: 'var(--r-ctl)',
         background: iconBg,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -431,7 +491,7 @@ function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted
         </div>
         <div className="z-mono" style={{ fontSize: stateSize, lineHeight: '18px', color: subColor,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {facts.stateLabel}{facts.brightness != null && facts.isOn ? ` · ${facts.brightness}%` : ''}
+          {facts.stateLabel}{shownBrightness != null && facts.isOn ? ` · ${shownBrightness}%` : ''}
         </div>
       </div>
 
@@ -459,9 +519,10 @@ function TileCard({ facts, onCommand, onOpen, dense = false, tileStyle = 'tinted
 
 // ─── Row variant ────────────────────────────────────────────────────────────
 
-function RowCard({ facts, onCommand, onOpen, dense = false, metrics = [] }) {
+function RowCard({ facts, onCommand, onOpen, dense = false, metrics = [], pending = false }) {
   const tint = facts.tint
   const deviceName = useTranslatedName(facts.name)
+  const motionOn = useMotionOn()
   const iconBg = facts.isOn
     ? `color-mix(in srgb, ${tint} 14%, var(--surface-2))`
     : 'var(--surface-2)'
@@ -474,15 +535,19 @@ function RowCard({ facts, onCommand, onOpen, dense = false, metrics = [] }) {
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter') onOpen() }}
       className="z-card"
+      data-on={String(facts.isOn)}
+      data-pending={pending ? 'true' : undefined}
       style={{
         display: 'flex', alignItems: 'center', gap: 16,
         padding: dense ? '8px 12px' : '12px 16px', minHeight: 48,
         cursor: 'pointer', borderRadius: 'var(--r-card)',
-        transition: 'background var(--dur-press) var(--ease-standard)',
+        // See TileCard: with the layer on the shared rules own the state
+        // transition; off, this is exactly the value it has always had.
+        ...(motionOn ? null : { transition: 'background var(--dur-press) var(--ease-standard)' }),
       }}
     >
       {/* Icon tile */}
-      <div style={{
+      <div data-motion-icon style={{
         width: 40, height: 40, borderRadius: 'var(--r-ctl)',
         background: iconBg, color: iconColor,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -588,15 +653,17 @@ function MetricPills({ metrics }) {
 
 // ─── Compact variant — small chip for pickers ───────────────────────────────
 
-function CompactCard({ facts, onCommand, onOpen }) {
+function CompactCard({ facts, onCommand, onOpen, pending = false }) {
   const deviceName = useTranslatedName(facts.name)
   return (
     <button
       onClick={onOpen}
       className="z-chip"
+      data-on={String(facts.isOn)}
+      data-pending={pending ? 'true' : undefined}
       style={{ gap: 8, padding: '8px 12px', minHeight: 36, cursor: 'pointer' }}
     >
-      <span style={{ color: facts.isOn ? facts.tint : 'var(--ink-mute)', display: 'flex' }}>
+      <span data-motion-icon style={{ color: facts.isOn ? facts.tint : 'var(--ink-mute)', display: 'flex' }}>
         <KindIcon kind={facts.kind} size={16} />
       </span>
       <span dir="auto" style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{deviceName}</span>
@@ -699,9 +766,9 @@ function DeviceCardImpl({ entity, variant = 'row', onOpen, dense = false, tileSt
     }
   }
 
-  if (variant === 'tile')    return <TileCard    facts={facts} onCommand={onCommand} onOpen={open} dense={dense} group={group} metrics={groupMetrics} tileStyle={tileStyle} />
-  if (variant === 'compact') return <CompactCard facts={facts} onCommand={onCommand} onOpen={open} />
-  return <RowCard facts={facts} onCommand={onCommand} onOpen={open} dense={dense} metrics={groupMetrics} />
+  if (variant === 'tile')    return <TileCard    facts={facts} onCommand={onCommand} onOpen={open} dense={dense} group={group} metrics={groupMetrics} tileStyle={tileStyle} pending={pending} />
+  if (variant === 'compact') return <CompactCard facts={facts} onCommand={onCommand} onOpen={open} pending={pending} />
+  return <RowCard facts={facts} onCommand={onCommand} onOpen={open} dense={dense} metrics={groupMetrics} pending={pending} />
 }
 
 // Memoize on entity reference + variant. updateEntityState preserves
