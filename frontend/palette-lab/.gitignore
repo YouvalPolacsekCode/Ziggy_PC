@@ -1,0 +1,2 @@
+# Build output. The lab is run with the dev server; nothing here is shipped.
+dist/
