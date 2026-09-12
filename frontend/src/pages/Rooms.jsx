@@ -30,7 +30,7 @@ import { useT, useTranslatedName } from '../lib/i18n'
 // every CSS rule they trigger is scoped under [data-motion="on"], so the
 // resting Rooms page is byte-for-byte the one that shipped.
 import { useLongPress } from '../motion/gestures'
-import { captureOriginFromEvent, useMorphTarget } from '../motion/morph'
+import { captureOriginFromEvent, useMorphOrigin, useMorphReturn, useMorphTarget } from '../motion/morph'
 
 // DOMAIN_GROUPS and domainGroup imported from domainRegistry.js
 const ROOM_DOMAIN_GROUPS = DOMAIN_GROUPS
@@ -144,6 +144,14 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
     onLongPress: () => toggleRoomLights(room, roomName, addToast, t),
   })
 
+  // …and the other direction. If this is the room we just came back from, the
+  // hero left its rectangle behind and this tile starts there and shrinks
+  // home; every other tile asks for its own key, finds nothing and renders
+  // exactly as before. `nameRef` is the name + count block, which fades in
+  // behind the motion rather than un-stretching with the box.
+  const nameRef = useRef(null)
+  const morphRef = useMorphReturn(`room-back:${room.id}`, { contentRef: nameRef })
+
   // Chips read white-on-glass over a photo; on a plain tile they sit on
   // surface-2, so they become ink-on-surface with a hairline instead.
   const chipBase = photo
@@ -159,12 +167,13 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
 
   return (
     <motion.div
+      ref={morphRef}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={T_ENTER}
       onMouseEnter={() => canHover() && setHovered(true)} onMouseLeave={() => setHovered(false)}
       className={photo ? undefined : 'z-room-plain'}
       // The box that actually holds the room photo — the rounded, clipped
       // tile, not the button inside it. This is the rectangle the room hero
-      // morphs out of.
+      // morphs out of, and the one it morphs back into.
       data-room-photo=""
       style={{ position: 'relative', borderRadius: 'var(--r-card)', overflow: 'hidden', cursor: 'pointer', height: 'var(--rooms-tile-h)' }}
     >
@@ -238,7 +247,7 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
 
         {/* Name + count — bottom. Explicit textAlign overrides the parent
             <button>'s UA-default `text-align: center`. */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12, textAlign: 'start' }}>
+        <div ref={nameRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12, textAlign: 'start' }}>
           <p dir="auto" style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, color: photo ? '#fff' : 'var(--ink)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roomName}</p>
           <p className="z-mono" style={{ fontSize: 12, lineHeight: '18px', color: photo ? 'rgba(255,255,255,0.85)' : 'var(--ink-mute)' }}>
             {countLine}
@@ -1188,6 +1197,14 @@ export function RoomDetail() {
     contentRef: heroContentRef,
     followRef:  heroFollowRef,
   })
+  // …and the same hero hands its own rectangle back on the way out, so
+  // whichever surface you land on — the Rooms grid, the dashboard carousel,
+  // the dashboard grid — can shrink the room back into the tile it came from.
+  // It is written on removal, so it covers every way out equally: the back
+  // button, the browser's own back, a swipe, a tab. Under a different key
+  // namespace from the trip in, and read by nobody if the destination has no
+  // tile for this room on screen.
+  useMorphOrigin(`room-back:${roomId}`, heroRef)
 
   // Click-outside / Escape to close the kebab popover.
   useEffect(() => {

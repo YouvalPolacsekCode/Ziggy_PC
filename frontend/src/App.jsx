@@ -13,7 +13,11 @@ import Dashboard from './pages/Dashboard'
 const RoomsList       = lazy(() => import('./pages/Rooms').then(m => ({ default: m.RoomsList })))
 const RoomDetail      = lazy(() => import('./pages/Rooms').then(m => ({ default: m.RoomDetail })))
 const Devices         = lazy(() => import('./pages/Devices'))
-const DeviceDetail    = lazy(() => import('./pages/DeviceDetail'))
+// Named rather than inlined so the same specifier can be warmed by hand — see
+// the prefetch in AppRoutes, which loads this chunk while a sheet is open so a
+// promotion never has to hand off to a Suspense fallback.
+const importDeviceDetail = () => import('./pages/DeviceDetail')
+const DeviceDetail    = lazy(importDeviceDetail)
 const Remote          = lazy(() => import('./pages/Remote'))
 const IrWalkWizard    = lazy(() => import('./pages/IrWalkWizard'))
 const Actions         = lazy(() => import('./pages/Actions'))
@@ -69,9 +73,8 @@ import { useMotionOn } from './motion/flag'
 // Statically imported, NOT lazy. MotionRoot is what pulls in motion.css and
 // installs the delegated press + haptic listeners, so if it arrived with a
 // chunk the first painted screen would have no motion rules and no press
-// feedback — and the Dashboard is the first painted screen. It renders no
-// visible chrome in a real home: its tuner is gated to a dev server or an
-// explicit ?tune=1 (see MotionRoot).
+// feedback — and the Dashboard is the first painted screen. It renders
+// nothing at all; it is three side effects with a component around them.
 import MotionRoot from './motion/MotionRoot'
 import { useUIStore } from './stores/uiStore'
 import { useWsConnected, useWsMessages } from './hooks/useWebSocket'
@@ -304,6 +307,33 @@ function UnauthenticatedGate() {
 // takes from the WS firehose never re-run the decision.
 const _DEVICE_ROUTE_RE = /^\/devices\/([^/]+)\/?$/
 
+// ─── The sheet outlives its navigation by one beat ───────────────────────────
+//
+// Both endings of a sheet hand off to something that is already there, and both
+// used to be a cut: `sheet` goes null in the same commit the other thing
+// renders, which unmounts DeviceSheet outright — AnimatePresence never gets to
+// run the exit it has, and on a promotion the page arrives from AppShell's
+// keyed enter at `opacity: 0`, so the frame in between is an empty shell.
+// (Measured on main: a full-opacity sheet, one frame of nothing, then a 340ms
+// page fade — under a finger that had just finished a smooth drag.)
+//
+// So the sheet is kept mounted for one short beat after the navigation:
+//
+//   promote — the URL does not change and the sheet is already at full height,
+//     so the two surfaces are the same rectangle. The sheet stays painted and
+//     inert while the page establishes underneath it, then dissolves on the
+//     page-enter curve. Opacity only; the panel merely settles onto its top
+//     stop. See `handoff` in motion/SheetSurface.jsx and sheet.css.
+//   close   — the sheet stays mounted with open=false, which is what lets
+//     AnimatePresence play the slide-down and backdrop fade it already has.
+//     The background page underneath is untouched: the POP returns to the
+//     pathname AppShell was already rendering, so nothing there remounts.
+//
+// This changes nothing about WHEN a sheet is presented — useDeviceSheet's
+// conditions above are untouched, and the trailing sheet is never presented
+// over a page it did not already cover.
+const _TRAIL_MS = 340
+
 function useDeviceSheet() {
   const location = useLocation()
   const navType = useNavigationType()
@@ -342,6 +372,10 @@ function AppRoutes() {
   const location  = useLocation()
   const navigate  = useNavigate()
   const sheet     = useDeviceSheet()
+  // The sheet that is on its way out — see the note above _TRAIL_MS. A live
+  // sheet always wins, so opening another device takes over immediately.
+  const [trail, setTrail] = useState(null)
+  const trailing  = sheet ? null : trail
   // `connected` only feeds AppShell's offline banner — read it via the
   // narrow context so updateEntityState's per-message work doesn't drag
   // AppShell + Sidebar through a re-render too.
@@ -376,6 +410,31 @@ function AppRoutes() {
     }
     fetchAll({ force: true }).catch(() => {})
   }, [connected, fetchAll])
+
+  // The page a promotion hands off to is a lazy chunk of its own. If it were
+  // still in flight when the sheet lets go, Suspense would render null and the
+  // hand-off would dissolve into nothing — so warm it while the sheet is open.
+  // A session that opens a device but never promotes has downloaded a chunk it
+  // was one drag away from needing anyway.
+  useEffect(() => {
+    if (!sheet) return
+    importDeviceDetail().catch(() => {})
+  }, [sheet])
+
+  // Let the outgoing sheet finish, then drop it.
+  //
+  // The clock restarts when `sheet` goes away, and that is the point:
+  // `navigate(-1)` only asks for a POP, and the browser delivers it a beat
+  // later, so for one render the trail and the live sheet both exist. Timing
+  // from the trail alone would start the exit's clock before the exit; clearing
+  // the trail on sight of a live sheet — which is what this did first — simply
+  // threw the exit away, and the sheet went back to vanishing in a frame. A
+  // live sheet already wins where it matters, in `trailing` above.
+  useEffect(() => {
+    if (!trail) return undefined
+    const id = setTimeout(() => setTrail(null), _TRAIL_MS)
+    return () => clearTimeout(id)
+  }, [trail, sheet])
 
   const lastWsSeqRef = useRef(0)
   useEffect(() => {
@@ -517,6 +576,7 @@ function AppRoutes() {
   }, [messages])
 
   return (
+    <>
     <Suspense fallback={null}>
     {/* Prompt 9 chunk 3 / decision 5: persistent banner shown when the
         relay's billing gate has refused a recent request. Mounted at the
@@ -640,15 +700,31 @@ function AppRoutes() {
       <Route path="cloud-admin" element={<Navigate to="/ops/cloud" replace />} />
     </Routes>
 
-    {/* Its own Suspense boundary: sharing the outer one would unmount the
-        background page for the frame the sheet's chunk takes to arrive. */}
-    {sheet && (
+    </Suspense>
+
+    {/* Its own Suspense boundary, and OUTSIDE the routes' one: sharing a
+        boundary would unmount the background page for the frame the sheet's
+        chunk takes to arrive — and, the other way round, would blank the
+        sheet for as long as a page it is handing off to was suspended, which
+        is the one moment the sheet is the only thing holding the screen. */}
+    {(sheet || trailing) && (
       <Suspense fallback={null}>
         <DeviceSheet
-          key={sheet.entityId}
-          entityId={sheet.entityId}
-          onClose={() => navigate(-1)}
+          key={(sheet || trailing).entityId}
+          entityId={(sheet || trailing).entityId}
+          // A closing sheet stays mounted long enough to play its exit.
+          open={!trailing || trailing.mode === 'promote'}
+          // A promoted one stays mounted, and inert, long enough to hand its
+          // surface to the page that is now at the same URL underneath it.
+          handoff={!!trailing && trailing.mode === 'promote'}
+          onClose={() => {
+            if (!sheet) return
+            setTrail({ entityId: sheet.entityId, mode: 'close' })
+            navigate(-1)
+          }}
           onPromote={() => {
+            if (!sheet) return
+            setTrail({ entityId: sheet.entityId, mode: 'promote' })
             // The URL is already right. Replacing it (rather than pushing)
             // clears the background without adding a history entry, so back
             // still lands on the page the person opened the device from.
@@ -657,7 +733,7 @@ function AppRoutes() {
         />
       </Suspense>
     )}
-    </Suspense>
+    </>
   )
 }
 

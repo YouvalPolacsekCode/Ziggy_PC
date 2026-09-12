@@ -117,6 +117,45 @@
   padding: 8px 20px calc(24px + var(--safe-bottom));
 }
 
+/* ── The hand-off: a promoted sheet becoming its page ────────────────────── */
+
+/* Dragging to the top does not open a new screen, it stops presenting this one
+ * as a sheet — the URL was /devices/<id> the whole time. By then the panel is
+ * already full height, so the sheet and the page are the same rectangle, and
+ * the only honest way to change one into the other is a dissolve.
+ *
+ * Timing is not free-hand, and the delay is the whole trick. AppShell's page
+ * enter is `--m-dur-page` on `--m-glide` from opacity 0, so the page is still
+ * BUILDING while this is clearing. Two surfaces crossing at half opacity is
+ * what makes a dissolve read as a double exposure — measured, the sheet's
+ * control and the page's control were both at ~50% and the same brightness bar
+ * appeared twice, 200px apart. So the surface holds, solid, until the page
+ * underneath is nearly whole (`--m-glide` is steep: ~85% of the way in the
+ * first 130ms), and only then melts off it. What crosses is a faint sheet over
+ * a settled page, never two half-images of the same control — and because the
+ * two opacities always sum to more than one, the seam can never read as a
+ * flash of anything behind them.
+ *
+ * Opacity only. The panel does not move (SheetSurface pins it to its top stop
+ * for the duration) and nothing scales, so this is correct under reduced
+ * motion as it stands: there is no travel here to take away. */
+[data-motion="on"] .z-msheet-handoff {
+  /* The resting value is the rule and the animation fills `backwards`, never
+   * `both` — a `both` fill would keep this element's final opacity as an
+   * animation origin, outranking every plain rule on it afterwards. */
+  opacity: 0;
+  animation: z-msheet-handoff-out 160ms var(--m-glide, cubic-bezier(0.33, 0.68, 0.15, 1)) var(--dur-press, 120ms) backwards;
+}
+/* The page underneath is real and already at this URL: it takes the next press,
+ * not the surface that is on its way out. */
+[data-motion="on"] .z-msheet-handoff,
+[data-motion="on"] .z-msheet-handoff * {
+  pointer-events: none;
+}
+@keyframes z-msheet-handoff-out {
+  from { opacity: 1; }
+}
+
 /* ── Wide: the docked panel on the trailing edge ─────────────────────────── */
 
 [data-motion="on"] .z-mdock {

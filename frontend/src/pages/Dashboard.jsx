@@ -24,7 +24,7 @@ import { useT, t as tt, useLang, getLang, translateNamePhrase } from '../lib/i18
 // resting Dashboard is byte-for-byte the one that shipped.
 import { useMotionOn } from '../motion/flag'
 import { useLongPress, useScrub } from '../motion/gestures'
-import { captureOriginFromEvent } from '../motion/morph'
+import { captureOriginFromEvent, useMorphReturn } from '../motion/morph'
 
 // ── Room summary builder ──────────────────────────────────────────────────────
 const INACTIVE_STATES = new Set(['off', 'unavailable', 'unknown', 'closed', 'locked', 'disarmed'])
@@ -445,7 +445,11 @@ function useRoomTileMotion(room, roomLabel) {
 // name + status. Without one (getRoomPhoto → null): a flat `.z-room-plain`
 // surface with a line glyph top-left and the name in ink — no stock photo.
 // Both carry the same 8px activity dot and the same 13px sensor chips.
-function RoomTileFace({ room, summary, photo, showParts }) {
+// `nameRef` is handed down by whichever tile is currently morphing back from
+// the room hero: the name + status block is the part of the face that would
+// otherwise un-stretch on screen, so it fades in behind the motion instead.
+// Nothing else passes it and nothing about the face changes without it.
+function RoomTileFace({ room, summary, photo, showParts, nameRef }) {
   const t = useT()
   const lang = useLang()
   const isActiveRoom = summary.activeCount > 0 || summary.hasMotion
@@ -525,7 +529,7 @@ function RoomTileFace({ room, summary, photo, showParts }) {
     return (
       <>
         {topRow(<Home size={28} strokeWidth={1.75} aria-hidden="true" style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />)}
-        <div style={{ position: 'absolute', bottom: 16, insetInline: 16 }}>
+        <div ref={nameRef} style={{ position: 'absolute', bottom: 16, insetInline: 16 }}>
           <p dir="auto" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
           <p style={{ fontSize: 12, color: 'var(--ink-mute)', margin: 0, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine}</p>
         </div>
@@ -537,7 +541,7 @@ function RoomTileFace({ room, summary, photo, showParts }) {
       <img src={photo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.72) 100%)' }} />
       {topRow(null)}
-      <div style={{ position: 'absolute', bottom: 16, insetInline: 16 }}>
+      <div ref={nameRef} style={{ position: 'absolute', bottom: 16, insetInline: 16 }}>
         <p dir="auto" style={{ fontSize: 15, fontWeight: 600, color: '#fff', margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
         <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', margin: 0, fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine}</p>
       </div>
@@ -649,9 +653,16 @@ function CarouselRoomTile({ room, summary, isActive, tileRef }) {
   const roomLabel = translateNamePhrase(room.name, lang)
   const press = useRoomTileMotion(room, roomLabel)
   const photo = getRoomPhoto(room)
+  // Coming back from this room, the hero shrinks into this tile. The carousel
+  // already owns a callback ref here for its active-tile maths, so the two are
+  // composed rather than one replacing the other — and deliberately as a plain
+  // inline function, because `tileRef` is itself a fresh closure every render
+  // and memoising this one would freeze the carousel's index.
+  const nameRef  = useRef(null)
+  const morphRef = useMorphReturn(`room-back:${room.id}`, { contentRef: nameRef })
   return (
               <div
-                ref={tileRef}
+                ref={(el) => { morphRef.current = el; tileRef?.(el) }}
                 {...press}
                 data-room-photo=""
                 className={photo ? undefined : 'z-room-plain'}
@@ -673,7 +684,7 @@ function CarouselRoomTile({ room, summary, isActive, tileRef }) {
                 {/* The centred tile additionally spells out its first
                     active part ("Ceiling on"); neighbours keep the short
                     status so the peeking edge stays a calm label. */}
-                <RoomTileFace room={room} summary={summary} photo={photo} showParts={isActive} />
+                <RoomTileFace room={room} summary={summary} photo={photo} showParts={isActive} nameRef={nameRef} />
               </div>
   )
 }
@@ -742,8 +753,12 @@ function GridRoomTile({ room, summary }) {
   const roomLabel = translateNamePhrase(room.name, lang)
   const press = useRoomTileMotion(room, roomLabel)
   const photo = getRoomPhoto(room)
+  // Coming back from this room, the hero shrinks into this tile.
+  const nameRef  = useRef(null)
+  const morphRef = useMorphReturn(`room-back:${room.id}`, { contentRef: nameRef })
   return (
             <div
+              ref={morphRef}
               {...press}
               role="button"
               tabIndex={0}
@@ -774,7 +789,7 @@ function GridRoomTile({ room, summary }) {
                 e.currentTarget.style.borderColor = 'var(--line)'
               }}
             >
-              <RoomTileFace room={room} summary={summary} photo={photo} showParts />
+              <RoomTileFace room={room} summary={summary} photo={photo} showParts nameRef={nameRef} />
             </div>
   )
 }

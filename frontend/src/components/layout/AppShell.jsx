@@ -24,6 +24,21 @@ const CHAT_DOCK_W = 400
 // obvious meaning. Everything else keeps the plain behaviour.
 const DETAIL_RE = /^\/(?:rooms|devices|remote|ir-walk|settings)\/[^/]+/
 
+// Which way through history a navigation went.
+//
+// BrowserRouter stamps a monotonic `idx` into history.state for every entry it
+// creates, and restores it when you move between them, so comparing the idx
+// either side of a location change says forwards or backwards outright — a
+// back is the only thing that lowers it. `null` when there is nothing to read
+// (a foreign history entry, a browser that dropped the state, SSR), which the
+// caller treats as "not backwards" rather than guessing.
+function historyIdx() {
+  try {
+    const i = window.history.state?.idx
+    return typeof i === 'number' ? i : null
+  } catch { return null }
+}
+
 // ── Nav ↔ chat-bubble coupling (motion only) ──────────────────────────────
 // The floating chat bubble is not inside the nav — it is a viewport-fixed FAB
 // whose own CSS pins it to the nav's band (`calc(var(--nav-h) + …)`), and
@@ -148,6 +163,48 @@ export function AppShell({ connected }) {
   const isDetail = DETAIL_RE.test(location.pathname)
   const [navTucked, setNavTucked] = useState(false)
 
+  // ── Which way did you go? ────────────────────────────────────────────
+  // Forward and back used to play the identical entrance, so returning to a
+  // page you had just left announced itself as "here is something new" —
+  // which is what reads as "not smooth" on the way back. The wrapper now
+  // states the direction and motion.css picks the curve. That is the whole
+  // of the change on this side: no exit, no handshake, still one keyed
+  // element that mounts with the route (see the long note below).
+  //
+  // Decided ONCE per history entry and pinned, the same way useDeviceSheet in
+  // App.jsx decides a sheet — because this is a fact about the moment of
+  // navigation, not about this render. Unpinned it also re-attributed itself
+  // mid-flight: a later re-render (a WS message, the media query, the nav
+  // tuck) recomputed the direction and restarted the animation.
+  //
+  // THE DIRECTION DOES NOT COME FROM useNavigationType() HERE, AND CANNOT.
+  // AppShell renders under App.jsx's `<Routes location={...}>` — the
+  // background-location pattern the device sheet needs — and react-router
+  // wraps a location-prop Routes in a LocationContext whose navigationType is
+  // the literal Action.Pop (react-router/dist, `if (locationArg &&
+  // renderedMatches)`). So down here the hook answers POP for every
+  // navigation including plain forward ones, which was measured on the dev
+  // server before this was written: forward to /rooms reported POP. The
+  // history idx is the signal that survives that, and it is strictly better
+  // anyway — it tells the browser's FORWARD button (idx rises) apart from its
+  // back button, which navigationType calls POP either way.
+  //
+  // The first load of the app is the entry the shell started on: its key never
+  // changes, so the branch below never runs and a cold start can only ever be
+  // an arrival. That is the "POP on first load" trap, closed by construction
+  // rather than by a flag that has to be set at the right moment.
+  const enterDir = useRef({ key: location.key, idx: historyIdx(), back: false })
+  if (enterDir.current.key !== location.key) {
+    const idx = historyIdx()
+    const prev = enterDir.current.idx
+    enterDir.current = {
+      key: location.key,
+      idx,
+      back: idx !== null && prev !== null && idx < prev,
+    }
+  }
+  const enterBack = enterDir.current.back
+
   // Swipe back: the <main> scroller follows the finger from the leading edge
   // and commits past 30% of the width or on a 500px/s flick. The hook
   // direction-locks, refuses to start on top of a control, and springs back
@@ -248,9 +305,17 @@ export function AppShell({ connected }) {
             keyed CSS animation on a wrapper that mounts with the new route —
             no AnimatePresence, no exit, no handshake that can be dropped, and
             nothing that can leave a page stuck at opacity: 0. With the flag
-            off the wrapper is not rendered at all. */}
+            off the wrapper is not rendered at all.
+
+            The attribute carries the direction. It stays `data-motion-enter`
+            with a VALUE rather than becoming a second attribute because
+            morph.js does `el.closest('[data-motion-enter]')` to cancel the
+            page enter when a shared-element morph runs — that lookup has to
+            keep finding the wrapper in both directions. Forward renders the
+            literal `true` a bare JSX data attribute has always produced, so
+            a PUSH is byte-for-byte the DOM it was. */}
         {motionOn ? (
-          <div data-motion-enter key={location.pathname}>{routed}</div>
+          <div data-motion-enter={enterBack ? 'back' : true} key={location.pathname}>{routed}</div>
         ) : routed}
       </main>
 

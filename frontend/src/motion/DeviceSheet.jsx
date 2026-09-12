@@ -49,7 +49,11 @@ const DETENTS = [0.72, 1]
 const ELASTIC = { top: 0.12, bottom: 1 }
 const CLASSES = { panel: 'z-msheet', head: 'z-msheet-head', body: 'z-msheet-body scrollbar-thin' }
 
-export default function DeviceSheet({ entityId, onClose, onPromote }) {
+// `open` and `handoff` are how App.jsx keeps a sheet alive for one beat after
+// the navigation that ended it: open=false plays the exit a dismissal should
+// have, and handoff holds the promoted surface while the page — already at this
+// same URL — establishes underneath it. Both default to the plain case.
+export default function DeviceSheet({ entityId, onClose, onPromote, open = true, handoff = false }) {
   const t = useT()
   const entity = useDeviceStore((s) => s.entities.find((e) => e.entity_id === entityId) ?? null)
   // Same group-name preference the page uses: the primary entity of a
@@ -69,7 +73,8 @@ export default function DeviceSheet({ entityId, onClose, onPromote }) {
 
   return (
     <SheetSurface
-      open
+      open={open}
+      handoff={handoff}
       dock
       onClose={onClose}
       onPromote={onPromote}

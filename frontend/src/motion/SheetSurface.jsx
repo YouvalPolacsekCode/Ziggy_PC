@@ -67,6 +67,14 @@ const PROJECT = 0.12       // motion.js project() decay factor
 // the finger actually did.
 const PAST_TOP_PX = 60
 
+// The docked panel hands off the way the bottom sheet does — hold solid while
+// the page establishes underneath, then melt — and with the same numbers as the
+// CSS that does it for the narrow frame (see `.z-msheet-handoff` in sheet.css:
+// 120ms hold, 160ms on the glide curve). It is expressed in framer here, and
+// only here, because framer owns this element's opacity: a class would be
+// overruled by framer's own inline value the moment the animation ended.
+const T_HANDOFF = { duration: 0.16, delay: 0.12, ease: [0.33, 0.68, 0.15, 1] }
+
 // Defaults hoisted so a re-render never hands a new object to a dependency list.
 const ONE_DETENT = [1]
 const DEFAULT_ELASTIC = { top: 0.05, bottom: 1 }
@@ -111,6 +119,10 @@ export function useWideFrame() {
  *                                   detent — "rest exactly where the panel already rests".
  * @param {boolean}   [bodyDrag]     let the body start a drag while it is scrolled to its top
  * @param {Function}  [onPromote]    dragging to the top (narrow) / the expand button (wide)
+ * @param {boolean}   [handoff]      this sheet has already promoted: hold the surface, inert,
+ *                                   and dissolve it into the page that is now underneath it
+ *                                   at the same URL. Opacity only, and never a second exit —
+ *                                   the panel keeps the rectangle it was dragged to.
  * @param {object}    [styles]       {layer, scrim, panel, head, body} inline style overrides
  * @param {object}    [classNames]   {panel, head, body}
  * @param {object}    [attrs]        {layer, scrim, panel, head, body} extra DOM props
@@ -131,6 +143,7 @@ export function SheetSurface({
   closeVelocity = 600,
   onPromote = null,
   promoteLabel,
+  handoff = false,
   closeButton = false,
   restoreFocus = false,
 
@@ -157,7 +170,13 @@ export function SheetSurface({
   const restoreTo = useRef(null)
 
   const docked = dock && wide
-  const draggable = open && !docked
+  // Everything the hand-off adds is motion-on: a sheet that promotes only
+  // exists with the flag on, and with it off this resolves to plain `false`
+  // and not one attribute below changes.
+  const handingOff = !!handoff && motionOn
+  // A surface that has already promoted takes no more gestures — the page
+  // underneath is real, at the same URL, and owns every pointer from here.
+  const draggable = open && !docked && !handingOff
 
   // ── Detent geometry ───────────────────────────────────────────────────
   // stops are y-offsets, ascending: stops[0] is the top (tallest) rest,
@@ -230,14 +249,14 @@ export function SheetSurface({
 
   // ── Dismissal ─────────────────────────────────────────────────────────
   const dismiss = useCallback(() => {
-    if (closing.current) return
+    if (closing.current || handingOff) return
     closing.current = true
     // Hand the backdrop back to framer cleanly: its exit tween writes opacity
     // per frame, and a CSS transition left over from a settle would lag it.
     // Only reachable with the flag on — nothing writes that transition without it.
     if (motionOn && scrimRef.current) scrimRef.current.style.transition = 'none'
     onClose?.()
-  }, [onClose, motionOn])
+  }, [onClose, motionOn, handingOff])
 
   const promote = useCallback(() => {
     if (closing.current || !onPromote) return
@@ -391,7 +410,13 @@ export function SheetSurface({
   const panelTransition = reduce ? { duration: 0 } : SPRING_SHEET
   const exitTransition = reduce ? { duration: 0 } : T_ENTER
   const scrimTransition = reduce ? { duration: 0 } : T_STATE
-  const restY = (stops[Math.min(idx, stops.length - 1)] ?? 0) + (settle % 2 ? 0.01 : 0)
+  // Handing off, the panel holds the top stop — the rectangle the page is
+  // about to occupy. Both promotion paths reach here within a few rubber-banded
+  // pixels of it, so this is a settle, not a move; and it is NOT the settle
+  // alternation, because a dissolving surface must not also be springing.
+  const restY = handingOff
+    ? (stops[0] ?? 0)
+    : (stops[Math.min(idx, stops.length - 1)] ?? 0) + (settle % 2 ? 0.01 : 0)
 
   const expandButton = onPromote ? (
     <button
@@ -446,7 +471,12 @@ export function SheetSurface({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: scrimTransition }}
             transition={scrimTransition}
-            style={{ position: 'fixed', inset: 0, zIndex: 49, background: 'transparent' }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 49, background: 'transparent',
+              // Once promoted, the outside-press catcher must not eat the first
+              // press on the page it just handed off to.
+              ...(handingOff ? { pointerEvents: 'none' } : EMPTY),
+            }}
             {...(attrs.scrim || EMPTY)}
           />
           <motion.section
@@ -456,9 +486,14 @@ export function SheetSurface({
             aria-modal="true"
             aria-label={label || title}
             initial={reduce ? { opacity: 0 } : { opacity: 0, x: rtl ? -18 : 18 }}
-            animate={{ opacity: 1, x: 0 }}
+            // The docked panel's hand-off is the same idea in framer's hands
+            // rather than CSS's: framer owns this element's opacity, so a class
+            // that tried to fade it would be overruled by its own inline value
+            // the moment the animation ended. No travel — it stays put and
+            // dissolves, which is also exactly what reduced motion wants.
+            animate={{ opacity: handingOff ? 0 : 1, x: 0 }}
             exit={{ opacity: 0, transition: exitTransition }}
-            transition={reduce ? { duration: 0 } : T_ENTER}
+            transition={handingOff ? T_HANDOFF : (reduce ? { duration: 0 } : T_ENTER)}
             {...(attrs.panel || EMPTY)}
           >
             <div className="z-mdock-head">
@@ -474,6 +509,13 @@ export function SheetSurface({
       ) : (
         <div
           ref={layerRef}
+          // The whole presentation dissolves as one thing — panel, backdrop and
+          // the blur behind it — because they ARE one thing, and fading them
+          // separately would let the page show through the panel before the
+          // backdrop had finished clearing. Nothing else writes opacity on this
+          // element, which is why the class can own it (the scrim's inline
+          // opacity is framer's, and the panel's transform is framer's too).
+          className={handingOff ? 'z-msheet-handoff' : undefined}
           style={styles.layer || DEFAULT_LAYER_STYLE}
           {...(attrs.layer || EMPTY)}
         >

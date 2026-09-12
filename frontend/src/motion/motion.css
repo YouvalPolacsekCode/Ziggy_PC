@@ -44,6 +44,10 @@
   --m-dur-press: calc(var(--dur-press, 120ms) * var(--m-scale));
   --m-dur-ui:    calc(var(--dur-enter, 240ms) * var(--m-scale));
   --m-dur-page:  calc(340ms * var(--m-scale));
+  /* Going back undoes a move you already made, so it is never slower than the
+     move it undoes — the same entrance:exit ratio the state and disclosure
+     rules below already keep. */
+  --m-dur-page-back: calc(260ms * var(--m-scale));
   --m-dur-large: calc(560ms * var(--m-scale));
 }
 
@@ -147,6 +151,39 @@
 }
 @keyframes zm-page-in {
   from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Back is not an arrival.
+ *
+ * Every navigation used to play the rise above, so returning to a page you
+ * had just left said "here is something new" about somewhere you had already
+ * been. That mismatch is the thing that reads as "not smooth" going back —
+ * the direction is wrong, not the frame rate. A return should read as the
+ * world receding to where you already were: the page comes back TOWARD you,
+ * a hair oversized, and settles. Same two properties, opposite story.
+ *
+ * 1.2%, and no travel at all. On a 390px phone that is ~5px of growth across
+ * the whole page, on a 1440px desktop ~17px — the same order as the forward
+ * 8px rise, so neither direction shouts louder than the other. Past roughly
+ * 2% a full-bleed hero photograph visibly pushes past its own edges on a wide
+ * screen, and the wrapper is the whole routed page, so whatever it does the
+ * hero does too.
+ *
+ * --m-out, not --m-glide. The comment on --m-glide says it exists for
+ * movement across a distance and that a strong ease-out is right for a 4px
+ * press; 1.2% of scale is nearer the press than the journey, so the decisive
+ * ease-out is the curve that settles it. Glide's held middle speed would just
+ * stretch a non-move.
+ *
+ * Enter-only, like everything else here: this is still the one keyed wrapper
+ * mounting with the new route, with no exit and no handshake to drop. */
+
+[data-motion="on"] [data-motion-enter="back"] {
+  animation: zm-page-back var(--m-dur-page-back) var(--m-out) backwards;
+}
+@keyframes zm-page-back {
+  from { opacity: 0; transform: scale3d(1.012, 1.012, 1); }
   to   { opacity: 1; transform: none; }
 }
 
@@ -306,7 +343,14 @@
 @media (prefers-reduced-motion: reduce) {
   [data-motion="on"] [data-pressing] { transform: none; }
   [data-motion="on"] [data-on="true"] [data-motion-icon] { animation: none; }
+  /* `[data-motion-enter="back"]` is listed explicitly, not left to the
+   * presence selector beside it: an attribute-VALUE selector is one class
+   * more specific than an attribute-presence one, so the plain
+   * `[data-motion-enter]` here would lose to the back rule above and the
+   * scale would survive reduced motion. Spelled out, it ties on specificity
+   * and wins on order — both directions collapse to the same plain fade. */
   [data-motion="on"] [data-motion-enter],
+  [data-motion="on"] [data-motion-enter="back"],
   [data-motion="on"] [data-motion-stagger] > * {
     animation: zm-fade-in 160ms var(--m-out) backwards;
   }
