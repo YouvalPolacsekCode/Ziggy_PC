@@ -23,10 +23,25 @@
 [data-motion="on"] .z-msheet {
   position: relative;
   width: 100%;
-  /* Never taller than the visible viewport minus the status bar. --vh is the
-     dvh-derived custom property the shell already uses, so the sheet tracks the
-     URL bar and the on-screen keyboard like every other fixed layer. */
-  max-height: calc(var(--vh) - var(--safe-top) - 10px);
+  /* HEIGHT, not max-height — and this is load-bearing, not a tidy-up.
+     --vh is the dvh-derived custom property the shell already uses, so the
+     sheet tracks the URL bar and the on-screen keyboard like every other fixed
+     layer.
+
+     A content-sized panel silently breaks the detents. SheetSurface computes a
+     stop as `panelHeight - layerHeight * fraction`, so when the panel is only
+     as tall as its content, every fraction taller than the content clamps to
+     the same stop — and two identical stops mean `twoStops` is false, which
+     turns OFF the drag-to-the-top promotion. A short device's remote would
+     therefore have quietly lost the "drag up to get the full page" gesture
+     while looking perfectly fine. Pinning the panel to the layer makes a
+     fraction mean the fraction, at every device, whatever its remote contains.
+
+     The cost is honest: on a device whose remote is short, the peek shows a
+     little empty surface below the control. That is the normal bottom-sheet
+     trade, and it is much better than a gesture that exists on some devices
+     and not others for reasons no one can see. */
+  height: calc(var(--vh) - var(--safe-top) - 10px);
   display: flex;
   flex-direction: column;
   background: var(--surface);

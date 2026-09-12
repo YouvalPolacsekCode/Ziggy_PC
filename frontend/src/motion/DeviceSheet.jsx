@@ -29,7 +29,22 @@ import { SheetSurface } from './SheetSurface'
 
 // Peek first, full height second. SheetSurface sorts these into y-offsets, so
 // the sheet rests at the peek and "the top" is one drag up.
-const DETENTS = [0.55, 1]
+//
+// 0.72, not 0.55. Two reasons, and the first is the real one:
+//
+//   - At 0.55 the peek CUT THE CONTROL IN HALF. A light's remote is a
+//     brightness well, a brightness bar, presets and the power button, and the
+//     power button — the single most likely thing you opened the device to
+//     press — fell below the fold. A peek that hides the main control is not a
+//     peek, it is a teaser, and it forces a drag to do the one-tap thing.
+//   - It is the height the chat sheet already rests at, so the app has ONE
+//     resting height for a bottom sheet rather than two that differ by enough
+//     to look like an accident.
+//
+// It stays a fraction rather than "however tall the content is" on purpose: a
+// sheet whose resting height changes per device would make every device open
+// feel like a different interaction.
+const DETENTS = [0.72, 1]
 // Rubber-band resistance past the top stop — motion/gestures.js's number.
 const ELASTIC = { top: 0.12, bottom: 1 }
 const CLASSES = { panel: 'z-msheet', head: 'z-msheet-head', body: 'z-msheet-body scrollbar-thin' }
