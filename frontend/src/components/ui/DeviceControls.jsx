@@ -1251,7 +1251,33 @@ export function FanControls({ entity, onService }) {
 
   useEffect(() => { setPct(entity.percentage ?? 0) }, [entity.percentage])
 
-  if (!isOn) return null
+  // A fan that is OFF still needs a way to be turned on.
+  //
+  // This used to `return null`, which was survivable only because the device
+  // page carried a separate on/off row above the tabs. That row has been
+  // removed (three on/off affordances on one page), and without this a fan
+  // that was off had NO control anywhere: speed and presets are meaningless
+  // while it is stopped, so the whole remote rendered nothing and the device
+  // became unusable from its own page.
+  //
+  // Same button the light's remote uses — `.z-btn-primary`, full width, the
+  // same on/off label — so this introduces no new design, just the missing
+  // half of an existing one.
+  if (!isOn) {
+    return (
+      <div style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
+        <button
+          onClick={() => { if (isMotionOn()) haptic('light'); onService('turn_on', {}) }}
+          data-motion-ring
+          className="z-btn-primary"
+          style={{ width: '100%' }}
+        >
+          <Power size={20} strokeWidth={1.75} />
+          {t('deviceControls.off')}
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--line)' }}>
@@ -1277,6 +1303,20 @@ export function FanControls({ entity, onService }) {
           ))}
         </div>
       )}
+
+      {/* And the way back off. Speed and presets can only ever turn a fan up,
+          so without this the page could start a fan and never stop it — the
+          same gap the off-state branch above fixes, from the other side.
+          Dragging speed to 0 is not a discoverable "off". */}
+      <button
+        onClick={() => { if (isMotionOn()) haptic('light'); onService('turn_off', {}) }}
+        data-motion-ring
+        className="z-btn-primary"
+        style={{ width: '100%', marginTop: 4 }}
+      >
+        <Power size={20} strokeWidth={1.75} />
+        {t('deviceControls.on')}
+      </button>
     </div>
   )
 }

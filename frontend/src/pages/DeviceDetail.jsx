@@ -6,7 +6,7 @@ import { Toggle } from '../components/ui/Toggle'
 import { Badge } from '../components/ui/Badge'
 import { DeviceRemote } from '../components/device/DeviceRemote'
 import SensorHistoryChart from '../components/device/SensorHistoryChart'
-import { deviceFacts, getKind, KIND, sendDeviceCommand } from '../lib/devices'
+import { deviceFacts, getKind, KIND } from '../lib/devices'
 import { DeviceIcon, ICON_CHOICES } from '../lib/deviceIcons'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
@@ -668,13 +668,6 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
     })
   }
 
-  const handleToggle = async () => {
-    if (!liveEntity) return
-    try {
-      await sendDeviceCommand(liveEntity, 'toggle')
-    } catch (e) { addToast(e.message || t('deviceDetail.controlFailed'), 'error') }
-  }
-
   const handleService = async (service, data) => {
     if (!liveEntity) return
     try {
@@ -911,8 +904,6 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   const entity = liveEntity ?? { entity_id: entityId, domain: entityId.split('.')[0], state: details?.state, ...attributes }
   const facts = deviceFacts(entity)
   const isOn = facts.isOn
-  const isToggleable = facts.meta.toggle
-  const stateLabel = facts.stateLabel
   const meta = facts.meta
   // When the entity is the primary of a multi-entity device, prefer the
   // group's HA device-registry name — it's the "Switcher Boiler" the user
@@ -1039,26 +1030,18 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
         )}
       </div>
 
-      {/* ── Primary control — the one thing most people came to do. A
-            toggleable device gets its switch right under the title, before the
-            tabs; everything else starts at the tabs. Disabled (not hidden)
-            when the device can't be reached, so the layout doesn't jump. ── */}
-      {isToggleable && (
-        <div className="z-card" style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-          minHeight: 44, padding: '10px 14px', marginBottom: 12,
-        }}>
-          <span dir="auto" style={{ fontSize: 15, fontWeight: 600, color: facts.isAvailable ? 'var(--ink)' : 'var(--ink-mute)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {facts.isAvailable ? stateLabel : t('deviceDetail.unavailable')}
-          </span>
-          <Toggle
-            checked={!!isOn}
-            onCheckedChange={handleToggle}
-            disabled={!facts.isAvailable}
-            aria-label={displayName}
-          />
-        </div>
-      )}
+      {/* The primary on/off row used to live here, between the title and the
+          tabs. It was the THIRD on/off affordance on this page — the row, the
+          big state readout inside Controls, and the remote's own power button
+          — which is two too many for one screen, and it pushed the actual
+          control further down on every visit.
+
+          Removed in favour of the remote's own power button, which is the one
+          that sits with the rest of the controls. Note that removing it forced
+          a real fix rather than just a deletion: `FanControls` rendered
+          NOTHING when a fan was off and had no off button when on, so this row
+          was secretly the only way to operate a fan. It now carries its own
+          power button in both states, like the light remote always did. */}
 
       {/* ── Tab switcher (only when there's something to control). Segmented
             control: 44px buttons, active = surface + hairline, no inversion. ── */}
