@@ -321,3 +321,57 @@ body {
   .lab-rail-item .lab-hex { display: none; }
   .lab-rail-row { margin-bottom: 5px; }
 }
+
+/* ===================================================================== phone
+   The lab is a desk instrument, but the thing it shows IS a phone app, so
+   being able to hold a direction in your hand beats any amount of desk
+   comparison. On a narrow screen the rail becomes a slide-over, the concept
+   takes the whole screen at 1:1, and a swipe steps direction. */
+
+@media (max-width: 860px) {
+  .lab-root { grid-template-columns: minmax(0, 1fr); }
+
+  /* The rail is a sheet, not a column. Fixed so it cannot push the stage. */
+  .lab-rail[data-sheet="true"] {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 70;
+    width: min(310px, 86vw);
+    border-right: 1px solid var(--lab-line);
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.6);
+  }
+  .lab-sheet-back { position: fixed; inset: 0; z-index: 65; background: rgba(0, 0, 0, 0.6); }
+  .lab-sheet-close { position: absolute; top: 10px; inset-inline-end: 10px; z-index: 1; }
+
+  /* The top bar scrolls sideways rather than wrapping into three rows and
+     eating the screen the concept needs. */
+  .lab-top {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .lab-top::-webkit-scrollbar { display: none; }
+  .lab-top > * { flex: none; }
+  .lab-now, .lab-scaletag { display: none; }
+
+  .lab-stage { padding: 4px; }
+
+  /* At 1:1 on the phone the bezel is a lie that costs 2px of real estate. */
+  .lab-phone { border-radius: 0; border: none; box-shadow: none; }
+
+  /* Two thumbnails across is the most that stays legible at this width.
+     The COLUMN WIDTH IS NOT SET HERE: the thumbnail's scale is computed in
+     Lab.jsx from `thumbW`, so forcing a width in CSS made the shell and the
+     scaled concept inside it disagree and clipped every thumbnail's right
+     edge. The JS narrows `thumbW` instead and this only tightens the gutter. */
+  .lab-grid { gap: 10px; }
+  .lab-grid-card { padding: 6px; border-radius: 10px; }
+  .lab-grid-thesis { display: none; }
+
+  /* The thesis is the argument for the direction, so it survives; the hex
+     list and the DNA readout do not — they are on the rail. */
+  .lab-foot { padding: 7px 10px; gap: 8px; font-size: 11px; }
+  .lab-foot .lab-hex, .lab-dna { display: none; }
+}

@@ -117,9 +117,34 @@ function Fit({ w, h, scale, children }) {
 
 /* ------------------------------------------------------------------- pieces */
 
-function Rail({ current, left, right, mode, side, onPick }) {
+/* True on a phone. The lab is an instrument built for a wide screen, but the
+   thing it is showing IS a phone app, so being able to hold a direction in your
+   hand is worth more than any amount of desk comparison. On a narrow screen the
+   rail becomes a slide-over, the concept gets the whole screen at 1:1, and a
+   swipe changes direction. */
+function useNarrow() {
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 860px)')
+    const on = (e) => setNarrow(e.matches)
+    mq.addEventListener('change', on)
+    setNarrow(mq.matches)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return narrow
+}
+
+function Rail({ current, left, right, mode, side, onPick, narrow, open, onClose }) {
+  if (narrow && !open) return null
   return (
-    <aside className="lab-rail">
+    <aside className="lab-rail" data-sheet={narrow ? 'true' : undefined}>
+      {narrow && (
+        <button className="lab-btn lab-sheet-close" onClick={onClose} aria-label="Close">
+          Done
+        </button>
+      )}
       <div className="lab-rail-head">
         <div className="lab-rail-title">Ten directions</div>
         <div className="lab-rail-sub">
@@ -236,6 +261,8 @@ export default function Lab() {
   const [side, setSide] = usePersisted('side', 'left')
   const [sync, setSync] = usePersisted('sync', true)
   const [help, setHelp] = useState(false)
+  const narrow = useNarrow()
+  const [railOpen, setRailOpen] = useState(false)
 
   const stageRef = useRef(null)
   const singleRef = useRef(null)
@@ -244,7 +271,14 @@ export default function Lab() {
   const ratioRef = useRef(0)
   const lockRef = useRef(false)
 
-  const vp = VP[viewport]
+  // A phone can only meaningfully show the phone viewport, and only one frame.
+  // Compare is corrected in state (one place, so every branch below stays
+  // simple); the viewport is pinned locally so widening the window restores the
+  // desktop preview the person had chosen.
+  useEffect(() => {
+    if (narrow && mode === 'compare') setMode('single')
+  }, [narrow, mode, setMode])
+  const vp = VP[narrow ? 'mobile' : viewport]
 
   /* A different screen is a different page; carrying a scroll ratio across it
      would land you somewhere arbitrary. */
@@ -349,6 +383,9 @@ export default function Lab() {
   useEffect(() => {
     const el = stageRef.current
     if (!el) return
+    // On a phone the frame should fill the screen, so the desk-view padding
+    // budget would shrink it for no reason.
+    const PAD = narrow ? 8 : 48
     const GAP = 22
     // Compare puts a picker + thesis above each frame; that strip is part of
     // the pane's height, so it has to come out of the budget or the frames
@@ -356,8 +393,8 @@ export default function Lab() {
     const HEAD = mode === 'compare' ? 112 : 0
     const measure = () => {
       if (mode === 'grid') { setScale(1); return }
-      const availW = el.clientWidth - 48 - GAP * (count - 1)
-      const availH = el.clientHeight - 48 - HEAD
+      const availW = el.clientWidth - PAD - GAP * (count - 1)
+      const availH = el.clientHeight - PAD - HEAD
       const next = Math.min(1, availW / (vp.w * count), availH / vp.h)
       setScale(Math.max(0.2, Number.isFinite(next) ? next : 1))
     }
@@ -365,38 +402,91 @@ export default function Lab() {
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [mode, count, vp.w, vp.h])
+  }, [mode, count, vp.w, vp.h, narrow])
+
+  /* ------------------------------------------------------- swipe (phone) */
+  // There is no keyboard on a phone, so the arrow keys that drive this on a
+  // desk have no equivalent. A horizontal swipe on the stage steps direction.
+  // It only commits on a gesture that is clearly horizontal — the concept
+  // inside scrolls vertically and a carousel inside it scrolls horizontally,
+  // so a lazy threshold here would steal both.
+  useEffect(() => {
+    if (!narrow) return undefined
+    const el = stageRef.current
+    if (!el) return undefined
+    let x0 = 0, y0 = 0, t0 = 0, tracking = false
+    const down = (e) => {
+      const t = e.touches ? e.touches[0] : e
+      x0 = t.clientX; y0 = t.clientY; t0 = Date.now(); tracking = true
+    }
+    const up = (e) => {
+      if (!tracking) return
+      tracking = false
+      const t = e.changedTouches ? e.changedTouches[0] : e
+      const dx = t.clientX - x0
+      const dy = t.clientY - y0
+      // Horizontal by a factor of two, far enough to be deliberate, and quick
+      // enough to be a flick rather than a drag that happened to end sideways.
+      if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2) return
+      if (Date.now() - t0 > 700) return
+      step(dx < 0 ? 1 : -1)
+    }
+    el.addEventListener('touchstart', down, { passive: true })
+    el.addEventListener('touchend', up, { passive: true })
+    return () => {
+      el.removeEventListener('touchstart', down)
+      el.removeEventListener('touchend', up)
+    }
+  }, [narrow, step])
 
   /* --------------------------------------------------------------- render */
   const cur = byId(current)
   const lp = byId(left)
   const rp = byId(right)
 
-  const thumbW = viewport === 'desktop' ? 400 : 200
+  // Narrower on a phone so two fit across. This is the single source of the
+  // thumbnail's size — the CSS must not set a column width, or the shell and
+  // the scaled concept inside it disagree and the thumbnails clip.
+  const thumbW = viewport === 'desktop' && !narrow ? 400 : narrow ? 168 : 200
   const thumbScale = thumbW / vp.w
   // A compare pane is at least as wide as its own picker row, so a scaled-down
   // phone doesn't leave the select overlapping the other pane.
   const paneW = Math.max(330, Math.round(vp.w * scale))
 
   return (
-    <div className="lab-root">
+    <div className="lab-root" data-narrow={String(narrow)}>
+      {narrow && railOpen && <div className="lab-sheet-back" onClick={() => setRailOpen(false)} />}
       <Rail
         current={current}
         left={left}
         right={right}
         mode={mode}
         side={side}
+        narrow={narrow}
+        open={railOpen}
+        onClose={() => setRailOpen(false)}
         onPick={(id) => {
           if (mode === 'grid') { setCurrent(id); setMode('single') }
           else setActiveId(id)
+          if (narrow) setRailOpen(false)
         }}
       />
 
       <div className="lab-main">
         <header className="lab-top">
+          {narrow && (
+            <button className="lab-btn" onClick={() => setRailOpen(true)}>
+              ☰ {cur.name}
+            </button>
+          )}
           <Seg
-            items={[['single', 'Single'], ['compare', 'Compare'], ['grid', 'Grid of 10']]}
-            value={mode}
+            // Compare needs two frames side by side, which a phone cannot give
+            // without shrinking both past the point of being judgeable. It is
+            // hidden here rather than offered and disappointing.
+            items={narrow
+              ? [['single', 'One'], ['grid', 'All 10']]
+              : [['single', 'Single'], ['compare', 'Compare'], ['grid', 'Grid of 10']]}
+            value={mode === 'compare' && narrow ? 'single' : mode}
             onChange={setMode}
           />
           <span className="lab-div" />
