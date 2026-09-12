@@ -1096,62 +1096,41 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
         </div>
       )}
 
-      {/* ── Identity strip + Control surface ── */}
+      {/* ── Control surface ──
+          The identity strip (icon, IR/unavailable chips, rename, "Not
+          responding? Fix it") used to open this tab. It is metadata and
+          maintenance, not control, so it now opens the INFO tab instead — see
+          the identity card there.
+
+          One piece of it stays here, and only when the device is unreachable:
+          the control surface below is gated on `facts.isAvailable`, so moving
+          the whole strip away left an offline device with a COMPLETELY EMPTY
+          Controls tab, and buried the one action that matters at that exact
+          moment in the other tab. So an unreachable device still gets the
+          recovery affordance where you would look for it. A working device
+          gets what this tab is for: controls, nothing else. */}
+      {showControls && !facts.isAvailable && !onExit && (
+        <div className="z-card" style={{ padding: 12, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            <span className="z-chip" style={{ color: 'var(--warn-text)' }}>{t('deviceDetail.unavailable')}</span>
+          </div>
+          <button
+            onClick={handleAskFixer}
+            className="z-btn-secondary"
+            style={{
+              width: '100%', minHeight: 34, fontSize: 13,
+              background: 'color-mix(in srgb, var(--warn) 12%, var(--surface))',
+              color: 'var(--warn-text)',
+            }}
+          >
+            <Zap size={18} strokeWidth={1.75} />
+            {t('deviceDetail.askFixer')}
+          </button>
+        </div>
+      )}
+
       {showControls && (
         <>
-          <div className="z-card" style={{ padding: 12, marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: 'var(--r-ctl)',
-                background: isOn
-                  ? `color-mix(in srgb, ${facts.tint} 14%, var(--surface-2))`
-                  : 'var(--surface-2)',
-                color: isOn ? facts.tint : 'var(--ink-mute)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-                <DeviceIcon kind={facts.kind} customIcon={entity.icon} size={20} fill />
-              </div>
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {(facts.isIr || facts.hasIr || !facts.isAvailable) && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    {facts.isIr && <span className="z-chip">IR</span>}
-                    {facts.hasIr && !facts.isIr && <span className="z-chip">{t('deviceDetail.irPlusWifi')}</span>}
-                    {!facts.isAvailable && <span className="z-chip" style={{ color: 'var(--warn-text)' }}>{t('deviceDetail.unavailable')}</span>}
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={() => setShowRename(true)}
-                className="z-icon-btn"
-                title={t('deviceDetail.rename')}
-                aria-label={t('deviceDetail.rename')}
-              >
-                <Pencil size={18} strokeWidth={1.75} />
-              </button>
-            </div>
-
-            {/* Ask Ziggy about THIS device. Louder when the device is actually
-                unreachable — that's the moment the user wants it. Hidden on the
-                wall, where /chat isn't a destination the overlay can reach. */}
-            {!onExit && (
-              <button
-                onClick={handleAskFixer}
-                className="z-btn-secondary"
-                style={{
-                  marginTop: 8, width: '100%', minHeight: 34, fontSize: 13,
-                  background: facts.isAvailable
-                    ? undefined
-                    : 'color-mix(in srgb, var(--warn) 12%, var(--surface))',
-                  color: facts.isAvailable ? 'var(--ink-mute)' : 'var(--warn-text)',
-                }}
-              >
-                <Zap size={18} strokeWidth={1.75} />
-                {t('deviceDetail.askFixer')}
-              </button>
-            )}
-          </div>
-
           {/* Per-kind control surface — passes relevant automations +
               suggestion to the kind-specific remote (used by AC for the
               Schedule + AI cards). Gate on facts.isAvailable (not the raw HA
@@ -1208,6 +1187,70 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       )}
 
       {/* ── Diagnostics ── */}
+      {/* ── Identity card ──
+          Moved here from the top of the Controls tab. What it holds is what
+          the device IS and how to maintain it — its icon, how it is reached
+          (IR, IR+Wi-Fi, unreachable), its name, and the way to ask Ziggy why
+          it is misbehaving. None of that is a control, and sitting above the
+          controls it pushed the actual dial down the screen on every visit.
+
+          It opens the Info tab rather than sitting lower down it, because it
+          is the identity of the thing the rest of this tab describes. */}
+      {showData && (
+        <div className="z-card" style={{ padding: 12, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 'var(--r-ctl)',
+              background: isOn
+                ? `color-mix(in srgb, ${facts.tint} 14%, var(--surface-2))`
+                : 'var(--surface-2)',
+              color: isOn ? facts.tint : 'var(--ink-mute)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <DeviceIcon kind={facts.kind} customIcon={entity.icon} size={20} fill />
+            </div>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {(facts.isIr || facts.hasIr || !facts.isAvailable) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {facts.isIr && <span className="z-chip">IR</span>}
+                  {facts.hasIr && !facts.isIr && <span className="z-chip">{t('deviceDetail.irPlusWifi')}</span>}
+                  {!facts.isAvailable && <span className="z-chip" style={{ color: 'var(--warn-text)' }}>{t('deviceDetail.unavailable')}</span>}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => setShowRename(true)}
+              className="z-icon-btn"
+              title={t('deviceDetail.rename')}
+              aria-label={t('deviceDetail.rename')}
+            >
+              <Pencil size={18} strokeWidth={1.75} />
+            </button>
+          </div>
+
+          {/* Ask Ziggy about THIS device. Louder when the device is actually
+              unreachable — that's the moment the user wants it. Hidden on the
+              wall, where /chat isn't a destination the overlay can reach. */}
+          {!onExit && (
+            <button
+              onClick={handleAskFixer}
+              className="z-btn-secondary"
+              style={{
+                marginTop: 8, width: '100%', minHeight: 34, fontSize: 13,
+                background: facts.isAvailable
+                  ? undefined
+                  : 'color-mix(in srgb, var(--warn) 12%, var(--surface))',
+                color: facts.isAvailable ? 'var(--ink-mute)' : 'var(--warn-text)',
+              }}
+            >
+              <Zap size={18} strokeWidth={1.75} />
+              {t('deviceDetail.askFixer')}
+            </button>
+          )}
+        </div>
+      )}
+
       {showData && hasDiagnostics && (
         <Card className="p-4 mb-3">
           <SectionTitle>{t('deviceDetail.diagnostics')}</SectionTitle>
