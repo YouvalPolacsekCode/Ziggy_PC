@@ -58,6 +58,11 @@ function controllerToEntity(g) {
     display_name:  g.name,
     friendly_name: g.name,
     room:          g.room || null,
+    // The HA device row behind this controller. It has no entity, but MQTT
+    // discovery does create a device — and rename / room assignment PATCH
+    // /api/ha/devices/<id>/…, so without this both fail as "upstream
+    // unavailable" and the card is stuck on its model name in "No Room".
+    ha_device_id:  g.ha_device_id || null,
     _controller:       true,
     _controllerGroup:  g,
     controller_id: g.signature,
@@ -527,6 +532,13 @@ export const useDeviceStore = create((set, get) => ({
         groupById[g.group_id] = g
         for (const e of (g.entities || [])) {
           if (e.entity_id) groupByEntityId[e.entity_id] = g.group_id
+        }
+        // A controller has zero entities, so the loop above indexes nothing and
+        // every group lookup by entity_id misses — which is what left the
+        // device page unable to rename it or set its room. Index it under the
+        // synthetic id deviceStore mints for it.
+        if (g.card_kind === 'controller' && g.signature) {
+          groupByEntityId[`controller.${g.signature}`] = g.group_id
         }
       }
 

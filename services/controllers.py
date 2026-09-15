@@ -365,6 +365,83 @@ def merge(bridge: Iterable[dict], discovered: Iterable[dict]) -> list[dict]:
     return out
 
 
+# ── Home Assistant identity ────────────────────────────────────────────────
+# A controller has no HA *entity*, but MQTT discovery does create an HA
+# *device* row — and that row is where the user's own name and room assignment
+# live. Reading it back is not cosmetic: rename and room-assignment both PATCH
+# `/api/ha/devices/<device_id>/...`, so without the device_id the card shows a
+# model name in "No Room" and both edits fail with "upstream unavailable".
+
+def _identifier_strings(device: dict):
+    """Yield each identifier as a flat string.
+
+    HA serialises identifiers as [domain, value] pairs (JSON turns the tuple
+    into a list), but be forgiving — some integrations emit a bare string.
+    """
+    ids = device.get("identifiers")
+    if isinstance(ids, str):
+        ids = [ids]
+    for ident in ids or []:
+        if isinstance(ident, (list, tuple)):
+            for part in ident:
+                if isinstance(part, str):
+                    yield part
+        elif isinstance(ident, str):
+            yield ident
+
+
+def index_ha_devices(devices: Iterable[dict]) -> dict[str, dict]:
+    """Map physical address -> {device_id, name, area_id} from HA's registry.
+
+    Only devices carrying a `zigbee2mqtt_<address>` identifier are indexed, so
+    an unrelated HA device can never be mistaken for a controller.
+
+    `name` is the user's name only. HA's default `name` for an un-renamed Z2M
+    device is the raw IEEE address, which must never reach a customer surface —
+    that is reported as None so the caller falls back to the model description.
+    """
+    out: dict[str, dict] = {}
+    for d in devices or []:
+        if not isinstance(d, dict):
+            continue
+        address = None
+        for ident in _identifier_strings(d):
+            if ident.startswith(_Z2M_IDENTIFIER_PREFIX):
+                address = ident[len(_Z2M_IDENTIFIER_PREFIX):]
+                break
+        if not address:
+            continue
+        name = (d.get("name_by_user") or "").strip() or None
+        if name and name.lower() == address.lower():
+            name = None
+        out[address] = {
+            "device_id": d.get("id"),
+            "name": name,
+            "area_id": d.get("area_id") or None,
+        }
+    return out
+
+
+def apply_ha_registry(controllers: Iterable[dict], index: dict[str, dict]) -> list[dict]:
+    """Adopt each controller's HA identity: user name, room, and device_id.
+
+    A controller HA doesn't know about (or a WS outage, which yields an empty
+    index) keeps every button and stays usable — it just can't be renamed or
+    assigned a room until HA sees it.
+    """
+    out = []
+    for c in controllers or []:
+        c = dict(c)
+        meta = (index or {}).get(c.get("ieee")) or {}
+        c["ha_device_id"] = meta.get("device_id")
+        c["room"] = meta.get("area_id")
+        if meta.get("name"):
+            c["name"] = meta["name"]
+        out.append(c)
+    out.sort(key=lambda c: (c["name"].lower(), c["ieee"]))
+    return out
+
+
 # ── Projection into the device-card shape ──────────────────────────────────
 
 def controller_groups(controllers: Iterable[dict]) -> list[dict]:
@@ -383,12 +460,12 @@ def controller_groups(controllers: Iterable[dict]) -> list[dict]:
             "signature":         c["ieee"],
             "classified_by":     "controller",
             "name":              c["name"],
-            "room":              None,
+            "room":              c.get("room"),
             "status":            "connected",
             "primary_entity_id": None,
             "primary_domain":    None,
             "primary_state":     None,
-            "ha_device_id":      None,
+            "ha_device_id":      c.get("ha_device_id"),
             "ir_device_id":      None,
             "entities":          [],
             "metrics":           [],
@@ -440,6 +517,25 @@ _cache: dict[str, Any] = {"at": 0.0, "controllers": []}
 _refresh_lock = asyncio.Lock()
 
 
+async def _fetch_ha_device_index() -> dict[str, dict]:
+    """HA device-registry rows for controllers, keyed by physical address.
+
+    Goes to the WS registry directly rather than `ha_zigbee.get_devices()`,
+    which drops `identifiers` — and identifiers are the only reliable link
+    between an HA device row and a Zigbee address.
+
+    An HA outage returns {} so discovery degrades to "no name, no room" rather
+    than losing the controllers entirely.
+    """
+    try:
+        from services import ha_client
+        res, = await ha_client.ws({"type": "config/device_registry/list"})
+        return index_ha_devices(res.get("result") or [])
+    except Exception as e:
+        log_error(f"[controllers] HA device registry unavailable: {e}")
+        return {}
+
+
 async def refresh(force: bool = False) -> list[dict]:
     """Re-read controllers from the broker's retained discovery topics.
 
@@ -471,6 +567,10 @@ async def refresh(force: bool = False) -> list[dict]:
                 parse_bridge_devices(bridge_payload if isinstance(bridge_payload, list) else []),
                 parse_discovery(discovery),
             )
+            # Adopt each controller's HA identity (user's name, room, device_id)
+            # so the card reads back what the user set and rename / room
+            # assignment have a device to PATCH.
+            found = apply_ha_registry(found, await _fetch_ha_device_index())
             _cache["controllers"] = found
             _cache["at"] = time.monotonic()
             return found

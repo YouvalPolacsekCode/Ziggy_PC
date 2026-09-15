@@ -289,3 +289,85 @@ def test_merged_controller_can_trigger_a_never_pressed_button():
     t = C.trigger_for(IEEE, "hold_both", merged)
     assert t["payload"] == "hold_both"
     assert t["platform"] == "mqtt"
+
+
+# ── Home Assistant identity ────────────────────────────────────────────────
+# A controller has no HA *entity*, but MQTT discovery does create an HA
+# *device* — and that device row is where the user's own name and room
+# assignment live. Without reading it back, the card shows the model name and
+# "No Room" while HA holds "Wall switch" in the living room, and rename / room
+# assignment fail outright because they need the HA device_id to PATCH.
+
+HA_DEVICE = {
+    "id": "dfa43c28740c4a9fe1680b012a50eda2",
+    "name": IEEE,
+    "name_by_user": "Wall switch",
+    "identifiers": [["mqtt", f"zigbee2mqtt_{IEEE}"]],
+    "area_id": "living_room",
+    "manufacturer": "Aqara",
+    "model": "Wireless remote switch H1M (double rocker)",
+}
+
+
+def test_ha_registry_index_maps_address_to_device():
+    idx = C.index_ha_devices([HA_DEVICE])
+    assert idx[IEEE]["device_id"] == "dfa43c28740c4a9fe1680b012a50eda2"
+    assert idx[IEEE]["name"] == "Wall switch"
+    assert idx[IEEE]["area_id"] == "living_room"
+
+
+def test_index_ignores_devices_without_a_z2m_identifier():
+    assert C.index_ha_devices([{"id": "x", "identifiers": [["hue", "abc"]]}]) == {}
+
+
+def test_index_tolerates_flat_identifier_tuples():
+    """HA serialises identifiers as lists; be forgiving about the shape."""
+    idx = C.index_ha_devices([{**HA_DEVICE, "identifiers": [f"zigbee2mqtt_{IEEE}"]}])
+    assert IEEE in idx
+
+
+def test_index_prefers_user_name_over_ha_default_name():
+    idx = C.index_ha_devices([HA_DEVICE])
+    assert idx[IEEE]["name"] == "Wall switch"
+    assert idx[IEEE]["name"] != IEEE
+
+
+def test_index_skips_a_name_that_is_just_the_address():
+    idx = C.index_ha_devices([{**HA_DEVICE, "name_by_user": None}])
+    assert idx[IEEE]["name"] is None, "a raw address is not a name"
+
+
+def test_apply_ha_registry_adopts_name_room_and_device_id():
+    c = C.apply_ha_registry(C.parse_bridge_devices([_bridge_device(actions=ALL_ACTIONS)]),
+                            C.index_ha_devices([HA_DEVICE]))[0]
+    assert c["name"] == "Wall switch"
+    assert c["room"] == "living_room"
+    assert c["ha_device_id"] == "dfa43c28740c4a9fe1680b012a50eda2"
+
+
+def test_user_name_in_ha_beats_the_model_fallback():
+    c = C.apply_ha_registry(C.parse_discovery(_h1m()), C.index_ha_devices([HA_DEVICE]))[0]
+    assert c["name"] == "Wall switch"
+
+
+def test_controller_unknown_to_ha_keeps_working_with_no_room():
+    """HA WS down, or a controller HA hasn't discovered — still usable."""
+    c = C.apply_ha_registry(C.parse_bridge_devices([_bridge_device(actions=ALL_ACTIONS)]), {})[0]
+    assert c["ha_device_id"] is None
+    assert c["room"] is None
+    assert c["actions"], "buttons must survive an HA outage"
+
+
+def test_group_carries_the_ha_device_id_so_rename_and_room_can_patch():
+    g = C.controller_groups(
+        C.apply_ha_registry(C.parse_bridge_devices([_bridge_device(actions=ALL_ACTIONS)]),
+                            C.index_ha_devices([HA_DEVICE])))[0]
+    assert g["ha_device_id"] == "dfa43c28740c4a9fe1680b012a50eda2"
+    assert g["room"] == "living_room"
+    assert g["name"] == "Wall switch"
+
+
+def test_group_without_ha_identity_still_renders():
+    g = C.controller_groups(C.parse_bridge_devices([_bridge_device(actions=ALL_ACTIONS)]))[0]
+    assert g["ha_device_id"] is None
+    assert g["room"] is None
