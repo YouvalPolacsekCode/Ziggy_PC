@@ -31,7 +31,7 @@ export default defineConfig({
         injectionPoint: undefined,
       },
       selfDestroying: false,
-      includeAssets: ['icons/*.png', 'icons/*.svg'],
+      includeAssets: ['brand/*.png', 'brand/*.svg', 'favicon.ico'],
       manifest: {
         name: 'Ziggy',
         short_name: 'Ziggy',
@@ -55,11 +55,16 @@ export default defineConfig({
           // Both `any` (regular launch icon) and `maskable` (Android adaptive
           // icon framing) need explicit entries. A single combined "any maskable"
           // works but Android sometimes still crops it; splitting is safest.
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-          { src: '/icons/icon.svg',     sizes: 'any',      type: 'image/svg+xml', purpose: 'any' },
+          //
+          // The `maskable` files are NOT the same art as `any`: Android crops a
+          // maskable icon to its own shape, so those carry the symbol inset well
+          // inside the 80% safe zone. Pointing both at one file is what clips
+          // the mark on adaptive-icon launchers.
+          { src: '/brand/app-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/brand/maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: '/brand/app-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/brand/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/brand/favicon.svg',      sizes: 'any',      type: 'image/svg+xml', purpose: 'any' },
         ],
       },
       // No `workbox` block — injectManifest mode reads the SW source from

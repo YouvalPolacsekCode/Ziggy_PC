@@ -8,34 +8,23 @@
 // /welcome branch in App.jsx to fully revert.
 // ─────────────────────────────────────────────────────────────────────────
 import { motion, useReducedMotion } from 'framer-motion'
+import Logo from '../components/ui/Logo'
 
 const EASE = [0.16, 1, 0.3, 1]
 
-/** Brand mark — the gold lightning "Z" from public/icons/icon.svg. */
-export function ZiggyMark({ size = 28, className = '' }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 512 512" className={className} aria-hidden="true">
-      <defs>
-        <linearGradient id="zmk-bolt" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="var(--gold)" />
-          <stop offset="100%" stopColor="var(--accent)" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M320 80H160l-48 160h96L160 432l192-224h-96z"
-        fill="url(#zmk-bolt)"
-      />
-    </svg>
-  )
+/** Brand mark — the approved shared symbol. */
+export function ZiggyMark({ size = 28, className = '', decorative = true }) {
+  return <Logo variant="symbol" height={size} className={className} decorative={decorative} />
 }
 
+/**
+ * Brand signature. The bilingual lockup already contains the symbol, so this
+ * renders it alone rather than pairing a symbol with repeated wordmark text.
+ */
 export function Wordmark({ className = '' }) {
-  return (
-    <span className={`inline-flex items-center gap-2 ${className}`}>
-      <ZiggyMark size={22} />
-      <span className="text-[19px] font-extrabold tracking-tight text-ink">Ziggy</span>
-    </span>
-  )
+  // 38px tall ⇒ ~210px wide, just clear of the lockup's 204px floor, inside the
+  // 64px header bar.
+  return <Logo variant="bilingual" height={38} className={className} />
 }
 
 export function Eyebrow({ children, className = '' }) {

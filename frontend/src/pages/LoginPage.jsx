@@ -3,6 +3,7 @@ import { Eye, EyeOff } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useT } from '../lib/i18n'
 import { Input } from '../components/ui/Input'
+import Logo from '../components/ui/Logo'
 
 export default function LoginPage() {
   const t = useT()
@@ -65,10 +66,9 @@ export default function LoginPage() {
 
         {/* Wordmark — the accent period is the one accent on this screen. */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 32, gap: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
-            <span className="z-display">ziggy</span>
-            <span className="z-display" style={{ color: 'var(--accent)' }}>.</span>
-          </div>
+          {/* Bilingual lockup: sign-in is not yet committed to a language, so
+              this is the one in-app surface that shows both scripts. */}
+          <Logo variant="stacked" height={92} />
           <p className="z-subhead" style={{ textAlign: 'center' }}>
             {mode === 'setup' ? t('login.createAccount') : t('login.signInToHome')}
           </p>

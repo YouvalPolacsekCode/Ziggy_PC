@@ -6,6 +6,7 @@ import { useAuthStore } from '../../stores/authStore'
 import { useFeature } from '../../stores/featuresStore'
 import { useLang, useT } from '../../lib/i18n'
 import { useMotionOn } from '../../motion/flag'
+import Logo from '../ui/Logo'
 
 const ROLE_ORDER = ['user', 'admin', 'super_admin']
 function hasRole(userRole, minRole) {
@@ -160,10 +161,10 @@ export function Sidebar({ connected }) {
     >
       {/* Wordmark — the one place the brand accent appears in the chrome. */}
       <div style={{ padding: '4px 12px 24px', display: 'flex', alignItems: 'center', gap: 2, minHeight: 40 }}>
-        <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.02em', color: 'var(--ink)', lineHeight: 1 }}>
-          Ziggy
-        </span>
-        <span style={{ color: 'var(--accent)', fontSize: 18, fontWeight: 700, lineHeight: 1 }}>.</span>
+        {/* Wordmark alone — the symbol carries the brand on phones instead, so
+            the two never appear together. 37px is the legibility floor, which
+            draws ZIGGY and זיגי at the same letter height. */}
+        <Logo variant="wordmark" height={37} />
         <span
           aria-label={connected ? t('common.connected') : t('common.offline')}
           style={{

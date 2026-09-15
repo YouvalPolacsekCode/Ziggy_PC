@@ -53,8 +53,10 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body:                data.body,
-      icon:                '/icons/icon-192.png',
-      badge:               '/icons/icon-192.png',
+      icon:                '/brand/app-icon-192.png',
+      // Badge is flattened to a silhouette by Android — needs the monochrome
+      // mark, not the full-colour icon, or it renders as a grey blob.
+      badge:               '/brand/notification-badge.png',
       data:                { url: data.url, actions },
       requireInteraction:  actions.length > 0,
       actions:             actions,

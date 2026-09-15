@@ -9,6 +9,7 @@ import { useWallStore } from '../stores/wallStore'
 import { availableManifests } from './modules/registry'
 import { verifyWallPin } from '../lib/api'
 import { useNow } from './modules/CoreModules'
+import Logo from '../components/ui/Logo'
 
 // ─── Leaving wall mode ──────────────────────────────────────────────────────
 //
@@ -102,10 +103,14 @@ const ZiggyMark = ({ size = 26, onExit }) => {
   useEffect(() => () => clearTimeout(timer.current), [])
 
   return (
-    <svg
-      viewBox="0 0 24 24" width={size} height={size}
+    <span
       className="zw-mark"
-      style={{ opacity: armed ? 0.45 : 1, transition: 'opacity .4s ease', cursor: 'default' }}
+      style={{
+        display: 'inline-flex',
+        opacity: armed ? 0.45 : 1,
+        transition: 'opacity .4s ease',
+        cursor: 'default',
+      }}
       onPointerDown={start}
       onPointerUp={stop}
       onPointerLeave={stop}
@@ -114,10 +119,8 @@ const ZiggyMark = ({ size = 26, onExit }) => {
       // callout — that both cancels the pointer and covers the screen.
       onContextMenu={(e) => e.preventDefault()}
     >
-      <g stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" fill="none">
-        <path d="M12 3v18" /><path d="M4.2 7.5l15.6 9" /><path d="M19.8 7.5l-15.6 9" />
-      </g>
-    </svg>
+      <Logo variant="symbol" height={size} />
+    </span>
   )
 }
 

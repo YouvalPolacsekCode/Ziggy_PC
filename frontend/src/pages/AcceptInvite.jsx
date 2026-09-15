@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/authStore'
 import { useT } from '../lib/i18n'
 import { Check, AlertTriangle, Home, Link2 } from 'lucide-react'
 import { Input } from '../components/ui/Input'
+import Logo from '../components/ui/Logo'
 
 // Result-screen glyph: a 64px tinted disc with a 32px line icon. Status
 // colour is allowed here because the icon is ≥ 20px.
@@ -158,9 +159,7 @@ export default function AcceptInvite() {
       }}>
         {/* Header — the accent period is the one accent on this screen */}
         <div style={{ padding: '24px 24px 0', textAlign: 'center' }}>
-          <p className="z-display" style={{ marginBottom: 4 }}>
-            ziggy<span style={{ color: 'var(--accent)' }}>.</span>
-          </p>
+          <Logo variant="bilingual" height={38} style={{ margin: '0 auto 4px' }} />
           <p className="z-eyebrow" style={{ marginBottom: 24 }}>{t('invite.tagline')}</p>
         </div>
 

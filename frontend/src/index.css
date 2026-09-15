@@ -151,6 +151,15 @@ html, body, #root {
   .z-dashboard-main-col { min-height: 0; }
 }
 
+/* ── Brand logo, light/dark surface swap ─────────────────────────────────────
+   <Logo tone="auto"> emits both artworks; this shows exactly one. Keyed off
+   [data-palette] rather than the theme store because surfaces like LoginPage
+   and the marketing site pin themselves dark regardless of the user's theme —
+   the logo has to follow the surface it is actually drawn on. */
+.ziggy-logo-dark  { display: none; }
+[data-palette="dark"] .ziggy-logo-dark  { display: inline-block; }
+[data-palette="dark"] .ziggy-logo-light { display: none; }
+
 /* ── Warm-light palette (default + explicit) ─────────────────────────────── */
 :root,
 [data-palette="light"] {

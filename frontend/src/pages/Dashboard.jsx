@@ -11,6 +11,7 @@ import { useWsMessages } from '../hooks/useWebSocket'
 import { greetingByTime, humanizeSlug, entityDisplayName } from '../lib/utils'
 import { getActivity, getActiveAnomalies, getHealth, getPresencePersons, sendDirectIntent, controlDevice } from '../lib/api'
 import { getRoomPhoto } from '../lib/roomPhotos'
+import Logo from '../components/ui/Logo'
 import { findRoomMetric, roomOccupancy, deviceFacts, sendDeviceCommand } from '../lib/devices'
 import { DeviceIcon } from '../lib/deviceIcons'
 import { QuickControlsPicker } from '../components/QuickControlsPicker'
@@ -1242,6 +1243,13 @@ export default function Dashboard() {
               card below surfaces the same data and the desktop right rail
               still owns it on lg+. */}
       <div>
+        {/* Brand, phones only — the symbol alone, since the header is tight and
+            a wordmark would compete with the greeting. The desktop sidebar
+            carries the wordmark instead, and md: is exactly where that sidebar
+            appears, so the two never show at once. */}
+        <div className="flex md:hidden" style={{ marginBottom: 14 }}>
+          <Logo variant="symbol" height={28} />
+        </div>
         <p className="z-eyebrow" style={{ margin: '0 0 4px' }}>{greetingByTime()}</p>
         <h1 className="z-display" style={{ margin: '0 0 8px' }}>{statusText}</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
