@@ -139,7 +139,12 @@ function _attachGroup(entity, groupByEntityId, groupById) {
   if (!entity || !entity.entity_id) return entity
   const g = groupById[groupByEntityId[entity.entity_id]]
   if (!g) return entity
+  // A controller group has NO primary entity — it has no entities at all, which
+  // is the whole point of a stateless remote. Its synthetic `controller.<addr>`
+  // entity IS the device, so it must count as primary; otherwise the check
+  // below reads it as a non-primary sibling and drops it from every list.
   const isPrimary = entity.entity_id === g.primary_entity_id
+    || (g.card_kind === 'controller' && entity._controller === true)
   // Non-primary siblings drop out of the grid UNLESS the user promoted this one
   // to its own tile (B: e.g. surface a sensor's temperature as its own card).
   if (!isPrimary && !entity.is_tile) return null

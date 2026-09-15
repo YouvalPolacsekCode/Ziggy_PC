@@ -607,6 +607,7 @@ export default {
   'deviceDetail.renameTitle':     'Rename device',
   'deviceDetail.deviceNamePlaceholder':'Device name',
   'deviceDetail.renamed':         'Renamed',
+  'deviceDetail.controllerNotLinked': 'Ziggy can\u2019t reach this remote right now. Try again in a moment.',
   'deviceDetail.renameFailed':    'Rename failed',
   'deviceDetail.deleteTitle':     'Delete device?',
   'deviceDetail.deleteIrDescription':'Removes {name} and its learned IR codes for good. If it\'s linked to a smart device, that device is removed too. To use it again you\'ll set it up from scratch.',

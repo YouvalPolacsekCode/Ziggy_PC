@@ -13,7 +13,7 @@ import { Input } from '../components/ui/Input'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
-import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, getIrBlaster, setTilePref, setClassification, getClassifyOptions, selfHealRefresh, whoCanDo } from '../lib/api'
+import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, assignDeviceToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, renameHaDevice, getIrBlaster, setTilePref, setClassification, getClassifyOptions, selfHealRefresh, whoCanDo } from '../lib/api'
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn, normRoomSlug } from '../lib/utils'
 import { patchIrDevice } from '../lib/api'
@@ -564,12 +564,43 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   // store entity so the page renders rather than 404-ing.
   const isIrTarget = entityId?.startsWith('ir.')
 
+  // Controllers (controller.<address>) are the other pseudo-entity: a wireless
+  // remote emits events and holds no state, so it has no HA ENTITY at all —
+  // only an HA DEVICE row (created by MQTT discovery). Every entity-registry
+  // call below would therefore be rejected as an unknown entity and surface as
+  // "upstream unavailable", exactly as it did for IR. Route these through the
+  // device-registry endpoints using the group's ha_device_id instead.
+  const isControllerTarget = entityId?.startsWith('controller.')
+  const controllerDeviceId = group?.ha_device_id || liveEntity?.ha_device_id || null
+
   // Background details fetch — does NOT block first paint. The Controls tab
   // renders from `liveEntity` immediately; details only feed the Info tab and
   // the secondary widgets (diagnostics, siblings, automations) which were
   // previously gating the entire page on a 3+ HA-round-trip backend call.
   const load = async ({ background = true } = {}) => {
     try {
+      if (isControllerTarget) {
+        // No HA entity to fetch — synthesize a details-shaped object so the
+        // Info tab renders (and can offer rename / room) instead of showing
+        // "Couldn't load this device".
+        if (liveEntity) {
+          setDetails({
+            state: liveEntity.state,
+            last_changed: liveEntity.last_changed,
+            attributes: { friendly_name: liveEntity.friendly_name || liveEntity.display_name },
+            domain_meta: {},
+            diagnostics: {},
+            sibling_entities: [],
+            automations_using: [],
+            ha_device: {
+              manufacturer: liveEntity.manufacturer || null,
+              model: liveEntity.model || null,
+            },
+          })
+          setDetailsLoadFailed(false)
+        }
+        return
+      }
       if (isIrTarget) {
         // IR-only: synthesize a details-shaped object so the Info tab can render.
         if (liveEntity) {
@@ -685,6 +716,10 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
         const room = (rooms || []).find(r => (r.id ?? r.area_id ?? r.name) === roomId)
         const slug = roomId == null ? '' : (room ? normRoomSlug(room.name || '') : roomId)
         await patchIrDevice(entityId.slice(3), { room: slug })
+      } else if (isControllerTarget) {
+        // Device-registry area, not entity-registry: a controller has no entity.
+        if (!controllerDeviceId) throw new Error(t('deviceDetail.controllerNotLinked'))
+        await assignDeviceToArea(controllerDeviceId, roomId)
       } else {
         await assignEntityToArea(entityId, roomId)
       }
@@ -809,7 +844,14 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
     // to HA's entity registry + device registry, so HA-side surfaces stay
     // in sync.
     try {
-      await renameHaEntity(entityId, newName)
+      if (isControllerTarget) {
+        // Device-registry rename (name_by_user). renameHaEntity would be
+        // rejected — there is no entity behind a controller.
+        if (!controllerDeviceId) throw new Error(t('deviceDetail.controllerNotLinked'))
+        await renameHaDevice(controllerDeviceId, newName)
+      } else {
+        await renameHaEntity(entityId, newName)
+      }
       addToast(t('deviceDetail.renamed'), 'success')
       setShowRename(false)
 

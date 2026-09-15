@@ -605,6 +605,7 @@ export default {
   'deviceDetail.renameTitle':     'שינוי שם למכשיר',
   'deviceDetail.deviceNamePlaceholder':'שם המכשיר',
   'deviceDetail.renamed':         'השם שונה',
+  'deviceDetail.controllerNotLinked': '\u05d6\u05d9\u05d2\u05d9 \u05dc\u05d0 \u05de\u05e6\u05dc\u05d9\u05d7 \u05dc\u05d4\u05d2\u05d9\u05e2 \u05dc\u05e9\u05dc\u05d8 \u05db\u05e8\u05d2\u05e2. \u05e0\u05e1\u05d5 \u05e9\u05d5\u05d1 \u05e2\u05d5\u05d3 \u05e8\u05d2\u05e2.',
   'deviceDetail.renameFailed':    'שינוי השם נכשל',
   'deviceDetail.deleteTitle':     'למחוק את המכשיר?',
   'deviceDetail.deleteIrDescription':'מסיר את {name} ואת קודי האינפרא שנלמדו — לצמיתות. אם הוא מקושר למכשיר חכם, גם המכשיר הזה יוסר. כדי להשתמש בו שוב תצטרכו להגדיר אותו מחדש מאפס.',
