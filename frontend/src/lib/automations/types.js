@@ -12,6 +12,10 @@ export function getTriggerTypes() {
     // room has none). See TriggerEditor's occupancy block.
     { value: 'occupancy',    label: tStatic('automations.triggerOccupancy') },
     { value: 'state',        label: tStatic('automations.triggerState') },
+    // "When I press a button" — a physical wireless remote / scene switch.
+    // These devices hold no state, so they can never appear under the `state`
+    // trigger's entity picker; they get their own option backed by MQTT.
+    { value: 'controller',   label: tStatic('automations.triggerController') },
     // Periodic trigger — "every N minutes / hours". Backend: time_pattern.
     { value: 'time_pattern', label: tStatic('automations.triggerTimePattern') },
     { value: 'zone',         label: tStatic('automations.triggerZone') },

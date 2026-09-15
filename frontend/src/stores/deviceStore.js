@@ -45,6 +45,29 @@ function irToEntity(ir) {
   }
 }
 
+// Stateless controllers (wireless remotes, scene buttons) have no HA entity at
+// all — Zigbee2MQTT registers their presses as MQTT device triggers, which hold
+// no state. They arrive as groups with card_kind 'controller' and zero
+// entities, so without a synthetic entity here they render nowhere, exactly as
+// an Aqara H1M did: paired, working, and invisible. Same trick as irToEntity.
+function controllerToEntity(g) {
+  return {
+    entity_id:     `controller.${g.signature}`,
+    state:         'ready',
+    domain:        'controller',
+    display_name:  g.name,
+    friendly_name: g.name,
+    room:          g.room || null,
+    _controller:       true,
+    _controllerGroup:  g,
+    controller_id: g.signature,
+    actions:       g.actions || [],
+    manufacturer:  g.manufacturer || null,
+    model:         g.model_id || g.model || null,
+    capabilities:  [],
+  }
+}
+
 const HIDDEN_KEY = 'ziggy_hidden_entities'
 const loadHidden = () => { try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')) } catch { return new Set() } }
 const saveHidden = (s) => localStorage.setItem(HIDDEN_KEY, JSON.stringify([...s]))
@@ -489,7 +512,13 @@ export const useDeviceStore = create((set, get) => ({
       // Standalone IR entities: those NOT currently merged into an HA entity card
       const irEntities = irList.filter((ir) => !linkedIrIds.has(ir.id)).map(irToEntity)
 
-      const allEntities = [...haEntities, ...irEntities]
+      // Controllers come from the grouped endpoint (MQTT-sourced), not from
+      // the HA entity list — they have no entity to appear in it.
+      const controllerEntities = groupsList
+        .filter((g) => g && g.card_kind === 'controller')
+        .map(controllerToEntity)
+
+      const allEntities = [...haEntities, ...irEntities, ...controllerEntities]
 
       // Build group indexes once per fetch so lookups stay O(1) in render.
       const groupByEntityId = {}

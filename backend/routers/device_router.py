@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
 
 from core.errors import ErrorCode, ZiggyError, ha_unavailable
-from core.logger_module import log_info
+from core.logger_module import log_info, log_error
 from core.debug_bus import bus as _bus, BASIC as _BASIC, VERBOSE as _VERBOSE
 from core.settings_loader import save_settings, settings
 from services.ha_areas import (
@@ -515,7 +515,35 @@ async def get_devices_grouped():
     enriched = _get_enriched_devices()
     registry = await get_cached_registry_async()
     groups = build_groups(enriched, registry)
+
+    # Stateless controllers (wireless remotes, scene buttons) hold no HA state,
+    # so they never appear in `enriched` — they are sourced from MQTT instead
+    # and appended here. Failure is non-fatal: a broker hiccup must not empty
+    # the device list. See services/controllers.py for why they are invisible
+    # to the state-driven path.
+    try:
+        from services import controllers as _controllers
+        groups = groups + await _controllers.groups()
+    except Exception as e:
+        log_error(f"[devices] controller discovery skipped: {e}")
+
     return {"groups": groups}
+
+
+@router.get("/api/controllers")
+async def get_controllers():
+    """Stateless button/scene controllers and every action each can emit.
+
+    Backs the automation trigger picker ("when a button is pressed"), which
+    needs the full action list — including buttons that have never been
+    physically pressed and so were never registered by MQTT discovery.
+    """
+    from services import controllers as _controllers
+    try:
+        return {"controllers": await _controllers.list_controllers()}
+    except Exception as e:
+        log_error(f"[devices] list controllers: {e}")
+        return {"controllers": [], "error": str(e)}
 
 
 @router.post("/api/devices")

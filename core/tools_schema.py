@@ -825,14 +825,17 @@ TOOLS = [
             "name":              {"type": "string", "description": "Friendly name, e.g. 'Kitchen lights noon'"},
             "trigger_type":      {
                 "type": "string",
-                "enum": ["time", "state", "numeric_state", "sunrise", "sunset", "time_pattern"],
+                "enum": ["time", "state", "numeric_state", "sunrise", "sunset", "time_pattern", "controller"],
                 "description": (
                     "What triggers the automation. "
                     "Use 'time' for clock-based schedules. "
                     "Use 'state' for exact entity state matches (on/off/home). "
                     "Use 'numeric_state' for numeric sensor thresholds (temperature above 24, humidity below 60). "
                     "Use 'sunrise'/'sunset' for sun-based triggers. "
-                    "Use 'time_pattern' for periodic triggers (every N minutes, every N hours) — set trigger_minutes/hours/seconds."
+                    "Use 'time_pattern' for periodic triggers (every N minutes, every N hours) — set trigger_minutes/hours/seconds. "
+                    "Use 'controller' when the user presses a physical button on a wireless remote or scene switch "
+                    "('when I press the left button', 'when I double-tap the switch') — set trigger_controller_id "
+                    "and trigger_action from the `controllers` list in the home context."
                 ),
             },
             "trigger_time":      {"type": "string", "description": "HH:MM for time triggers, e.g. '07:00'"},
@@ -845,6 +848,8 @@ TOOLS = [
             "trigger_minutes":   {"type": "string", "description": "For time_pattern triggers: minutes interval. Use '/15' for 'every 15 minutes', '30' for 'at minute 30 of each hour'."},
             "trigger_hours":     {"type": "string", "description": "For time_pattern triggers: hours interval. Use '/2' for 'every 2 hours'."},
             "trigger_seconds":   {"type": "string", "description": "For time_pattern triggers: seconds interval. Use '/30' for 'every 30 seconds'."},
+            "trigger_controller_id": {"type": "string", "description": "For 'controller' triggers: the controller_id of the remote/button, taken verbatim from the `controllers` list in the home context. Never invent one."},
+            "trigger_action":    {"type": "string", "description": "For 'controller' triggers: which button/gesture, e.g. 'single_left', 'double_right', 'hold_both'. Must be one of the `action` values listed for that controller in the home context."},
             "mode":              {"type": "string", "enum": ["single", "restart", "queued", "parallel"], "description": "What happens when a new trigger fires while the automation is still running. 'single' (default) drops new triggers. 'restart' cancels the running instance and starts fresh — use for motion-driven automations so each new motion event resets any countdown. 'queued' runs sequentially. 'parallel' runs concurrently."},
             "action_room":       {"type": "string", "description": f"Room to act on. Options: {_ROOMS}"},
             "action_device_type":{"type": "string", "description": f"Device type to act on: {_automation_device_types()}"},
@@ -1023,10 +1028,12 @@ TOOLS = [
             "new_name":          {"type": "string", "description": "New name for the automation"},
             "description":       {"type": "string", "description": "New description"},
             "room":              {"type": "string", "description": f"Assign to this room. Options: {_ROOMS}. Pass empty string \"\" to unassign / remove from all rooms."},
-            "trigger_type":      {"type": "string", "enum": ["time", "state", "numeric_state", "sunrise", "sunset", "time_pattern"],
+            "trigger_type":      {"type": "string", "enum": ["time", "state", "numeric_state", "sunrise", "sunset", "time_pattern", "controller"],
                                   "description": "Change the trigger type"},
             "trigger_time":      {"type": "string", "description": "New HH:MM for time triggers"},
             "trigger_entity_id": {"type": "string", "description": "New entity ID or room name for state/numeric_state triggers"},
+            "trigger_controller_id": {"type": "string", "description": "New controller_id for 'controller' triggers"},
+            "trigger_action":    {"type": "string", "description": "New button/gesture for 'controller' triggers, e.g. 'single_left'"},
             "trigger_state":     {"type": "string", "description": "New state value for state triggers"},
             "trigger_above":     {"type": "number", "description": "New above threshold for numeric_state triggers"},
             "trigger_below":     {"type": "number", "description": "New below threshold for numeric_state triggers"},

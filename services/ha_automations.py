@@ -294,7 +294,46 @@ def _trigger_to_ha(t: dict) -> list:
             if v is not None and v != "":
                 cfg[field] = v
         return [cfg] if len(cfg) > 1 else []
+    if kind == "controller":
+        return _controller_trigger_to_ha(t)
     return []
+
+
+def _controller_trigger_to_ha(t: dict) -> list:
+    """A button press on a stateless controller → an HA `mqtt` trigger.
+
+    `mqtt` rather than `device`: it refires on every press (no state-change
+    dedupe to defeat, so pressing the same button twice works) and it is not
+    bound to an HA device-registry row that churns on re-pair.
+
+    The live topic from the discovery cache wins over any topic stored on the
+    trigger, so an automation keeps working if the device is re-paired. The
+    stored topic is the fallback for a cold cache — a hub that just restarted
+    must still be able to load its existing automations.
+    """
+    action = (t.get("action") or "").strip()
+    if not action:
+        return []
+    topic, payload = None, None
+    try:
+        from services import controllers as _controllers
+        for c in _controllers.cached():
+            if c.get("ieee") != t.get("controller_id"):
+                continue
+            for a in c.get("actions") or []:
+                if a.get("subtype") == action:
+                    topic, payload = a.get("topic"), a.get("payload")
+                    break
+            break
+    except Exception:
+        pass
+    if not topic:
+        topic, payload = t.get("topic"), t.get("payload") or action
+    if not topic:
+        # Emitting a trigger with no topic would be accepted by HA and then
+        # silently never fire — refuse instead.
+        return []
+    return [{"platform": "mqtt", "topic": topic, "payload": payload or action}]
 
 
 def _action_to_ha(a: dict) -> Optional[dict]:
@@ -389,7 +428,37 @@ def _ha_trigger_to_ziggy(ha_triggers: list) -> dict:
             if t.get(field) is not None:
                 result[field] = t[field]
         return result
+    if platform == "mqtt":
+        return _ha_mqtt_trigger_to_ziggy(t)
     return {}
+
+
+def _ha_mqtt_trigger_to_ziggy(t: dict) -> dict:
+    """Read an `mqtt` trigger back as a controller button, when it is one.
+
+    Matched against the discovered controllers rather than by parsing the
+    topic, so an unrelated MQTT trigger is never mislabelled as a button.
+    """
+    topic = t.get("topic") or ""
+    payload = t.get("payload")
+    payload = str(payload) if payload is not None else ""
+    try:
+        from services import controllers as _controllers
+        for c in _controllers.cached():
+            for a in c.get("actions") or []:
+                if a.get("topic") == topic and str(a.get("payload")) == payload:
+                    return {
+                        "type": "controller",
+                        "controller_id": c.get("ieee"),
+                        "controller_name": c.get("name"),
+                        "action": a.get("subtype"),
+                        "label": a.get("label"),
+                        "topic": topic,
+                        "payload": payload,
+                    }
+    except Exception:
+        pass
+    return {"type": "mqtt", "topic": topic, "payload": payload}
 
 
 def _ha_action_to_ziggy(a: dict) -> dict:

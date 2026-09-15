@@ -77,6 +77,49 @@ def _resolve_trigger_entity(raw: str) -> str:
     return resolved or raw
 
 
+def _resolve_controller_trigger(controller_id: str | None, action: str | None) -> dict:
+    """Validate a button trigger against the controllers actually in the house.
+
+    Returns {"trigger": {...}} or {"error": ..., "error_he": ...}. Matching by
+    name as well as id is deliberate: the assistant is told to pass the id
+    verbatim, but users say "the hallway switch", and failing on a name the
+    house plainly has would be worse than resolving it.
+    """
+    from services import controllers as _controllers
+    known = _controllers.cached()
+    if not known:
+        return {"error": "I can't see any wireless buttons or remotes in this home yet. "
+                         "Pair one first, then I can build this.",
+                "error_he": "אני לא רואה עדיין שלטים או כפתורים אלחוטיים בבית. "
+                            "אפשר לצוות אחד ואז אבנה את זה."}
+
+    wanted = (controller_id or "").strip().lower()
+    match = next((c for c in known if (c.get("ieee") or "").lower() == wanted), None)
+    if match is None:
+        match = next((c for c in known if (c.get("name") or "").strip().lower() == wanted), None)
+    if match is None:
+        names = ", ".join(c.get("name") or c.get("ieee") for c in known)
+        return {"error": f"I couldn't find that remote. The ones I know are: {names}.",
+                "error_he": f"לא מצאתי את השלט הזה. אלה שאני מכיר: {names}."}
+
+    act = (action or "").strip()
+    available = [a.get("subtype") for a in match.get("actions") or []]
+    if act not in available:
+        labels = ", ".join(a.get("label") for a in match.get("actions") or [])
+        return {"error": f"'{match.get('name')}' doesn't have that button. It offers: {labels}.",
+                "error_he": f"ל'{match.get('name')}' אין את הכפתור הזה. מה שיש: {labels}."}
+
+    chosen = next(a for a in match["actions"] if a.get("subtype") == act)
+    return {"trigger": {
+        "controller_id":   match.get("ieee"),
+        "controller_name": match.get("name"),
+        "action":          act,
+        "label":           chosen.get("label"),
+        "topic":           chosen.get("topic"),
+        "payload":         chosen.get("payload"),
+    }}
+
+
 async def handle_create_automation(params: dict, *, source: str = "unknown") -> dict:
     # Guard: both room and device type must be present before we attempt entity resolution.
     # Without them the handler would silently hallucinate a device (e.g. defaulting to
@@ -160,6 +203,16 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
                 trigger[dst] = v
         if not any(trigger.get(k) is not None for k in ("seconds", "minutes", "hours")):
             trigger["minutes"] = "/1"
+    elif trigger_type == "controller":
+        # Physical button on a stateless remote / scene switch. Both halves are
+        # taken verbatim from the `controllers` block of the home context; an
+        # invented id or gesture would compile to a trigger HA accepts and
+        # then never fires, so refuse instead of guessing.
+        resolved = _resolve_controller_trigger(
+            params.get("trigger_controller_id"), params.get("trigger_action"))
+        if resolved.get("error"):
+            return err(L(resolved["error"], resolved.get("error_he") or resolved["error"]))
+        trigger.update(resolved["trigger"])
 
     service_action = params.get("action_service", "turn_on")
     # Determine the HA domain of the resolved entity so we can call domain-specific services
@@ -176,6 +229,11 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
             default_name = f"{room_display} {device} {verb} at {params.get('trigger_time', '?')}"
         elif trigger_type in ("sunrise", "sunset"):
             default_name = f"{room_display} {device} {verb} at {trigger_type}"
+        elif trigger_type == "controller":
+            # "Hallway Switch: Left button — single press → Office light on"
+            default_name = (f"{trigger.get('controller_name') or 'Button'}: "
+                            f"{trigger.get('label') or trigger.get('action')} → "
+                            f"{room_display} {device} {verb}")
         else:
             default_name = f"{room_display} {device} {verb}"
     else:

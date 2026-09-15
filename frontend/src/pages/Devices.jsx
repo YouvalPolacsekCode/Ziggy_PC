@@ -1824,13 +1824,18 @@ const DeviceCard = forwardRef(function DeviceCard({
   const t = useT()
   const navigate = useNavigate()
   const isIr = entity._ir === true
+  // Stateless controller (wireless remote / scene button): no HA entity, no
+  // state, nothing to send it — the card lists its buttons instead.
+  const isController = entity._controller === true
+  const controllerActions = isController ? (entity.actions || []) : []
+  const [controllerExpanded, setControllerExpanded] = useState(false)
   const irDevice = entity._irDevice
   const linkedIr = entity._linkedIr || null  // IR device linked to this HA entity
 
   const isOn = isEntityOn(entity)
   const isOff = entity.state === 'off' || entity.state === 'unavailable' || entity.state === 'unknown'
   const isToggleable = !isIr && TOGGLEABLE_DOMAINS.has(entity.domain) && entity.state !== 'unavailable'
-  const { primary: stateLabel, secondary: stateSecondary } = (!isIr && !isHidden)
+  const { primary: stateLabel, secondary: stateSecondary } = (!isIr && !isController && !isHidden)
     ? formatEntityState(entity)
     : { primary: isHidden ? t('devices.hidden') : '', secondary: null }
   const isActive = !isOff
@@ -2048,7 +2053,53 @@ const DeviceCard = forwardRef(function DeviceCard({
         </p>
 
         {/* ── State ── */}
-        {isIr ? (
+        {isController ? (
+          // A controller has no state to show — it is a thing you press. So the
+          // card answers the only question that matters: which buttons does it
+          // have, and can I build something on them? Each button deep-links
+          // into the automation wizard pre-armed with that trigger.
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <p className="text-xs text-ink-mute">
+              {t('devices.controller.buttonCount', { count: controllerActions.length })}
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {controllerActions.slice(0, controllerExpanded ? undefined : 4).map((a) => (
+                <button
+                  key={a.subtype}
+                  onClick={() => navigate(
+                    `/automations?new=1&trigger=controller` +
+                    `&controller_id=${encodeURIComponent(entity.controller_id)}` +
+                    `&action=${encodeURIComponent(a.subtype)}`
+                  )}
+                  title={t('devices.controller.useAsTrigger')}
+                  style={{
+                    fontSize: 10.5, fontWeight: 600, padding: '3px 8px',
+                    borderRadius: 999, cursor: 'pointer',
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface-2)', color: 'var(--ink)',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {a.label}
+                </button>
+              ))}
+              {controllerActions.length > 4 && (
+                <button
+                  onClick={() => setControllerExpanded(v => !v)}
+                  style={{
+                    fontSize: 10.5, fontWeight: 600, padding: '3px 8px',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--accent)', fontFamily: 'inherit',
+                  }}
+                >
+                  {controllerExpanded
+                    ? t('devices.controller.showLess')
+                    : t('devices.controller.showAll', { count: controllerActions.length - 4 })}
+                </button>
+              )}
+            </div>
+          </div>
+        ) : isIr ? (
           // Standalone IR: assumed state chip with picker, plus a "Show controls"
           // affordance for controllable kinds (AC, TV, fan, etc.) — same as the
           // HA branch below.

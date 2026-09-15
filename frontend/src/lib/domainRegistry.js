@@ -18,6 +18,21 @@ import { t as _t } from './i18n'
 
 export const DOMAIN_REGISTRY = {
 
+  // ── Controllers ───────────────────────────────────────────────────────────
+  // Wireless remotes and scene buttons. A synthetic domain: these devices have
+  // no Home Assistant entity at all (their presses are stateless MQTT device
+  // triggers), so deviceStore mints `controller.<address>` pseudo-entities for
+  // them. Not controllable — you press it, Ziggy reacts; there is nothing to
+  // send back to it.
+  controller: {
+    label: 'Button', icon: '🎚️', group: 'controllers',
+    controllable: false, toggleable: false,
+    activeStates: [],
+    restoreOnReconnect: false, safetyLevel: 'none',
+    actions: {},
+    stateLabels: { ready: 'Ready' },
+  },
+
   // ── Lights ────────────────────────────────────────────────────────────────
   light: {
     label: 'Light', icon: '💡', group: 'lights',
@@ -296,12 +311,13 @@ export const TOGGLEABLE_DOMAINS = new Set(
 // Group helpers
 // ---------------------------------------------------------------------------
 
-const GROUP_ORDER = ['lights', 'climate', 'media', 'switches', 'cover', 'security', 'water', 'sensors', 'other']
+const GROUP_ORDER = ['lights', 'climate', 'media', 'switches', 'controllers', 'cover', 'security', 'water', 'sensors', 'other']
 const GROUP_LABELS = {
   lights:   'Lights',
   climate:  'Climate',
   media:    'Media',
   switches: 'Switches',
+  controllers: 'Buttons & Remotes',
   cover:    'Covers & Blinds',
   security: 'Security',
   water:    'Water',

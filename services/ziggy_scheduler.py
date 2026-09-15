@@ -297,6 +297,15 @@ async def _device_registry_reconcile_tick() -> None:
         log_error(f"[Scheduler] registry refresh failed: {exc}")
 
 
+async def _controllers_refresh_tick() -> None:
+    """Re-read stateless controllers from MQTT retained discovery."""
+    try:
+        from services import controllers
+        await controllers.refresh(force=True)
+    except Exception as exc:
+        log_error(f"[Scheduler] controller refresh failed: {exc}")
+
+
 async def _fire_presence_automation(trigger_type: str, name: str) -> None:
     """Fire all enabled automations matching the given presence trigger_type and person."""
     try:
@@ -518,6 +527,19 @@ async def run_scheduler() -> None:
                 await _device_registry_reconcile_tick()
             except Exception as exc:
                 log_error(f"[Scheduler] Device registry reconcile tick failed: {exc}")
+
+        # ── Every 2 minutes: refresh stateless controllers ───────────────────
+        # Wireless remotes hold no HA state, so the registry reconcile above
+        # cannot see them; they are read from MQTT retained discovery instead.
+        # Keeping the cache warm here is what lets the chat assistant answer
+        # "when I press the left button…" — load_home_context() is sync and
+        # only reads the cache, so a cold cache means the assistant is blind
+        # to every remote in the house.
+        if _tick % 2 == 0:
+            try:
+                await _controllers_refresh_tick()
+            except Exception as exc:
+                log_error(f"[Scheduler] Controller refresh tick failed: {exc}")
 
         # ── Daily: encrypted backup to B2 (DESIGN_BACKUP_DR.md §6) ───────────
         # Time-of-day gated, off unless backup.enabled=true in settings.

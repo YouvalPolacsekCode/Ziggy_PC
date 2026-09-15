@@ -66,8 +66,30 @@ function TriggerEditor({ trigger, onChange }) {
     // Occupancy — friendly wrapper resolved to a state trigger on save.
     // Israeli default: turn off after 5 minutes of no motion (state 'off').
     else if (next === 'occupancy') onChange({ type: 'occupancy', room: '', entity_id: '', state: 'on', for_minutes: undefined })
+    // Button press — pre-select the only remote when the house has just one,
+    // so the common case is a single click rather than two.
+    else if (next === 'controller') {
+      const only = controllers.length === 1 ? controllers[0] : null
+      onChange({
+        type: 'controller',
+        controller_id: only?.controller_id || '',
+        action: '',
+      })
+    }
     else                         onChange({ ...trigger, type: next })
   }
+
+  // ── controller helpers ────────────────────────────────────────────────────
+  // Controllers are stateless, so they are not in `entities` as real HA
+  // entities — deviceStore mints `controller.*` pseudo-entities for them.
+  const controllers = (entities || [])
+    .filter(e => e._controller)
+    .map(e => ({
+      controller_id: e.controller_id,
+      name: e.display_name,
+      actions: e.actions || [],
+    }))
+  const selectedController = controllers.find(c => c.controller_id === trigger.controller_id) || null
 
   // ── time_pattern helpers ──────────────────────────────────────────────────
   const tpUnit = ['minutes', 'hours', 'seconds'].find(u => trigger[u] != null && trigger[u] !== '') || 'minutes'
@@ -122,6 +144,37 @@ function TriggerEditor({ trigger, onChange }) {
           value={(trigger.time || '').slice(0, 5)}
           onChange={e => onChange({ ...trigger, type: 'time', time: e.target.value })}
         />
+      )}
+
+      {uiType === 'controller' && (
+        controllers.length === 0 ? (
+          <FieldHint>{t('automations.controller.none')}</FieldHint>
+        ) : (
+          <>
+            {controllers.length > 1 && (
+              <Select
+                label={t('automations.controller.deviceLabel')}
+                options={[
+                  { value: '', label: t('automations.controller.devicePlaceholder') },
+                  ...controllers.map(c => ({ value: c.controller_id, label: c.name })),
+                ]}
+                value={trigger.controller_id || ''}
+                onChange={e => onChange({ type: 'controller', controller_id: e.target.value, action: '' })}
+              />
+            )}
+            <Select
+              label={t('automations.controller.actionLabel')}
+              options={[
+                { value: '', label: t('automations.controller.actionPlaceholder') },
+                ...((selectedController?.actions) || []).map(a => ({ value: a.subtype, label: a.label })),
+              ]}
+              value={trigger.action || ''}
+              onChange={e => onChange({ ...trigger, type: 'controller', action: e.target.value })}
+              disabled={!selectedController}
+            />
+            <FieldHint>{t('automations.controller.hint')}</FieldHint>
+          </>
+        )
       )}
 
       {uiType === 'state' && (

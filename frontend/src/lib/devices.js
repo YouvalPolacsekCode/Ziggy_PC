@@ -61,6 +61,7 @@ export const KIND = {
   POWER_METER:  'power_meter',
   BINARY:       'binary',
   PERSON:       'person',
+  CONTROLLER:   'controller',
   UNKNOWN:      'unknown',
 }
 
@@ -95,6 +96,7 @@ const KIND_META = {
   lamp:         { label: 'Lamp',       tint: 'var(--gold)',   group: 'lights',   toggle: true,  controllable: true,  icon: '💡' },
   led_strip:    { label: 'LED Strip',  tint: 'var(--gold)',   group: 'lights',   toggle: true,  controllable: true,  icon: '🪩' },
   switch:       { label: 'Switch',     tint: 'var(--info)',   group: 'switches', toggle: true,  controllable: true,  icon: '🎛️' },
+  controller:   { label: 'Button',     tint: 'var(--info)',   group: 'controllers', toggle: false, controllable: false, icon: '🎚️' },
   plug:         { label: 'Plug',       tint: 'var(--info)',   group: 'switches', toggle: true,  controllable: true,  icon: '🔌' },
   tv:           { label: 'TV',         tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '📺' },
   soundbar:     { label: 'Soundbar',   tint: 'var(--accent)', group: 'media',    toggle: true,  controllable: true,  icon: '🔊' },
@@ -348,6 +350,11 @@ export function getKind(entity) {
   if (!entity) return KIND.UNKNOWN
   if (entity._ir && entity._irDevice) {
     return IR_TYPE_TO_KIND[entity._irDevice.type] || KIND.SWITCH
+  }
+  // Stateless controller (wireless remote / scene button). Minted by
+  // deviceStore as `controller.<address>`; there is no HA domain to switch on.
+  if (entity._controller) {
+    return KIND.CONTROLLER
   }
   if (_isWaterHeaterEntity(entity)) {
     return KIND.WATER_HEATER

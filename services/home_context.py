@@ -511,6 +511,36 @@ def _available_blueprints_compact() -> list[dict]:
 # ── Public entry point ──────────────────────────────────────────────────────
 
 
+def _controllers_compact() -> list[dict]:
+    """Stateless button/scene controllers the assistant can hang automations on.
+
+    These hold no state, so they never appear under a room's `entities` — but
+    "when I press the left button, turn on the lamp" is one of the most natural
+    things to ask for, and the assistant cannot offer it if it cannot see the
+    remote. Reads the discovery cache only: `load_home_context` is sync and
+    must never block on the broker.
+    """
+    try:
+        from services import controllers as _controllers
+        out = []
+        for c in _controllers.cached():
+            out.append({
+                "controller_id": c.get("ieee"),
+                "name":          c.get("name"),
+                "model":         c.get("model_id") or c.get("model"),
+                # The assistant passes `action` straight back into
+                # create_automation's controller trigger.
+                "actions":       [
+                    {"action": a.get("subtype"), "label": a.get("label")}
+                    for a in c.get("actions") or []
+                ],
+            })
+        return out
+    except Exception as e:
+        log_error(f"[home_context] controllers unavailable: {e}")
+        return []
+
+
 def load_home_context(language: str = "en") -> dict:
     """Assemble a compact, JSON-serializable snapshot of the user's home.
 
@@ -576,6 +606,7 @@ def load_home_context(language: str = "en") -> dict:
         "house":                house,
         "persons":              _persons_compact(),
         "rooms":                rooms,
+        "controllers":          _controllers_compact(),
         "integrations":         _fetch_integrations_sync(),
         "existing_automations": _existing_automations_compact(),
         "available_blueprints": _available_blueprints_compact(),

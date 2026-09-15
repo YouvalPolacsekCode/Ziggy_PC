@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 import threading
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -28,6 +29,10 @@ from core.logger_module import log_error
 _DEFAULT_BROKER = "mqtt://mosquitto:1883"
 _CONNECT_TIMEOUT_S = 5.0
 _PUBLISH_TIMEOUT_S = 5.0
+# Wildcard retained-backlog drain (see `collect_retained`): stop after this
+# long with no new message, and never hold the connection open past the cap.
+_COLLECT_SETTLE_S = 0.6
+_COLLECT_MAX_S = 10.0
 
 
 def _broker_url() -> str:
@@ -215,6 +220,88 @@ async def read_retained(topic: str, timeout: float = 3.0) -> Any:
     if raw is None:
         return None
     return _decode_retained(raw)
+
+
+def _collect_retained_sync(topic_filters: list[str], settle_s: float) -> list[tuple[str, bytes]]:
+    """Subscribe to one or more filters, drain the retained backlog, disconnect.
+
+    Distinct from `_read_retained_sync`, which fetches ONE known topic. Here the
+    topics are not known ahead of time (`homeassistant/device_automation/#`), so
+    there is nothing to wait *for*: retained messages arrive in a burst after
+    SUBACK and the broker never says "that's all of them". We therefore wait
+    `settle_s` after the *last* message rather than a fixed total — a hub with
+    200 retained discovery topics needs longer than one with 5, and a fixed
+    multi-second poll on every device-list fetch would be its own problem.
+    """
+    host, port, tls, user, pw = _parse_broker(_broker_url())
+    if user is None:
+        fb_user, fb_pw = _settings_credentials()
+        if fb_user is not None:
+            user = fb_user
+            pw = pw if pw is not None else fb_pw
+
+    client = mqtt_client.Client(callback_api_version=mqtt_client.CallbackAPIVersion.VERSION2)
+    if user is not None:
+        client.username_pw_set(user, pw or "")
+    if tls:
+        client.tls_set()
+
+    out: list[tuple[str, bytes]] = []
+    lock = threading.Lock()
+    last = threading.Event()
+    connack: dict = {"rc": None}
+    ready = threading.Event()
+
+    def _on_connect(c, _u, _flags, reason_code, _props):
+        connack["rc"] = reason_code
+        ready.set()
+        if not getattr(reason_code, "is_failure", False):
+            c.subscribe([(f, 0) for f in topic_filters])
+
+    def _on_message(_c, _u, msg):
+        with lock:
+            out.append((msg.topic, bytes(msg.payload)))
+        last.set()
+
+    client.on_connect = _on_connect
+    client.on_message = _on_message
+
+    client.connect(host, port, keepalive=int(_CONNECT_TIMEOUT_S * 2))
+    client.loop_start()
+    try:
+        if not ready.wait(timeout=_CONNECT_TIMEOUT_S):
+            raise RuntimeError("MQTT connect timeout (no CONNACK)")
+        rc = connack["rc"]
+        is_fail = getattr(rc, "is_failure", None)
+        if is_fail is True or (is_fail is None and int(rc) != 0):
+            raise RuntimeError(f"MQTT connect failed: {rc}")
+        deadline = time.monotonic() + _COLLECT_MAX_S
+        while time.monotonic() < deadline:
+            last.clear()
+            if not last.wait(timeout=settle_s):
+                break  # nothing new for settle_s -> backlog drained
+    finally:
+        client.loop_stop()
+        client.disconnect()
+    with lock:
+        return list(out)
+
+
+async def collect_retained(topic_filters: str | list[str],
+                           settle_s: float = _COLLECT_SETTLE_S) -> list[tuple[str, Any]]:
+    """Read every retained message under one or more topic filters.
+
+    Payloads are decoded with `_decode_retained`, EXCEPT an empty payload, which
+    yields None. That distinction matters: publishing an empty retained payload
+    is how MQTT retracts a topic, and a caller must be able to tell "this was
+    withdrawn" from "this is an empty object".
+    """
+    filters = [topic_filters] if isinstance(topic_filters, str) else list(topic_filters)
+    raw = await asyncio.to_thread(_collect_retained_sync, filters, settle_s)
+    decoded: list[tuple[str, Any]] = []
+    for topic, body in raw:
+        decoded.append((topic, _decode_retained(body) if body else None))
+    return decoded
 
 
 async def publish(topic: str, payload: Any, qos: int = 0) -> None:
