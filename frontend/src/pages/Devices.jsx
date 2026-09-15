@@ -21,7 +21,7 @@ import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { domainIcon, formatEntityState } from '../lib/utils'
 import { DOMAIN_GROUPS, domainGroup, groupLabel } from '../lib/domainRegistry'
-import { controlDevice, assignEntityToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms, getIrUnassignedSignals, assignIrUnassignedSignal, dismissIrUnassignedSignal, getIrCatalog, irAddCustomCommand, irRemoveCustomCommand, irSaveSequence, irDeleteSequence, irRunSequence, removeRegistryEntity, deleteSmartSensor, reconcileSmartSensors, listIrBlasters } from '../lib/api'
+import { controlDevice, assignEntityToArea, assignDeviceToArea, callHaService, getIrDevices, deleteIrDevice, patchIrDevice, irLearn, irSend, irSendChannel, getAllRooms, getIrUnassignedSignals, assignIrUnassignedSignal, dismissIrUnassignedSignal, getIrCatalog, irAddCustomCommand, irRemoveCustomCommand, irSaveSequence, irDeleteSequence, irRunSequence, removeRegistryEntity, deleteSmartSensor, reconcileSmartSensors, listIrBlasters } from '../lib/api'
 import { cn, entityDisplayName } from '../lib/utils'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
@@ -1506,7 +1506,12 @@ function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extra
   const btnRef = useRef(null)
   const menuRef = useRef(null)
 
-  const currentRoom = rooms.find((r) => (r.entities || []).includes(entity.entity_id))
+  // A controller has no HA entity, so it appears in no room's `entities` list —
+  // the lookup below can never find it and the menu showed "No Room" even when
+  // the device was assigned. Its room travels on the entity itself instead.
+  const currentRoom = entity?._controller
+    ? rooms.find((r) => r.id === entity.room) || null
+    : rooms.find((r) => (r.entities || []).includes(entity.entity_id))
 
   const NAV_HEIGHT = 64
 
@@ -2492,6 +2497,14 @@ export default function Devices() {
           ? ''
           : room ? normRoomSlug(room.name) : roomId
         await patchIrDevice(irId, { room: roomSlug })
+      } else if (entityId?.startsWith('controller.')) {
+        // Controllers have no HA entity — assign via the DEVICE registry.
+        // assignEntityToArea would be rejected as an unknown entity and surface
+        // as "upstream unavailable", which is exactly what it did.
+        const ent = entities.find((e) => e.entity_id === entityId)
+        const deviceId = ent?.ha_device_id || ent?._group?.ha_device_id
+        if (!deviceId) throw new Error(t('deviceDetail.controllerNotLinked'))
+        await assignDeviceToArea(deviceId, roomId)
       } else {
         await assignEntityToArea(entityId, roomId)
       }

@@ -884,6 +884,31 @@ async def get_rooms_with_devices():
         else:
             room_devices.setdefault(_canonical_room_key(room), []).append(d)
 
+    # Stateless controllers (wireless remotes) are not in the device registry —
+    # they have no HA entity, so `devices` above can never contain them. Without
+    # this they vanish from every room view: assigning one to a room appeared to
+    # succeed and then no card showed up anywhere.
+    try:
+        from services import controllers as _controllers
+        for g in await _controllers.groups():
+            row = {
+                "entity_id":   f"controller.{g['signature']}",
+                "name":        g.get("name"),
+                "display_name": g.get("name"),
+                "room":        g.get("room"),
+                "device_type": "controller",
+                "status":      g.get("status") or "connected",
+                "domain":      "controller",
+                "ha_device_id": g.get("ha_device_id"),
+            }
+            room = g.get("room")
+            if room:
+                room_devices.setdefault(_canonical_room_key(room), []).append(row)
+            else:
+                no_room.append(row)
+    except Exception as e:
+        log_error(f"[rooms] controllers skipped: {e}")
+
     all_room_keys = set(room_devices.keys()) | set(area_by_id.keys())
     rooms_out = []
     for room_key in sorted(all_room_keys):
