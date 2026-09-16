@@ -151,17 +151,20 @@ function TriggerEditor({ trigger, onChange }) {
           <FieldHint>{t('automations.controller.none')}</FieldHint>
         ) : (
           <>
-            {controllers.length > 1 && (
-              <Select
-                label={t('automations.controller.deviceLabel')}
-                options={[
-                  { value: '', label: t('automations.controller.devicePlaceholder') },
-                  ...controllers.map(c => ({ value: c.controller_id, label: c.name })),
-                ]}
-                value={trigger.controller_id || ''}
-                onChange={e => onChange({ type: 'controller', controller_id: e.target.value, action: '' })}
-              />
-            )}
+            {/* Always shown, even with one remote: the automation says WHICH
+                device it listens to, and hiding that made it unclear what a
+                second remote would do. With one it is pre-selected. */}
+            <Select
+              label={t('automations.controller.deviceLabel')}
+              options={[
+                ...(controllers.length > 1
+                  ? [{ value: '', label: t('automations.controller.devicePlaceholder') }]
+                  : []),
+                ...controllers.map(c => ({ value: c.controller_id, label: c.name })),
+              ]}
+              value={trigger.controller_id || ''}
+              onChange={e => onChange({ type: 'controller', controller_id: e.target.value, action: '' })}
+            />
             <Select
               label={t('automations.controller.actionLabel')}
               options={[

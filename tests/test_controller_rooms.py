@@ -81,3 +81,44 @@ async def test_controller_discovery_failure_does_not_break_the_rooms_page(monkey
     monkeypatch.setattr(C, "groups", boom)
     payload = await dr.get_rooms_with_devices()
     assert "rooms" in payload and isinstance(payload["rooms"], list)
+
+
+# ── Cache invalidation ─────────────────────────────────────────────────────
+# A controller's room and name come from HA's device registry through a 60s
+# cache. Assigning a room returned ok and then the UI refetched and got the OLD
+# room straight back, so the change looked like it silently failed. Proven on
+# Canary: assign -> ok, groups() still reported the previous room until a
+# forced refresh.
+
+@pytest.mark.asyncio
+async def test_assigning_an_area_drops_the_controller_cache(monkeypatch):
+    called = {"n": 0}
+    monkeypatch.setattr(C, "invalidate", lambda: called.__setitem__("n", called["n"] + 1))
+
+    async def ok(device_id, area_id):
+        return {"ok": True}
+    monkeypatch.setattr(dr, "assign_device_to_area", ok)
+
+    async def noop(*a, **kw):
+        return None
+    monkeypatch.setattr(dr, "_sync_device_to_registry_room", noop)
+    monkeypatch.setattr(dr, "_refresh_device_registry", lambda *a, **kw: None)
+
+    await dr.patch_device_area(DEVID, dr.DeviceAreaPatch(area_id="bedroom"))
+    assert called["n"] == 1, "a stale cache is what made the assign look like a no-op"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_assign_does_not_pretend_to_succeed(monkeypatch):
+    async def fail(device_id, area_id):
+        return {"ok": False, "error": "nope"}
+    monkeypatch.setattr(dr, "assign_device_to_area", fail)
+    with pytest.raises(Exception):
+        await dr.patch_device_area(DEVID, dr.DeviceAreaPatch(area_id="bedroom"))
+
+
+def test_cache_invalidate_forces_the_next_read_to_refetch():
+    C._cache["controllers"] = [{"ieee": "x", "name": "stale", "actions": []}]
+    C._cache["at"] = 10_000_000.0
+    C.invalidate()
+    assert C._cache["at"] == 0.0, "next refresh() must not short-circuit on TTL"

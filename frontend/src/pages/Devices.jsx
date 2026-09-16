@@ -1500,6 +1500,11 @@ function AssignRoomDropdown({ entityId, rooms, onAssign }) {
 
 // ── Per-card "…" context menu ─────────────────────────────────────────────────
 function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extraItems = [] }) {
+  // Controllers keep ONE room control, on the device's Info tab. Offering it
+  // here too meant two paths to the same setting with different plumbing (this
+  // one went through the entity registry, which a controller has no place in),
+  // so the menu's room section is hidden for them.
+  const allowRoomAssign = !entity?._controller
   const t = useT()
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: undefined, right: 0 })
@@ -1570,6 +1575,7 @@ function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extra
             className="w-48 bg-surface rounded-xl shadow-2xl border border-line overflow-hidden"
           >
             <div className="py-1">
+              {allowRoomAssign && (<>
               {currentRoom && (
                 <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-ok shrink-0" />
@@ -1609,6 +1615,7 @@ function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extra
                   {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-accent">✓</span>}
                 </button>
               ))}
+              </>)}
               <div className="border-t border-line mt-1 pt-1">
                 <button
                   onClick={() => {

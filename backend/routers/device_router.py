@@ -953,6 +953,17 @@ async def patch_device_area(device_id: str, body: DeviceAreaPatch):
     result = await assign_device_to_area(device_id, body.area_id or None)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
+    # A controller's room lives in HA's device registry and is cached for 60s by
+    # services.controllers. Without dropping that cache here, the UI refetches
+    # right after a successful assign and gets the OLD room back — the change
+    # looked like it silently failed. Verified on Canary: assign returned ok,
+    # groups() still reported the previous room until a forced refresh.
+    try:
+        from services import controllers as _controllers
+        _controllers.invalidate()
+    except Exception as e:
+        log_error(f"[devices] controller cache invalidate failed: {e}")
+
     # Sync room into registry immediately so the Rooms page updates without waiting
     # for the 60-second background reconciliation loop.
     try:

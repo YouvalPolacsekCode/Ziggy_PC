@@ -115,6 +115,13 @@ async def ha_device_entities(device_id: str):
 @router.patch("/api/ha/devices/{device_id}/rename")
 async def ha_rename_device(device_id: str, body: DeviceRename):
     result = await zigbee_rename_device(device_id, body.name)
+    # Controllers read their name from HA's device registry through a 60s cache;
+    # drop it so the new name shows up now rather than up to a minute later.
+    try:
+        from services import controllers as _controllers
+        _controllers.invalidate()
+    except Exception:
+        pass
     if not result.get("ok"):
         raise ZiggyError(
             code=ErrorCode.HA_SERVICE_FAILED,
