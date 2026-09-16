@@ -15,6 +15,7 @@ import { useT, useLang, translateNamePhrase, t as translateWithLang } from '../l
 import { T_ENTER, T_STATE, T_PRESS } from '../lib/motion'
 import BundlePreviewCard from '../components/automations/BundlePreviewCard'
 import ChatCard from '../components/chat/ChatCards'
+import Logo from '../components/ui/Logo'
 import { useFollowNavigateCards } from '../components/chat/useFollowNavigateCards'
 
 // The chat envelope may carry `data.card` — the last renderable tool result of
@@ -111,6 +112,20 @@ function PatternCard({ msg, onSaveRoutine }) {
         )}
       </div>
     </motion.div>
+  )
+}
+
+// ── Ziggy's avatar ────────────────────────────────────────────────────────────
+// The shared symbol beside everything Ziggy says, including the thinking dots.
+// It marks the speaker: the bubble side already implies it, but the mark makes
+// it immediate and gives the dots an owner. Purely decorative — every bubble it
+// sits beside already carries an aria-label naming him, so repeating it here
+// would just double up in a screen reader.
+function ZiggyAvatar() {
+  return (
+    <span className="zc-avatar" aria-hidden="true">
+      <Logo variant="symbol" height={16} decorative />
+    </span>
   )
 }
 
@@ -274,7 +289,7 @@ function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
     ? { initial: false }
     : { initial: { opacity: 0, y: hasCard ? 8 : 6 }, animate: { opacity: 1, y: 0 }, transition: T_ENTER }
 
-  return (
+  const body = (
     <motion.div
       {...enter}
       className={hasCard ? 'zc-msg' : undefined}
@@ -287,6 +302,9 @@ function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
         // against (.zc-msg: full width, capped at 1180px).
         ...(hasCard ? {} : { maxWidth: '88%' }),
         alignSelf: isUser ? 'flex-end' : 'flex-start',
+        // Inside the avatar row this is the flexible half; on its own it is
+        // unaffected (a flex child's basis only matters in a flex parent).
+        minWidth: 0,
       }}
     >
       {hasCard ? (
@@ -302,6 +320,27 @@ function Message({ msg, onBundleAccept, onBundleDiscard, onAsk }) {
         </div>
       ) : textBlock}
     </motion.div>
+  )
+
+  // The user's own turn needs no avatar — the side of the column already says
+  // whose it is, and a self-portrait next to your own words adds nothing.
+  if (isUser) return body
+
+  // Ziggy's turn gets his mark. The bubble already carries `aria-label` naming
+  // him, so this is decorative and stays out of the screen-reader path.
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 8,
+        alignItems: 'flex-start',
+        alignSelf: 'flex-start',
+        ...(hasCard ? { width: '100%' } : { maxWidth: '92%' }),
+      }}
+    >
+      <ZiggyAvatar />
+      {body}
+    </div>
   )
 }
 
@@ -427,8 +466,9 @@ function ThinkingBubble({ mode }) {
       <div
         role="status"
         aria-label={`${t('chat.ziggy')} · ${t('chat.thinking')}`}
-        style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'flex-start' }}
+        style={{ display: 'flex', gap: 8, alignItems: 'flex-start', alignSelf: 'flex-start' }}
       >
+        <ZiggyAvatar />
         <div style={{ ...bubbleStyle, gap: 6 }}>{dots}</div>
       </div>
     )
@@ -445,8 +485,9 @@ function ThinkingBubble({ mode }) {
     <div
       role="status"
       aria-label={t('chat.ziggy')}
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'flex-start' }}
+      style={{ display: 'flex', gap: 8, alignItems: 'flex-start', alignSelf: 'flex-start' }}
     >
+      <ZiggyAvatar />
       <div className="z-subhead" style={bubbleStyle}>
         <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>{dots}</span>
         <motion.span

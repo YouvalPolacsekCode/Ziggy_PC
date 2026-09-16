@@ -43,7 +43,7 @@ const warned = new Set()
  *        reserve a standalone wordmark for. The bilingual lockup stays the
  *        signature on language-neutral surfaces like sign-in.
  * @param {number} height    drawn height in px; width follows the artwork ratio
- * @param {'auto'|'light'|'dark'} tone
+ * @param {'auto'|'light'|'dark'|'invert'} tone
  *        which *surface* the logo sits on — 'light' picks the black artwork,
  *        'dark' the reversed warm-white one.
  *
@@ -103,16 +103,22 @@ export default function Logo({
 
   const src = (dark) => `/brand/ziggy-${key}${dark ? '-dark' : ''}.svg`
 
-  if (tone !== 'auto') {
+  if (tone !== 'auto' && tone !== 'invert') {
     return <img src={src(tone === 'dark')} className={className} {...common} />
   }
 
   // Both are emitted; CSS shows exactly one, so only the visible image reaches
   // the accessibility tree (`display:none` removes the other).
+  //
+  // 'invert' swaps which artwork each class carries, for a mark sitting on a
+  // filled surface that already opposes the palette — the chat button is
+  // `background: var(--ink)`, so it is dark while the page is light. The CSS
+  // rules are untouched; only the file behind each class changes.
+  const flip = tone === 'invert'
   return (
     <>
-      <img src={src(false)} className={`ziggy-logo-light ${className}`} {...common} />
-      <img src={src(true)}  className={`ziggy-logo-dark ${className}`}  {...common} />
+      <img src={src(flip)}  className={`ziggy-logo-light ${className}`} {...common} />
+      <img src={src(!flip)} className={`ziggy-logo-dark ${className}`}  {...common} />
     </>
   )
 }

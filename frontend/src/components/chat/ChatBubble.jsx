@@ -24,7 +24,7 @@ import { useChatStore, CHAT_DOCK_QUERY } from '../../stores/chatStore'
 import { useMediaQuery } from '../../wall/useMediaQuery'
 import { useWsMessages } from '../../hooks/useWebSocket'
 import { useT } from '../../lib/i18n'
-import { ZIcon } from '../layout/ZIcon'
+import Logo from '../ui/Logo'
 import './chatBubble.css'
 
 // Routes that carry their own chat (or none at all). Prefix match on a path
@@ -100,7 +100,11 @@ export function ChatBubble() {
       aria-haspopup="dialog"
       onClick={() => setChatSheet(true)}
     >
-      <ZIcon name="sparkle" size={24} stroke={1.75} color="var(--bg)" />
+      {/* Ziggy's own mark, not a generic sparkle — this is the one button that
+          reaches him. `invert` because the bubble is filled with --ink, so its
+          artwork opposes the page. Decorative: aria-label above already names
+          the button. */}
+      <Logo variant="symbol" height={26} tone="invert" decorative />
       {unread > 0 && (
         <span className="z-chat-bubble-badge" data-testid="chat-bubble-badge" aria-hidden="true">
           {unread > 9 ? '9+' : unread}

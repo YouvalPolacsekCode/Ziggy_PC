@@ -18,6 +18,25 @@
   max-width: min(100%, 1180px);
 }
 
+/* Ziggy's avatar tile, beside each of his bubbles and the thinking dots.
+   Sized to the bubble's first text line so the mark sits on the baseline of
+   what he is saying rather than floating above it. A quiet tile rather than a
+   bare mark: on the page background the symbol alone reads as a loose sticker,
+   which is exactly how it looked on the Home screen. */
+.zc-avatar {
+  inline-size: 28px;
+  block-size: 28px;
+  border-radius: var(--r-sm, 9px);
+  background: var(--bg-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  /* Optical: the bubble's 12px padding plus half a 15/1.45 line, less half
+     the tile, lands the mark on the first line rather than the bubble top. */
+  margin-block-start: 1px;
+}
+
 .zc-row {
   display: flex;
   flex-direction: column;
