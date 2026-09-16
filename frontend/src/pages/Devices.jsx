@@ -1963,33 +1963,6 @@ const DeviceCard = forwardRef(function DeviceCard({
                 />
               </RingWrap>
             )}
-            {isIr ? (
-              <IRCardMenu
-                irDevice={irDevice}
-                rooms={rooms}
-                onEdit={() => onEditIr(irDevice)}
-                onDelete={() => onDeleteIr(irDevice.id)}
-                onAssign={(roomId) => onAssign(entity.entity_id, roomId)}
-                onLinkToWifi={() => onLinkIr(irDevice)}
-                onUnlinkFromWifi={() => onUnlinkIr(irDevice.id)}
-              />
-            ) : linkedIr ? (
-              // Merged HA+IR card — HA menu with IR extras
-              <DeviceMenu
-                entity={entity}
-                rooms={rooms}
-                onHide={onHide}
-                onUnhide={onUnhide}
-                isHidden={isHidden}
-                onAssign={onAssign}
-                extraItems={[
-                  { label: t('devices.editIrRemote'), icon: <Pencil size={12} />, onClick: () => onEditIr(linkedIr) },
-                  { label: t('devices.unlinkIr'), icon: <span className="text-[11px]">⬡</span>, onClick: () => onUnlinkIr(linkedIr.id), className: 'text-accent' },
-                ]}
-              />
-            ) : (
-              <DeviceMenu entity={entity} rooms={rooms} onHide={onHide} onUnhide={onUnhide} isHidden={isHidden} onAssign={onAssign} />
-            )}
           </div>
         </div>
 

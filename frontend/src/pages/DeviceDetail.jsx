@@ -10,6 +10,8 @@ import { deviceFacts, getKind, KIND } from '../lib/devices'
 import { DeviceIcon, ICON_CHOICES } from '../lib/deviceIcons'
 import { Modal } from '../components/ui/Modal'
 import { Input } from '../components/ui/Input'
+import { EntitySelect } from '../components/ui/EntitySelect'
+import { Button } from '../components/ui/Button'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
@@ -314,6 +316,37 @@ function DeleteDeviceModal({ open, deviceName, hasParentDevice, isIr, deleting, 
 }
 
 
+
+// Entity picker body for the IR ↔ Wi-Fi link modal. Split out so its local
+// selection resets whenever the modal remounts.
+const IR_TYPE_TO_DOMAIN_DD = {
+  tv: 'media_player', ac: 'climate', fan: 'fan', light: 'light',
+  projector: 'media_player', soundbar: 'media_player', receiver: 'media_player',
+}
+
+function LinkIrBody({ irType, onCancel, onLink }) {
+  const t = useT()
+  const [entityId, setEntityId] = useState('')
+  const domain = IR_TYPE_TO_DOMAIN_DD[irType] || 'media_player'
+  return (
+    <>
+      <EntitySelect
+        domain={domain}
+        value={entityId}
+        onChange={setEntityId}
+        placeholder={t('devices.linkModalEntityPlaceholder', { domain: domain.replace('_', ' ') })}
+        label={t('devices.linkModalEntityLabel')}
+      />
+      <div className="flex gap-2 mt-4">
+        <Button variant="secondary" onClick={onCancel} className="flex-1">{t('common.cancel')}</Button>
+        <Button onClick={() => onLink(entityId)} disabled={!entityId} className="flex-1">
+          {t('devices.linkDevices')}
+        </Button>
+      </div>
+    </>
+  )
+}
+
 function RenameModal({ open, currentName, onClose, onSave }) {
   const t = useT()
   const [name, setName] = useState(currentName)
@@ -536,6 +569,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   const [detailsLoadFailed, setDetailsLoadFailed] = useState(false)
   const [allRooms, setAllRooms] = useState(null)   // lazy: only fetched when user opens edit-room
   const [showRename, setShowRename] = useState(false)
+  const [showLinkIr, setShowLinkIr] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState('controls')
   const [editingRoom, setEditingRoom] = useState(false)
@@ -837,6 +871,33 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
     }
   }
 
+  // ── IR ↔ Wi-Fi linking ───────────────────────────────────────────────────
+  // Moved here from the device card's ⋮ menu, which has been removed. This is
+  // now the ONLY place to pair an IR codeset with the Wi-Fi entity for the
+  // same physical device (a TV that Ziggy can both blast at and read state
+  // from), so it has to live where the device does.
+
+  const handleLinkIr = async (haEntityId) => {
+    if (!irForLink || !haEntityId) return
+    try {
+      await patchIrDevice(irForLink.id, { ha_entity_id: haEntityId })
+      addToast(t('devices.devicesLinked'), 'success')
+      setShowLinkIr(false)
+      try { await useDeviceStore.getState().fetchAll({ force: true }) } catch {}
+      load({ background: true })
+    } catch { addToast(t('devices.failedToLink'), 'error') }
+  }
+
+  const handleUnlinkIr = async () => {
+    if (!irForLink) return
+    try {
+      await patchIrDevice(irForLink.id, { ha_entity_id: '' })
+      addToast(t('devices.irDeviceUnlinked'), 'success')
+      try { await useDeviceStore.getState().fetchAll({ force: true }) } catch {}
+      load({ background: true })
+    } catch { addToast(t('devices.failedToUnlink'), 'error') }
+  }
+
   const handleRename = async (newName) => {
     // Goes through the api.js helper so the request gets the Bearer token,
     // request-id tracing, and (when applicable) Fly relay routing. Backend
@@ -945,6 +1006,8 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   }
   const entity = liveEntity ?? { entity_id: entityId, domain: entityId.split('.')[0], state: details?.state, ...attributes }
   const facts = deviceFacts(entity)
+  const irForLink = facts.isIr ? liveEntity?._irDevice : (liveEntity?._linkedIr || null)
+  const isLinked = Boolean(facts.isIr ? liveEntity?._irDevice?.ha_entity_id : liveEntity?._linkedIr)
   const isOn = facts.isOn
   const meta = facts.meta
   // When the entity is the primary of a multi-entity device, prefer the
@@ -1650,6 +1713,17 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             : <><EyeOff size={18} strokeWidth={1.75} /> {t('deviceDetail.hideFromZiggy')}</>
           }
         </button>
+        {/* IR ↔ Wi-Fi link. Only meaningful for a device that has an IR side. */}
+        {irForLink && (
+          <button
+            onClick={() => (isLinked ? handleUnlinkIr() : setShowLinkIr(true))}
+            className="w-full flex items-center gap-3 hover:bg-surface-2 transition-colors"
+            style={{ minHeight: 40, padding: '8px 12px', borderRadius: 'var(--r-ctl)', fontSize: 15, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}
+          >
+            <span style={{ fontSize: 15, width: 18, display: 'inline-block' }}>⬡</span>
+            {isLinked ? t('devices.unlinkFromWifi') : t('devices.linkToWifi')}
+          </button>
+        )}
         {/* Delete — for HA entities this removes from BOTH Ziggy AND HA.
             For pure-IR devices, removes the IR codeset from Ziggy (HA never
             knew about it). Distinct from Hide, which only affects what Ziggy
@@ -1663,6 +1737,23 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
         </button>
       </Card>
       )}
+
+      {/* IR ↔ Wi-Fi picker. Mirrors the old LinkIrModal from the Devices page,
+          which lived behind the card ⋮ that has since been removed. */}
+      <Modal
+        open={showLinkIr}
+        onClose={() => setShowLinkIr(false)}
+        title={t('devices.linkModalTitle', { name: irForLink?.name || displayName || '' })}
+      >
+        <p className="text-xs text-ink-mute mb-4 -mt-1 leading-relaxed">
+          {t('devices.linkModalDescription')}
+        </p>
+        <LinkIrBody
+          irType={irForLink?.type}
+          onCancel={() => setShowLinkIr(false)}
+          onLink={handleLinkIr}
+        />
+      </Modal>
 
       <RenameModal
         open={showRename}
