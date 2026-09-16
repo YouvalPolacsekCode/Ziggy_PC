@@ -67,3 +67,30 @@ describe('controller visibility', () => {
     expect(ids).not.toContain('sensor.office_power')
   })
 })
+
+describe('controller in room views', () => {
+  it('keeps the controller in its room (Devices "By room" and Rooms page)', () => {
+    useDeviceStore.setState({
+      ziggyRooms: [{ id: 'living_room', name: 'Living Room', devices: [
+        { entity_id: 'light.office', display_name: 'Office Light' },
+        { entity_id: EID, display_name: 'Wall switch', domain: 'controller',
+          ha_device_id: 'dev123' },
+      ] }],
+    })
+    const room = useDeviceStore.getState().getGroupedZiggyRooms()[0]
+    expect(room.devices.map(d => d.entity_id)).toContain(EID)
+  })
+
+  it('still collapses a real multi-entity group to its primary', () => {
+    useDeviceStore.setState({
+      ziggyRooms: [{ id: 'office', name: 'Office', devices: [
+        { entity_id: 'light.office' },
+        { entity_id: 'sensor.office_power' },
+      ] }],
+      groupByEntityId: { 'light.office': lightGroup.group_id,
+                         'sensor.office_power': lightGroup.group_id },
+    })
+    const room = useDeviceStore.getState().getGroupedZiggyRooms()[0]
+    expect(room.devices.map(d => d.entity_id)).toEqual(['light.office'])
+  })
+})

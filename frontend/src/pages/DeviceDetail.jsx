@@ -967,6 +967,15 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
       return rooms.find(r => (r.id ?? r.area_id) === slug || normRoomSlug(r.name || '') === slug)
         || { id: slug, name: slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }
     }
+    if (isControllerTarget) {
+      // A controller is in no room's `entities` list — it has no entity. Its
+      // room lives on the group / synthetic entity, so without this the Info
+      // tab kept "No room" highlighted even right after a successful assign.
+      const slug = group?.room || liveEntity?.room || null
+      if (!slug) return null
+      return rooms.find(r => (r.id ?? r.area_id) === slug)
+        || { id: slug, name: slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }
+    }
     return rooms.find(r => (r.entities || []).includes(entityId))
   })()
 

@@ -992,8 +992,11 @@ export const useDeviceStore = create((set, get) => ({
           out.push(d)
           continue
         }
-        // Skip non-primary siblings.
-        if (eid !== g.primary_entity_id) continue
+        // Skip non-primary siblings. A controller group is the exception: it
+        // has no entities at all, so primary_entity_id is null and its own row
+        // would be dropped here — which is why an assigned remote still showed
+        // no card in its room. Same guard as _attachGroup.
+        if (g.card_kind !== 'controller' && eid !== g.primary_entity_id) continue
         // De-dupe in case the same group appeared twice (shouldn't, but
         // defensive — group identity is the source of truth).
         if (seenGroups.has(g.group_id)) continue
