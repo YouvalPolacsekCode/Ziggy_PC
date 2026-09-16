@@ -18,8 +18,7 @@ import {
   Plus, Trash2, Wifi, Shield, Users, MapPin,
   Radio, Cloud, Activity, Check, Copy, Zap,
   Smartphone, Bell, ArrowLeft, ChevronRight, ChevronDown, CheckCircle2,
-  Volume2, Monitor, Bot,
-} from 'lucide-react'
+  Volume2, Monitor, Bot, Info } from 'lucide-react'
 import { T_STATE, T_ENTER } from '../lib/motion'
 import { PairWithPhone } from '../components/PairWithPhone'
 import { isWallMode, setWallMode as setWallModeFlag } from '../lib/wallMode'
@@ -27,6 +26,7 @@ import { MobileDevicesList } from '../components/MobileDevicesList'
 import BlastersSection from '../components/settings/BlastersSection'
 import VoiceSection from '../components/settings/VoiceSection'
 import { Card } from '../components/ui/Card'
+import BuildInfo from '../components/settings/BuildInfo'
 import { Toggle } from '../components/ui/Toggle'
 import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
@@ -1820,6 +1820,11 @@ export default function Settings() {
         {musicEnabled && (
           <HubCard icon={Activity}  title={t('media.settingsLinkTitle')}  subtitle={t('media.settingsLinkSubtitle')}  to="/settings/music" />
         )}
+      </div>
+
+      <div style={{ marginTop: 24 }}>
+        <SectionTitle icon={Info}>{t('settings.build.title')}</SectionTitle>
+        <BuildInfo />
       </div>
 
       {isSuperAdmin && (

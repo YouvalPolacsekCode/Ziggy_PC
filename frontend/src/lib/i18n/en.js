@@ -2940,6 +2940,13 @@ export default {
   'settings.quickAsks':           'Quick asks',
   'settings.memory':              'Memory',
   'settings.advanced':            'Advanced',
+  'settings.build.title':    'Version',
+  'settings.build.app':      'App build',
+  'settings.build.hub':      'Ziggy hub',
+  'settings.build.checking': 'Checking\u2026',
+  'settings.build.current':  'Up to date.',
+  'settings.build.stale':    'This app is running an older version. Close Ziggy completely and reopen it twice to update.',
+  'settings.build.unknown':  'Can\u2019t reach the hub to check.',
   'settings.advancedHint':        'Diagnostics and device-network details. Most people never need this.',
   // Hub-card subtitles + new IR-hubs strings — 2026-06 settings refactor
   'settings.appearanceSub':       'Theme · light or dark',

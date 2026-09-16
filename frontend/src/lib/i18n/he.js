@@ -2524,6 +2524,13 @@ export default {
   'settings.quickAsks':           'בקשות מהירות',
   'settings.memory':              'זיכרון',
   'settings.advanced':            'מתקדם',
+  'settings.build.title':    '\u05d2\u05e8\u05e1\u05d4',
+  'settings.build.app':      '\u05d2\u05e8\u05e1\u05ea \u05d4\u05d0\u05e4\u05dc\u05d9\u05e7\u05e6\u05d9\u05d4',
+  'settings.build.hub':      '\u05d4\u05d0\u05e8\u05d2\u05d6 \u05e9\u05dc \u05d6\u05d9\u05d2\u05d9',
+  'settings.build.checking': '\u05d1\u05d5\u05d3\u05e7\u2026',
+  'settings.build.current':  '\u05de\u05e2\u05d5\u05d3\u05db\u05df.',
+  'settings.build.stale':    '\u05d4\u05d0\u05e4\u05dc\u05d9\u05e7\u05e6\u05d9\u05d4 \u05de\u05e8\u05d9\u05e6\u05d4 \u05d2\u05e8\u05e1\u05d4 \u05d9\u05e9\u05e0\u05d4. \u05e1\u05d2\u05e8\u05d5 \u05d0\u05ea \u05d6\u05d9\u05d2\u05d9 \u05dc\u05d2\u05de\u05e8\u05d9 \u05d5\u05e4\u05ea\u05d7\u05d5 \u05e4\u05e2\u05de\u05d9\u05d9\u05dd \u05db\u05d3\u05d9 \u05dc\u05e2\u05d3\u05db\u05df.',
+  'settings.build.unknown':  '\u05dc\u05d0 \u05de\u05e6\u05dc\u05d9\u05d7 \u05dc\u05d4\u05d2\u05d9\u05e2 \u05dc\u05d0\u05e8\u05d2\u05d6 \u05db\u05d3\u05d9 \u05dc\u05d1\u05d3\u05d5\u05e7.',
   'settings.advancedHint':        'אבחון ופרטים טכניים של רשת המכשירים. רוב המשתמשים לא צריכים את זה.',
   // תיאורי כרטיסי הוואב + מחרוזות חדשות ל־IR — ריפקטור הגדרות יוני 2026
   'settings.appearanceSub':       'ערכת נושא · בהיר או כהה',
