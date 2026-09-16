@@ -1,6 +1,6 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Bell, CheckSquare, MoreHorizontal, Settings, WifiOff, Zap } from 'lucide-react'
+import { Bell, CheckSquare, MoreHorizontal, Settings, WifiOff } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { useFeature } from '../../stores/featuresStore'
 import { useIsRTL, useLang, useT } from '../../lib/i18n'
@@ -17,14 +17,19 @@ function hasRole(userRole, minRole) {
 
 // `labelKey` resolves inside BottomNav() so labels track the active language
 // live without rebuilding the array on each render.
+// No Ziggy tab: the floating chat button is the single way to reach him on a
+// phone, and it opens the sheet over the page you are on instead of navigating
+// away. Two controls drawn with the same glyph, one a destination and one an
+// overlay, read as one thing duplicated — ChatBubble already concedes this by
+// hiding itself on /chat. The freed slot promotes Actions out of More, where
+// an overflow tab was hiding it.
 const PRIMARY_TABS = [
   { to: '/',        name: 'home',    labelKey: 'nav.home' },
   { to: '/rooms',   name: 'rooms',   labelKey: 'nav.rooms' },
-  { to: '/chat',    name: 'sparkle', labelKey: 'nav.ziggy' },
   { to: '/devices', name: 'devices', labelKey: 'nav.devices' },
+  { to: '/actions', name: 'auto',    labelKey: 'nav.automations' },
 ]
 const MORE_BASE = [
-  { to: '/actions',     Icon: Zap,         labelKey: 'nav.automations' },
   { to: '/alerts',      Icon: Bell,        labelKey: 'nav.alerts' },
   { to: '/tasks',       Icon: CheckSquare, labelKey: 'nav.tasks',    feature: 'task_tracking' },
   { to: '/settings',    Icon: Settings,    labelKey: 'nav.settings' },
