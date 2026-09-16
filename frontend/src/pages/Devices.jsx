@@ -30,6 +30,15 @@ import UnassignedSignalsPanel from '../components/UnassignedSignalsPanel'
 import { getRoomPhoto } from '../lib/roomPhotos'
 import { useT, useLang, translateNamePhrase } from '../lib/i18n'
 
+// True for a stateless controller in EITHER list. The flat device list carries
+// a `_controller` flag (set by deviceStore.controllerToEntity), but the "By
+// room" view renders rows straight from /api/rooms/devices which have no such
+// flag — only the id. Checking the id works in both, and checking the flag
+// alone is why the room menu stayed visible in the By-room view.
+const isControllerEntity = (e) =>
+  e?._controller === true || String(e?.entity_id || '').startsWith('controller.')
+
+
 function _fmtAgo(isoOrDateStr) {
   if (!isoOrDateStr) return ''
   const d = new Date(isoOrDateStr.replace(' ', 'T'))
@@ -1500,23 +1509,12 @@ function AssignRoomDropdown({ entityId, rooms, onAssign }) {
 
 // ── Per-card "…" context menu ─────────────────────────────────────────────────
 function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extraItems = [] }) {
-  // Controllers keep ONE room control, on the device's Info tab. Offering it
-  // here too meant two paths to the same setting with different plumbing (this
-  // one went through the entity registry, which a controller has no place in),
-  // so the menu's room section is hidden for them.
-  const allowRoomAssign = !entity?._controller
   const t = useT()
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: undefined, right: 0 })
   const btnRef = useRef(null)
   const menuRef = useRef(null)
 
-  // A controller has no HA entity, so it appears in no room's `entities` list —
-  // the lookup below can never find it and the menu showed "No Room" even when
-  // the device was assigned. Its room travels on the entity itself instead.
-  const currentRoom = entity?._controller
-    ? rooms.find((r) => r.id === entity.room) || null
-    : rooms.find((r) => (r.entities || []).includes(entity.entity_id))
 
   const NAV_HEIGHT = 64
 
@@ -1575,47 +1573,6 @@ function DeviceMenu({ entity, rooms, onHide, onUnhide, isHidden, onAssign, extra
             className="w-48 bg-surface rounded-xl shadow-2xl border border-line overflow-hidden"
           >
             <div className="py-1">
-              {allowRoomAssign && (<>
-              {currentRoom && (
-                <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-ok shrink-0" />
-                  <span className="text-[11px] text-ink-mute" dir="auto">
-                    <span className="font-semibold text-ink-2">{currentRoom.name}</span>
-                  </span>
-                </div>
-              )}
-              <p className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-mute">
-                {t('devices.assignToRoom')}
-              </p>
-              <button
-                onClick={() => { onAssign(entity.entity_id, null); setOpen(false) }}
-                className={cn(
-                  'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors',
-                  !currentRoom ? 'text-accent font-medium' : 'text-ink-mute'
-                )}
-              >
-                <Home size={12} /> {t('devices.noRoom')}
-              </button>
-              {rooms.map((r) => (
-                <button
-                  key={r.id}
-                  onClick={() => { onAssign(entity.entity_id, r.id); setOpen(false) }}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors',
-                    currentRoom?.id === r.id
-                      ? 'text-accent font-semibold'
-                      : 'text-ink-2'
-                  )}
-                >
-                  <span className={cn(
-                    'w-2 h-2 rounded-full shrink-0',
-                    currentRoom?.id === r.id ? 'bg-accent' : 'bg-line'
-                  )} />
-                  <span dir="auto">{r.name}</span>
-                  {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-accent">✓</span>}
-                </button>
-              ))}
-              </>)}
               <div className="border-t border-line mt-1 pt-1">
                 <button
                   onClick={() => {
@@ -1765,29 +1722,6 @@ function IRCardMenu({ irDevice, rooms, onEdit, onDelete, onAssign, onLinkToWifi,
             className="w-52 bg-surface rounded-xl shadow-2xl border border-line overflow-hidden"
           >
             <div className="py-1">
-              {currentRoom && (
-                <div className="px-3 pt-2 pb-1.5 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-ok shrink-0" />
-                  <span className="text-[11px] text-ink-mute" dir="auto">
-                    <span className="font-semibold text-ink-2">{currentRoom.name}</span>
-                  </span>
-                </div>
-              )}
-              <p className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-mute">{t('devices.assignToRoom')}</p>
-              <button onClick={() => { onAssign(null); setOpen(false) }}
-                className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2', !currentRoom ? 'text-accent font-medium' : 'text-ink-mute')}
-              >
-                <Home size={12} /> {t('devices.noRoom')}
-              </button>
-              {rooms.map((r) => (
-                <button key={r.id} onClick={() => { onAssign(r.id); setOpen(false) }}
-                  className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2', currentRoom?.id === r.id ? 'text-accent font-semibold' : 'text-ink-2')}
-                >
-                  <span className={cn('w-2 h-2 rounded-full shrink-0', currentRoom?.id === r.id ? 'bg-accent' : 'bg-line')} />
-                  <span dir="auto">{r.name}</span>
-                  {currentRoom?.id === r.id && <span className="ml-auto text-[10px] text-accent">✓</span>}
-                </button>
-              ))}
               <div className="border-t border-line mt-1 pt-1">
                 <button onClick={() => { onEdit(); setOpen(false) }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-2 hover:bg-surface-2"
