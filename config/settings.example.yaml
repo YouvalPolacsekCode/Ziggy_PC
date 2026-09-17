@@ -24,6 +24,14 @@ anomaly_engine:
   anom03_door_open_minutes: 60
   anom06_runtime_hours: 4
   enabled: true
+  # Silent-device sweep (ANOM-13). Off: with Zigbee2MQTT availability disabled a
+  # light nobody touched for a day looks exactly like a dead one, and the sweep
+  # called healthy lights "hasn't responded" on every home. Needs a real
+  # liveness signal before it may run unattended.
+  anom13_down_sweep_enabled: false
+  # Let alerts ACT on the radio network (Z2M re-interview / permit-join) before
+  # nagging. Off: a false alert must never touch a customer's Zigbee devices.
+  auto_repair_ladder: false
   exemptions:
   - switch.nas
   - switch.router

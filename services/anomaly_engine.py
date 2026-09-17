@@ -289,6 +289,46 @@ def _cfg() -> dict:
     return settings.get("anomaly_engine", settings.get("sensor_alerts", {}))
 
 
+def _ladder_enabled(cfg: dict | None = None) -> bool:
+    """The repair ladder acts on the customer's radio network (Zigbee2MQTT
+    re-interview, permit-join). Between release-2026.09.06 and 09-17 it did so on
+    the strength of false alerts — re-interviewing sleeping battery sensors that
+    were fine. Acting is opt-in (`auto_repair_ladder: true`); alerting is not."""
+    cfg = cfg if cfg is not None else _cfg()
+    return bool(cfg.get("auto_repair_ladder", False))
+
+
+# ── Ziggy's own virtual sensors ──────────────────────────────────────────────
+# The template "X Occupied" helpers, the engine-backed MQTT presence entities and
+# the anyone-home mirror are Ziggy's conclusions, not hardware. They have no
+# battery, no radio, nothing to re-interview. After release-2026.09.06 every home
+# was told to "refit the battery" on them, which is the kind of alert that
+# teaches people to ignore the real ones. Cheap recognition: Ziggy's own naming
+# plus its own KV registry — no HA entity-registry round-trip.
+_ZIGGY_VIRTUAL_PREFIXES = ("binary_sensor.ziggy_",)
+
+
+def _ziggy_occupancy_entity_ids() -> set[str]:
+    try:
+        from services.template_sensors import list_occupancy_sensors
+        return {str(r.get("entity_id")) for r in list_occupancy_sensors() if r.get("entity_id")}
+    except Exception:
+        return set()
+
+
+def is_ziggy_virtual_sensor(entity_id: str, known: set[str] | None = None) -> bool:
+    if entity_id.startswith(_ZIGGY_VIRTUAL_PREFIXES):
+        return True
+    obj = entity_id.split(".", 1)[-1]
+    # Template helpers: {room}_occupied, and HA's collision suffix {room}_occupied_2.
+    if obj.endswith("_occupied"):
+        return True
+    head, _, tail = obj.rpartition("_")
+    if tail.isdigit() and head.endswith("_occupied"):
+        return True
+    return entity_id in (known if known is not None else _ziggy_occupancy_entity_ids())
+
+
 def _tz() -> Any:
     try:
         return pytz.timezone(settings.get("system", {}).get("timezone", "UTC"))
@@ -1147,6 +1187,7 @@ async def sweep_stale_sensors(
         area_map = await _get_area_map()
     except Exception:
         pass
+    virtual = _ziggy_occupancy_entity_ids()
 
     for eid, entry in list(cache.items()):
         domain = eid.split(".")[0]
@@ -1155,6 +1196,9 @@ async def sweep_stale_sensors(
 
         dc = (entry.get("attributes") or {}).get("device_class", "")
         if dc not in _STALE_SAFETY_CLASSES:
+            continue
+        # Ziggy's own conclusions have no battery to check.
+        if is_ziggy_virtual_sensor(eid, virtual):
             continue
 
         state = entry.get("state", "")
@@ -1243,6 +1287,15 @@ async def sweep_down_devices(cache: dict | None = None,
     cfg = _cfg()
     if not cfg.get("enabled", True):
         return
+    # OFF unless opted in. With Zigbee2MQTT availability disabled (every imaged
+    # hub), `last_reported` only moves when a device has something to say, so a
+    # light nobody touched for a day is indistinguishable from a dead one. The
+    # sweep called the Canary's Kitchen Light "hasn't responded in 1 day" while
+    # HA had it changing state that afternoon, on all three homes, and pushed
+    # ~130 alerts a day. It needs a real liveness signal (Z2M availability or
+    # last_seen) before it may run unattended. Kept for manual / agent use.
+    if not cfg.get("anom13_down_sweep_enabled", False):
+        return
     stale_hours = cfg.get("anom13_stale_hours", _DOWN_DEVICE_STALE_HOURS)
 
     from services.down_device_detector import find_down_devices
@@ -1271,7 +1324,7 @@ async def sweep_down_devices(cache: dict | None = None,
         # A ladder failure must never break the sweep — fall through to the push.
         try:
             from services import repair_ladder
-            if repair_ladder.should_run(eid):
+            if _ladder_enabled(cfg) and repair_ladder.should_run(eid):
                 res = await repair_ladder.run_ladder(eid, trigger="ANOM-13", kind="device")
                 if res.get("fixed"):
                     _clear_anomaly(active, eid, "ANOM-13")
@@ -1417,12 +1470,18 @@ async def sweep_stuck_occupancy(cache: dict | None = None, active: dict | None =
         area_map = {}
 
     from datetime import datetime, timezone as _tz
+    virtual = _ziggy_occupancy_entity_ids()
 
     for eid, entry in list(cache.items()):
         if not eid.startswith("binary_sensor."):
             continue
         attrs = entry.get("attributes") or {}
         if attrs.get("device_class", "") not in _STUCK_OCCUPANCY_CLASSES:
+            continue
+        # A template helper or Ziggy's own presence mirror cannot "wedge" — it
+        # mirrors its sources. Judging it as hardware produced "refit the battery"
+        # on Office Occupied. The sources themselves are still judged below.
+        if is_ziggy_virtual_sensor(eid, virtual):
             continue
 
         room_id = next(
@@ -1468,7 +1527,7 @@ async def sweep_stuck_occupancy(cache: dict | None = None, active: dict | None =
         # A ladder failure must never break the sweep — fall through to the push.
         try:
             from services import repair_ladder
-            if repair_ladder.should_run(eid):
+            if _ladder_enabled(cfg) and repair_ladder.should_run(eid):
                 res = await repair_ladder.run_ladder(eid, trigger="ANOM-12", kind="sensor")
                 if res.get("fixed"):
                     _clear_anomaly(active, room_id, "ANOM-12")
