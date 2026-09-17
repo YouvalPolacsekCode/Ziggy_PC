@@ -273,5 +273,37 @@ got5="$(cat "$HUB5/docker/ha-config/automations.yaml" 2>/dev/null || echo MISSIN
 $got5"; }
 pass "upgrading from tracked to ignored keeps the customer's automations"
 
+# --- Scenario 7: backups do not pile up ----------------------------------------
+# The backup ran on EVERY two-minute tick: 23,511 snapshots / 826 MB on the
+# Canary by 2026-09-17, of files that had not changed in weeks. An unchanged
+# home must not grow a new snapshot, and the pile must be capped.
+cd "$HUB"
+before="$(ls -1 "$HUB/user_files/ha-config-backups" | wc -l | tr -d ' ')"
+set +e
+PATH="$BIN:$PATH" ZIGGY_ENV_FILE=/nonexistent ZIGGY_COHORT=production \
+ZIGGY_REPO_DIR="$HUB" ZIGGY_INFRA_CHANNEL=off \
+  bash "$HUB/scripts/linux/ziggy-update.sh" > "$WORK/update7a.log" 2>&1
+set -e
+after="$(ls -1 "$HUB/user_files/ha-config-backups" | wc -l | tr -d ' ')"
+[ "$after" = "$before" ] \
+  || fail "an unchanged home grew a new backup on a no-op tick ($before -> $after)"
+pass "an unchanged home does not grow a new backup every tick"
+
+for i in $(seq 1 45); do
+  d="$HUB/user_files/ha-config-backups/2000-01-01T00:00:$(printf '%02d' "$i")Z/docker/ha-config"
+  mkdir -p "$d"; printf 'old\n' > "$d/automations.yaml"
+done
+set +e
+PATH="$BIN:$PATH" ZIGGY_ENV_FILE=/nonexistent ZIGGY_COHORT=production \
+ZIGGY_REPO_DIR="$HUB" ZIGGY_INFRA_CHANNEL=off ZIGGY_BACKUP_KEEP=30 \
+  bash "$HUB/scripts/linux/ziggy-update.sh" > "$WORK/update7b.log" 2>&1
+set -e
+kept="$(ls -1 "$HUB/user_files/ha-config-backups" | wc -l | tr -d ' ')"
+[ "$kept" -le 30 ] \
+  || fail "backup pile was not pruned ($kept dirs remain, expected <= 30)"
+ls -1 "$HUB/user_files/ha-config-backups" | grep -q '^2026\|^20[3-9]' \
+  || fail "pruning kept the fake old snapshots and dropped the real newest one"
+pass "the backup pile is capped and the newest snapshot survives"
+
 echo
 echo "PASS — the updater ships the release without destroying the home."

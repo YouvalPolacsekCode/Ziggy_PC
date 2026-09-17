@@ -349,6 +349,12 @@ HA_STATE_FILES=(
 # Overridable only so the test suite can inject a deliberately-stale backup and
 # prove the shrink guard below refuses it. Production never sets it.
 PROTECTED_BACKUP_DIR="${ZIGGY_FORCE_BACKUP_DIR:-$USER_FILES/ha-config-backups/$TS}"
+BACKUP_ROOT="$USER_FILES/ha-config-backups"
+# A backup is written on EVERY tick, and the tick is every two minutes: by
+# 2026-09-17 the Canary carried 23,511 snapshots (826 MB) of a file that had not
+# changed in weeks, with the disk at 76%. Two fixes: reuse the newest backup
+# when the live files are byte-identical to it, and keep only the newest N.
+BACKUP_KEEP="${ZIGGY_BACKUP_KEEP:-30}"
 
 ensure_ha_state_files() {
   $DRY_RUN && return 0
@@ -363,15 +369,52 @@ ensure_ha_state_files() {
   return 0
 }
 
+# Name of the newest backup whose protected files are all byte-identical to the
+# live ones — i.e. a backup that would be an exact duplicate. Empty otherwise.
+latest_identical_backup() {
+  local latest p
+  latest="$(ls -1 "$BACKUP_ROOT" 2>/dev/null | sort | tail -n 1)"
+  [ -n "$latest" ] || return 0
+  for p in "${PROTECTED_PATHS[@]}"; do
+    [ -f "$REPO_DIR/$p" ] || continue
+    cmp -s "$REPO_DIR/$p" "$BACKUP_ROOT/$latest/$p" 2>/dev/null || return 0
+  done
+  printf '%s\n' "$latest"
+}
+
+prune_backups() {
+  $DRY_RUN && return 0
+  [ -d "$BACKUP_ROOT" ] || return 0
+  local d n=0
+  # Oldest first (timestamps sort lexically); drop everything past the newest N.
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    rm -rf "$BACKUP_ROOT/$d" && n=$((n + 1))
+  done < <(ls -1 "$BACKUP_ROOT" 2>/dev/null | sort -r | tail -n +"$((BACKUP_KEEP + 1))")
+  [ "$n" -gt 0 ] && log "Pruned $n old HA config backup(s); keeping the newest $BACKUP_KEEP"
+  return 0
+}
+
 backup_protected() {
   $DRY_RUN && return 0
-  local any=false p
+  local any=false p same
+  if [ -z "${ZIGGY_FORCE_BACKUP_DIR:-}" ]; then
+    same="$(latest_identical_backup)"
+    if [ -n "$same" ]; then
+      # Nothing changed since the last snapshot: point the restore at it and
+      # write nothing. (Silent on purpose — this is the every-tick case.)
+      PROTECTED_BACKUP_DIR="$BACKUP_ROOT/$same"
+      prune_backups
+      return 0
+    fi
+  fi
   for p in "${PROTECTED_PATHS[@]}"; do
     [ -f "$REPO_DIR/$p" ] || continue
     mkdir -p "$PROTECTED_BACKUP_DIR/$(dirname "$p")"
     cp -p "$REPO_DIR/$p" "$PROTECTED_BACKUP_DIR/$p" 2>/dev/null && any=true
   done
   $any && log "Backed up live HA config to $PROTECTED_BACKUP_DIR"
+  prune_backups
   return 0
 }
 
