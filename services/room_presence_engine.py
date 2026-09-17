@@ -128,7 +128,8 @@ class RoomStateMachine:
                 pass
         else:
             self.occupied = motion_on
-            self.latched = motion_on
+            # A latch needs a door to release it; door-less rooms never latch.
+            self.latched = motion_on and bool(self.doors)
         return self.occupied
 
     # -- events -------------------------------------------------------------
@@ -157,11 +158,14 @@ class RoomStateMachine:
             if cur:
                 self.occupied = True
                 self._clear_pending()
-                if not self._door_open:
+                if not self._door_open and self.doors:
                     # Fresh motion edge behind a closed door = someone inside.
                     self.latched = True
             else:
-                if not self._any_motion() and self._door_open:
+                # Door open, or no door at all (a door-less room is a plain
+                # hold: quiet for clear_delay_s → empty): start the clear timer
+                # once EVERY source is quiet.
+                if not self._any_motion() and (self._door_open or not self.doors):
                     self._start("open_clear", now + self.clear_delay_s)
                 # Door closed: either latched (holds) or the walk-out grace is
                 # already running — nothing to do on quiet.
@@ -367,8 +371,8 @@ def enroll_room(rec: dict, timeout: float = 8.0) -> dict:
     start tracking. rec: {key?, room, name, doors, motions, delay_off_seconds,
     walkout_grace_seconds}. Fails honestly — no half-enrollment left behind."""
     slug = rec.get("key") or rec.get("room") or ""
-    if not slug or not rec.get("doors"):
-        return {"ok": False, "error": "room and at least one door sensor are required"}
+    if not slug or not (rec.get("doors") or rec.get("motions")):
+        return {"ok": False, "error": "room and at least one door or motion sensor are required"}
 
     m = _machine_from_record(rec)
     m.init_from_states(_current_states(m.watches()), time.monotonic())

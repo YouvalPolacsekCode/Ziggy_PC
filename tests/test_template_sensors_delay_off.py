@@ -1,8 +1,14 @@
-"""Unit tests for delay_off_seconds plumbing in create_occupancy_sensor (Item 5).
+"""Unit tests for delay_off_seconds plumbing in create_occupancy_sensor.
 
 HA HTTP is fully stubbed — no HA/network. We assert the flow body Ziggy submits
-adapts to whether HA's form advertises the delay_off field, and that a rejection
-falls back to a bare create rather than failing.
+adapts to whether HA's form advertises the delay_off field, and — since
+2026-09-17 — that a hold the helper cannot provide is provided by Ziggy's own
+engine instead of being silently dropped.
+
+Why: Home Assistant 2026.6's template-helper form has NO delay_off (its only
+advanced field is `availability`). Every door-less Smart Presence created since
+July therefore lost its hold without anyone noticing, and the office lights went
+off on a still person after one 90 s PIR timeout plus the rule's grace.
 """
 import importlib
 
@@ -19,7 +25,7 @@ def ts(tmp_path, monkeypatch):
     return mod
 
 
-def _install_flow(ts, monkeypatch, *, has_delay_field, posts):
+def _install_flow(ts, monkeypatch, *, has_delay_field, posts, aborted=None):
     """Stub the flow start + create POST. `posts` collects submitted bodies."""
     form = {"step_id": "binary_sensor",
             "data_schema": ([{"name": "name"}, {"name": "state"}, {"name": "device_class"}]
@@ -32,6 +38,16 @@ def _install_flow(ts, monkeypatch, *, has_delay_field, posts):
         return 200, {"type": "create_entry", "result": {"entry_id": "entry_abc"}}
     monkeypatch.setattr(ts, "_ha_post", fake_post)
     monkeypatch.setattr(ts, "_ha_delete", lambda path, timeout=10.0: 200)
+    if aborted is not None:
+        monkeypatch.setattr(ts, "_abort_flow", lambda fid: aborted.append(fid))
+
+
+def _install_engine(monkeypatch, enrolled: dict):
+    from services import room_presence_engine as engine
+    monkeypatch.setattr(engine, "enroll_room",
+                        lambda rec, timeout=8.0: (enrolled.update(rec), {"ok": True, "occupied": False})[1])
+    monkeypatch.setattr(engine, "lookup_mqtt_entity_id",
+                        lambda uid, **kw: "binary_sensor.bedroom_occupied_ziggy")
 
 
 def test_delay_applied_when_field_present(ts, monkeypatch):
@@ -42,12 +58,24 @@ def test_delay_applied_when_field_present(ts, monkeypatch):
     assert posts[-1]["delay_off"] == {"hours": 0, "minutes": 0, "seconds": 45}
 
 
-def test_delay_skipped_when_field_absent(ts, monkeypatch):
-    posts = []
-    _install_flow(ts, monkeypatch, has_delay_field=False, posts=posts)
+def test_field_absent_routes_hold_through_engine(ts, monkeypatch):
+    """No delay_off on the form → abort the helper flow, enroll the engine with a
+    door-less hold. The hold is REAL, not logged-and-forgotten."""
+    posts, aborted, enrolled = [], [], {}
+    _install_flow(ts, monkeypatch, has_delay_field=False, posts=posts, aborted=aborted)
+    _install_engine(monkeypatch, enrolled)
+
     res = ts.create_occupancy_sensor("bedroom", ["binary_sensor.bed_motion"], delay_off_seconds=45)
-    assert res["ok"] and res["delay_off_applied"] is False
-    assert "delay_off" not in posts[-1]
+
+    assert res["ok"] is True
+    assert res["delay_off_applied"] is True
+    assert res["mode"] == "door_aware"          # engine-backed record shape
+    assert res["hold_only"] is True
+    assert posts == []                          # never created the bare helper
+    assert aborted == ["flow123"]               # and did not leak an open flow
+    assert enrolled["doors"] == []
+    assert enrolled["motions"] == ["binary_sensor.bed_motion"]
+    assert enrolled["delay_off_seconds"] == 45
 
 
 def test_zero_delay_never_advanced(ts, monkeypatch):
@@ -59,24 +87,25 @@ def test_zero_delay_never_advanced(ts, monkeypatch):
 
 
 def test_fallback_when_ha_rejects_delay(ts, monkeypatch):
-    posts = []
+    """Form advertises delay_off but HA rejects it → same answer: the engine."""
+    posts, enrolled = [], {}
     form = {"step_id": "binary_sensor",
             "data_schema": [{"name": "name"}, {"name": "state"},
                             {"name": "device_class"}, {"name": "delay_off"}]}
     monkeypatch.setattr(ts, "_start_template_flow",
                         lambda show_advanced=False: ("flow123", None, form))
     monkeypatch.setattr(ts, "_ha_delete", lambda path, timeout=10.0: 200)
+    monkeypatch.setattr(ts, "_abort_flow", lambda fid: None)
+    _install_engine(monkeypatch, enrolled)
 
     def fake_post(path, body, timeout=10.0):
         posts.append(body)
-        # Reject the first (delay_off) submission; accept the bare retry.
-        if "delay_off" in body:
-            return 400, {"type": "form", "errors": {"base": "invalid"}}
-        return 200, {"type": "create_entry", "result": {"entry_id": "entry_abc"}}
+        return 400, {"type": "form", "errors": {"base": "invalid"}}
     monkeypatch.setattr(ts, "_ha_post", fake_post)
 
     res = ts.create_occupancy_sensor("bedroom", ["binary_sensor.bed_motion"], delay_off_seconds=30)
     assert res["ok"] is True
-    assert res["delay_off_applied"] is False
-    # First attempt had delay_off, retry did not.
-    assert "delay_off" in posts[0] and "delay_off" not in posts[1]
+    assert res["delay_off_applied"] is True
+    assert res["hold_only"] is True
+    assert len(posts) == 1 and "delay_off" in posts[0]
+    assert enrolled["delay_off_seconds"] == 30

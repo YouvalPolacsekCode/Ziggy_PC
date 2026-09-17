@@ -252,25 +252,42 @@ def create_occupancy_sensor(
     # Only add delay_off when HA's form actually advertises it — submitting an
     # unknown key makes voluptuous reject the whole form. HA's DurationSelector
     # expects a {hours, minutes, seconds} mapping.
+    #
+    # When the form has NO delay_off (Home Assistant 2026.6: the helper's only
+    # advanced field is `availability`) the hold the user asked for cannot come
+    # from HA. It used to be logged and dropped — every door-less Smart Presence
+    # made since July had no hold, and the office lights went off on a still
+    # person after one 90 s PIR timeout. Now the hold is real: abort the helper
+    # flow and let Ziggy's own engine back the sensor, doors=[] (plain hold).
+    def _engine_hold() -> dict:
+        return _create_door_aware(
+            room_slug=room_slug, kv_key=kv_key, name=name,
+            sensor_entities=sensor_entities, doors=[], motions=motions,
+            delay_off_seconds=delay_off_seconds,
+            walkout_grace_seconds=walkout_grace_seconds,
+        )
+
     applied_delay = False
     body = dict(base_body)
-    if want_delay and _form_has_field(form, "delay_off"):
-        body["delay_off"] = {"hours": 0, "minutes": 0, "seconds": int(delay_off_seconds)}
-        applied_delay = True
+    if want_delay:
+        if _form_has_field(form, "delay_off"):
+            body["delay_off"] = {"hours": 0, "minutes": 0, "seconds": int(delay_off_seconds)}
+            applied_delay = True
+        else:
+            _abort_flow(flow_id)
+            log_info(f"[template_sensors] HA helper has no delay_off; engine hold "
+                     f"({int(delay_off_seconds)}s) room={room_slug} key={kv_key}")
+            return _engine_hold()
 
     status, result = _ha_post(f"/api/config/config_entries/flow/{flow_id}", body)
 
-    # Defensive fallback: if HA rejected the form AND we'd added delay_off, retry
-    # a fresh flow with the bare body so we never regress the working v1 create.
+    # HA advertised delay_off but rejected the form → same answer: the engine
+    # provides the hold. Never fall back to a helper with no hold.
     if (status != 200 or result.get("type") != "create_entry") and applied_delay:
         log_error(f"[template_sensors] create with delay_off rejected (HA {status}); "
-                  f"retrying without it: {result}")
-        flow_id, err, _ = _start_template_flow(show_advanced=False)
-        if err:
-            log_error(f"[template_sensors] retry flow start failed: {err}")
-            return {"ok": False, "error": "Could not start template helper flow on HA."}
-        applied_delay = False
-        status, result = _ha_post(f"/api/config/config_entries/flow/{flow_id}", base_body)
+                  f"engine hold instead: {result}")
+        _abort_flow(flow_id)
+        return _engine_hold()
 
     if status != 200 or result.get("type") != "create_entry":
         log_error(f"[template_sensors] create failed: status={status} body={result}")
@@ -369,17 +386,26 @@ def _create_door_aware(
         "key":       kv_key,
         "sensors":   sensor_entities,
         "delay_off_seconds": int(delay_off_seconds) if delay_off_seconds else None,
+        # `door_aware` is the record's ENGINE-BACKED marker (reconciler, delete
+        # and engine restore all branch on it), kept for door-less holds too so
+        # every existing check keeps working. `hold_only` says which it is.
         "mode":      "door_aware",
+        "hold_only": not doors,
         "doors":     doors,
         "motions":   motions,
         "walkout_grace_seconds": rec["walkout_grace_seconds"],
     })
 
-    msg = (f"Created door-aware presence sensor from {len(sensor_entities)} signal(s) "
-           f"({len(doors)} door)")
+    if doors:
+        msg = (f"Created door-aware presence sensor from {len(sensor_entities)} signal(s) "
+               f"({len(doors)} door)")
+    else:
+        msg = (f"Created presence sensor from {len(sensor_entities)} signal(s) "
+               f"with a {int(delay_off_seconds or 0)}s hold")
     log_info(f"[template_sensors] {msg} key={kv_key} room={room_slug} entity={entity_id}")
     return {"ok": True, "entity_id": entity_id, "entry_id": entry_id,
-            "message": msg, "mode": "door_aware"}
+            "message": msg, "mode": "door_aware", "hold_only": not doors,
+            "delay_off_applied": bool(delay_off_seconds)}
 
 
 def probe_template_binary_sensor_fields() -> dict:
