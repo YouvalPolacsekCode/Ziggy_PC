@@ -500,6 +500,15 @@ async def run_scheduler() -> None:
         except Exception as exc:
             log_error(f"[Scheduler] Fake occupancy tick failed: {exc}")
 
+        # ── Every minute: timed home modes expire (movie 3 h, cleaning 2 h,
+        # sleep at the morning time). Reads are lazy about expiry already; the
+        # sweep is what republishes to HA and broadcasts the chip change.
+        try:
+            from services import modes as _modes
+            _modes.expire_due()
+        except Exception as exc:
+            log_error(f"[Scheduler] Modes expiry tick failed: {exc}")
+
         # ── Every 2 minutes: system-health watchdog tick ─────────────────────
         # Drives the ha_health auto-recovery state machine even when nobody
         # is polling /api/health. Without this tick, the Zigbee-coordinator

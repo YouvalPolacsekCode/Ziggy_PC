@@ -46,6 +46,13 @@ class TestProductionEntrypointStartsTheRealServices:
             f"runs `uvicorn backend.server:app`."
         )
 
+    def test_modes_announce_and_expiry_run_in_prod(self):
+        """Home modes: the HA mirror is announced at boot and timed modes expire
+        on the scheduler minute tick — both from the real entrypoint."""
+        assert "modes_mqtt" in _startup_source()
+        from services import ziggy_scheduler
+        assert "expire_due" in inspect.getsource(ziggy_scheduler.run_scheduler)
+
     def test_the_registry_self_heal_still_runs(self):
         """The original incident. The scheduler owns the reconcile tick."""
         from services import ziggy_scheduler

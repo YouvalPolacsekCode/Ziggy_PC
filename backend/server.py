@@ -254,6 +254,15 @@ async def _startup():
         _threading.Thread(target=_announce_presence, name="PresenceMQTT", daemon=True).start()
     except Exception as _e:
         log_info(f"[PresenceMQTT] announce failed: {_e}")
+    # Home modes (sleep / movie / cleaning / guest / vacation) mirrored into HA
+    # the same way, so a compiled automation's `mode` condition has an entity
+    # to gate on. services/modes_mqtt.py; retained + announced every boot.
+    try:
+        import threading as _threading
+        from services.modes_mqtt import announce as _announce_modes
+        _threading.Thread(target=_announce_modes, name="ModesMQTT", daemon=True).start()
+    except Exception as _e:
+        log_info(f"[ModesMQTT] announce failed: {_e}")
     # Warm the HA service catalog so the first call to /api/devices/X/commands
     # returns instantly. Without this, the catalog stays empty until the
     # first request triggers it, and that request blocks while the WS round-
@@ -705,8 +714,10 @@ app.include_router(wall_router)
 # purely additive (it adds routes that did not resolve before; nothing that
 # worked can change), and every route declares its own auth dependency.
 from backend.routers.mode_router import router as mode_router
+from backend.routers.modes_router import router as modes_router
 from backend.routers.weather_router import router as weather_router
 app.include_router(mode_router)
+app.include_router(modes_router)
 app.include_router(weather_router)
 
 # ---------------------------------------------------------------------------

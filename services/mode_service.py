@@ -1,65 +1,58 @@
-"""Home mode (Home / Away / Night / Vacation).
+"""Legacy single-value house mode — now a facade over services.modes.
 
-Phase 1: a single value persisted to disk + broadcast on the WebSocket so all
-clients update in sync. The presence engine currently *infers* state from
-location + time-of-day for anomaly scoring; this module is the user-settable
-counterpart so the Hub can show "Mode: Night" and let the user override.
+The original v1 stored one of home/away/night/vacation in user_files/home_mode.json
+and, by its own docstring, had "no side effects": nothing read it. The fixed
+home modes (services/modes.py) replaced it; this module keeps the old
+/api/mode contract alive for any client still on it:
 
-Future: an "auto" toggle that lets presence_engine drive the value, and per-mode
-hooks (turn off lights when switching to Away, etc.). v1 only stores and emits;
-no side effects.
+    night    ⇄ modes.sleep on
+    vacation ⇄ modes.vacation on
+    home     ⇄ both off
+    away     — accepted, treated as home (away is a presence FACT, not a mode)
+
+Nothing new should import this. Use services.modes.
 """
 from __future__ import annotations
 
-import asyncio
-import json
 import time
-from pathlib import Path
 from typing import Optional
 
-from core.logger_module import log_error
+from services import modes as _modes
 
 MODES = ("home", "away", "night", "vacation")
 DEFAULT_MODE = "home"
 
-_FILE = Path(__file__).parent.parent / "user_files" / "home_mode.json"
-
 
 def _load() -> dict:
-    if not _FILE.exists():
-        return {"mode": DEFAULT_MODE, "changed_at": time.time(), "changed_by": None}
-    try:
-        data = json.loads(_FILE.read_text(encoding="utf-8"))
-        if data.get("mode") not in MODES:
-            data["mode"] = DEFAULT_MODE
-        return data
-    except Exception as e:
-        log_error(f"[mode_service] Read failed: {e}")
-        return {"mode": DEFAULT_MODE, "changed_at": time.time(), "changed_by": None}
-
-
-def _save(data: dict) -> None:
-    try:
-        _FILE.parent.mkdir(parents=True, exist_ok=True)
-        _FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    except Exception as e:
-        log_error(f"[mode_service] Write failed: {e}")
+    """Legacy shape, derived. Kept because core/agent/context.py and a few
+    callers still read it for the HOUSE line."""
+    mode = _modes.legacy_mode()
+    rec = _modes.get("vacation") if mode == "vacation" else (_modes.get("sleep") if mode == "night" else None)
+    return {
+        "mode": mode,
+        "changed_at": (rec or {}).get("since") or time.time(),
+        "changed_by": (rec or {}).get("by"),
+    }
 
 
 async def get_mode() -> dict:
-    return await asyncio.to_thread(_load)
+    return _load()
 
 
 async def set_mode(new_mode: str, changed_by: Optional[str] = None) -> dict:
     if new_mode not in MODES:
         raise ValueError(f"Unknown mode '{new_mode}'. Allowed: {MODES}")
-    rec = {"mode": new_mode, "changed_at": time.time(), "changed_by": changed_by}
-    await asyncio.to_thread(_save, rec)
-    # Broadcast so every connected tablet/web client re-renders the mode chip
-    # without polling. Failure here is non-fatal — the save already happened.
-    try:
-        from backend.ws_manager import manager
-        await manager.broadcast({"type": "mode_changed", **rec})
-    except Exception as e:
-        log_error(f"[mode_service] WS broadcast failed: {e}")
-    return rec
+    by = changed_by or "?"
+    if new_mode == "night":
+        await _modes.set_mode("sleep", True, by=by)
+        if _modes.is_on("vacation"):
+            await _modes.set_mode("vacation", False, by=by)
+    elif new_mode == "vacation":
+        await _modes.set_mode("vacation", True, by=by)
+        if _modes.is_on("sleep"):
+            await _modes.set_mode("sleep", False, by=by)
+    else:  # home / away → neither
+        for m in ("sleep", "vacation"):
+            if _modes.is_on(m):
+                await _modes.set_mode(m, False, by=by)
+    return _load()
