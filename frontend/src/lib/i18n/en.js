@@ -5034,4 +5034,53 @@ export default {
   'wall.err.offline':       'That device is offline',
   'wall.err.save':          'Couldn’t save the layout',
   'wall.err.load':          'Couldn’t load this tablet’s layout',
+
+  // ── Home modes (the fixed set) ─────────────────────────────────────────
+  'modes.title':             'Modes',
+  'modes.sleep':             'Sleep',
+  'modes.movie':             'Movie',
+  'modes.cleaning':          'Cleaning',
+  'modes.guest':             'Guests',
+  'modes.vacation':          'Vacation',
+  'modes.until':             'until {t}',
+  'modes.pickDuration':      '{mode} — for how long?',
+  'modes.hours1':            '1 hour',
+  'modes.hours2':            '2 hours',
+  'modes.hours3':            '3 hours',
+  'modes.untilOff':          'Until I turn it off',
+  'modes.failed':            'Couldn’t change the mode',
+  'modes.effect.sleep':      'Motion won’t turn lights on until morning.',
+  'modes.effect.movie':      'Motion won’t turn lights on for a while.',
+  'modes.effect.cleaning':   'Lights stay on even when a room looks empty.',
+  'modes.effect.guest':      '“Everyone left” won’t run while guests are here.',
+  'modes.effect.vacation':   'The house looks lived-in every evening while you’re away.',
+
+  // ── Light hold ─────────────────────────────────────────────────────────
+  'lightHold.held':          'Held',
+  'lightHold.untilEmpty':    'Held off until the room empties — you turned it off yourself.',
+  'lightHold.untilTime':     'Held off until {t} — you turned it off twice tonight.',
+  'lightHold.release':       'Release',
+
+  // ── Builder: mode condition + set-mode action ──────────────────────────
+  'automations.cond.modeType':        'Home mode',
+  'automations.cond.modeLabel':       'Mode',
+  'automations.cond.modeIsLabel':     'Must be',
+  'automations.cond.modeOn':          'on',
+  'automations.cond.modeOff':         'off',
+  'automations.actionSetMode':        'Set a home mode',
+  'automations.action.modeOn':        'Turn on',
+  'automations.action.modeOff':       'Turn off',
+  'automations.action.modeHoursPh':   'Hours (optional)',
+  'automations.summary.modeOn':       'Turn on {mode} mode',
+  'automations.summary.modeOff':      'Turn off {mode} mode',
+  'automations.summary.condModeOn':   '{mode} mode is on',
+  'automations.summary.condModeOff':  '{mode} mode is off',
+
+  // ── Designer preview: recipes + left-outs ──────────────────────────────
+  'automations.proCard.sectionRecipes':      'Ready-made',
+  'automations.proCard.recipe.smart_room':   'Smart Room — lights follow who’s in the room',
+  'automations.proCard.recipe.motion_light': 'Motion light — on when you walk in, off after it’s still',
+  'automations.proCard.recipe.welcome_home': 'Lights on when you arrive home',
+  'automations.proCard.recipe.leave_home':   'Everything off when everyone leaves',
+  'automations.proCard.leftOut':             'Left out',
 }

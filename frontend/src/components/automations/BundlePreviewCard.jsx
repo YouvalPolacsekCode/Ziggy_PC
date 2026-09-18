@@ -205,10 +205,25 @@ function AutomationRow({ auto, lang, t }) {
   )
 }
 
-// Voice intent row — phrase plus a small "manual setup needed" footnote.
-// Voice intents aren't apply-supported in v1 (bundle_executor.py:141-146),
-// so we surface that honestly here rather than letting the user think
-// the phrase will register itself.
+// Recipe row — one of the tested, deterministic bundles (Smart Room, Motion
+// Light, Welcome Home, Leave Home). Built server-side at apply time against
+// the live home, so the card shows WHAT it does, not a list of rules.
+function RecipeRow({ recipe, t }) {
+  const room = recipe.room ? ` · ${String(recipe.room).replace(/_/g, ' ')}` : ''
+  return (
+    <div style={{
+      minHeight: 40, padding: '8px 16px', borderRadius: 'var(--r-ctl)',
+      border: '0.5px solid var(--line)', background: 'var(--surface-2)',
+    }}>
+      <span className="z-subhead" style={{ color: 'var(--ink)', fontWeight: 500 }} dir="auto">
+        {t(`automations.proCard.recipe.${recipe.recipe}`)}{room}
+      </span>
+    </div>
+  )
+}
+
+// Voice intent row — legacy. The designer no longer emits voice intents;
+// kept so an old bundle echoed back from history still renders honestly.
 function VoiceIntentRow({ vi, t }) {
   return (
     <div style={{
@@ -288,10 +303,12 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
   if (!bundle || typeof bundle !== 'object') return null
 
   const artifacts = bundle.artifacts || {}
+  const recipes     = artifacts.recipes           || []
   const occupancy   = artifacts.occupancy_sensors || []
-  const modes       = artifacts.kv_state          || []
+  const modes       = artifacts.kv_state          || []   // legacy bundles only
   const automations = artifacts.automations       || []
-  const voices      = artifacts.voice_intents     || []
+  const voices      = artifacts.voice_intents     || []   // legacy bundles only
+  const leftOut     = Array.isArray(bundle.left_out) ? bundle.left_out.filter(x => x && x.what) : []
   const decline     = bundle.decline || null
 
   // ── Per-artifact edit helpers ──────────────────────────────────────────
@@ -316,10 +333,12 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
 
   // How many artifacts are currently included (gates the Accept button).
   const includedCount =
+    recipes.filter((_, i) => isIncluded('recipe', i)).length +
     occupancy.filter((_, i) => isIncluded('occupancy_sensor', i)).length +
     modes.filter((_, i) => isIncluded('kv_state', i)).length +
     automations.filter((_, i) => isIncluded('automation', i)).length +
     voices.filter((_, i) => isIncluded('voice_intent', i)).length
+  const totalCount = recipes.length + occupancy.length + modes.length + automations.length + voices.length
 
   // Build the bundle to actually apply: drop excluded artifacts and fold in
   // rename / timeout overrides. Pure — never mutates the original bundle.
@@ -330,6 +349,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
          .map(({ item, i }) => apply(item, getEdit(kind, i)))
 
     const editedArtifacts = {
+      recipes: pick(recipes, 'recipe', (r) => ({ ...r })),
       occupancy_sensors: pick(occupancy, 'occupancy_sensor', (s, e) => ({
         ...s,
         ...(e.name ? { friendly_name: e.name } : {}),
@@ -588,6 +608,23 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
       ) : (
         // PREVIEW VIEW — what the LLM proposed
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {recipes.length > 0 && (
+            <div>
+              <SectionHeader
+                label={t('automations.proCard.sectionRecipes')}
+                count={recipes.length}
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {recipes.map((r, i) => (
+                  <div key={i} style={{ opacity: isIncluded('recipe', i) ? 1 : 0.45 }}>
+                    <RecipeRow recipe={r} t={t} />
+                    {editable && artifactControls({ kind: 'recipe', idx: i, showRename: false, showTimeout: false })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {occupancy.length > 0 && (
             <div>
               <SectionHeader
@@ -688,6 +725,25 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
               </div>
             </div>
           )}
+
+          {/* What the designer could NOT build, and why — never silently a
+              smaller bundle than the one announced. */}
+          {leftOut.length > 0 && (
+            <div>
+              <SectionHeader
+                label={t('automations.proCard.leftOut')}
+                count={leftOut.length}
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {leftOut.map((x, i) => (
+                  <p key={i} className="z-footnote" dir="auto"
+                     style={{ margin: 0, padding: '6px 16px', color: 'var(--ink-mute)' }}>
+                    {x.what}{x.why ? ` — ${x.why}` : ''}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -781,7 +837,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
                   ? t('automations.proCard.accept')
                   /* Reflect the subset when the user has excluded artifacts, so
                      "Accept" clearly applies to only what's still selected. */
-                  : includedCount < (occupancy.length + modes.length + automations.length + voices.length)
+                  : includedCount < totalCount
                     ? t('automations.proCard.acceptN', { n: includedCount })
                     : t('automations.proCard.accept')}
             </button>

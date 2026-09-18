@@ -4876,4 +4876,53 @@ export default {
   'wall.err.offline':       'המכשיר לא מקוון',
   'wall.err.save':          'לא הצלחתי לשמור את הסידור',
   'wall.err.load':          'לא הצלחתי לטעון את הסידור של הטאבלט',
+
+  // ── מצבי בית (סט קבוע) ────────────────────────────────────────────────
+  'modes.title':             'מצבים',
+  'modes.sleep':             'שינה',
+  'modes.movie':             'סרט',
+  'modes.cleaning':          'ניקיון',
+  'modes.guest':             'אורחים',
+  'modes.vacation':          'חופשה',
+  'modes.until':             'עד {t}',
+  'modes.pickDuration':      '{mode} — לכמה זמן?',
+  'modes.hours1':            'שעה',
+  'modes.hours2':            'שעתיים',
+  'modes.hours3':            '3 שעות',
+  'modes.untilOff':          'עד שאכבה',
+  'modes.failed':            'לא הצלחתי לשנות את המצב',
+  'modes.effect.sleep':      'תנועה לא מדליקה אורות עד הבוקר.',
+  'modes.effect.movie':      'תנועה לא מדליקה אורות לזמן מה.',
+  'modes.effect.cleaning':   'האורות לא נכבים גם כשהחדר נראה ריק.',
+  'modes.effect.guest':      '״כולם יצאו״ לא מופעל כשיש אורחים.',
+  'modes.effect.vacation':   'הבית נראה מאוכלס בכל ערב כשאין אף אחד.',
+
+  // ── אור מוחזק ─────────────────────────────────────────────────────────
+  'lightHold.held':          'מוחזק',
+  'lightHold.untilEmpty':    'נשאר כבוי עד שהחדר יתרוקן — כיבית אותו בעצמך.',
+  'lightHold.untilTime':     'נשאר כבוי עד {t} — כיבית אותו פעמיים הערב.',
+  'lightHold.release':       'שחרור',
+
+  // ── בונה: תנאי מצב + פעולת מצב ────────────────────────────────────────
+  'automations.cond.modeType':        'מצב בית',
+  'automations.cond.modeLabel':       'מצב',
+  'automations.cond.modeIsLabel':     'חייב להיות',
+  'automations.cond.modeOn':          'פעיל',
+  'automations.cond.modeOff':         'כבוי',
+  'automations.actionSetMode':        'הגדרת מצב בית',
+  'automations.action.modeOn':        'הפעלה',
+  'automations.action.modeOff':       'כיבוי',
+  'automations.action.modeHoursPh':   'שעות (לא חובה)',
+  'automations.summary.modeOn':       'הפעלת מצב {mode}',
+  'automations.summary.modeOff':      'כיבוי מצב {mode}',
+  'automations.summary.condModeOn':   'מצב {mode} פעיל',
+  'automations.summary.condModeOff':  'מצב {mode} כבוי',
+
+  // ── כרטיס המעצב: מתכונים + מה הושאר בחוץ ──────────────────────────────
+  'automations.proCard.sectionRecipes':      'מוכנים מראש',
+  'automations.proCard.recipe.smart_room':   'חדר חכם — האור עוקב אחרי מי שבחדר',
+  'automations.proCard.recipe.motion_light': 'אור לפי תנועה — נדלק כשנכנסים, נכבה כשנרגע',
+  'automations.proCard.recipe.welcome_home': 'אור כשמגיעים הביתה',
+  'automations.proCard.recipe.leave_home':   'הכל נכבה כשכולם יוצאים',
+  'automations.proCard.leftOut':             'הושאר בחוץ',
 }
