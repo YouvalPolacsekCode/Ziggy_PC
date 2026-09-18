@@ -42,6 +42,7 @@ from core.errors import (
     ZiggyError,
 )
 from core.logger_module import log_debug, log_error
+from services.usage_counters import bump as _usage_bump
 
 
 _DEBUG_HEADER = "x-ziggy-debug"
@@ -174,6 +175,8 @@ async def handle_http_exception(request: Request, exc: StarletteHTTPException) -
     """
     request_id = _get_request_id(request)
     code, default_msg = _classify_http_exception(exc.status_code, exc.detail)
+    if exc.status_code >= 500:
+        _usage_bump("error_5xx")
 
     if _detail_looks_user_safe(exc.detail):
         public_message = str(exc.detail)
@@ -233,6 +236,7 @@ async def handle_unhandled(request: Request, exc: Exception) -> JSONResponse:
     """
     request_id = _get_request_id(request)
     tb = traceback.format_exc()
+    _usage_bump("error_5xx")
     log_error(
         f"[Unhandled] {type(exc).__name__}: {exc}\nrequest_id={request_id}\n{tb}"
     )

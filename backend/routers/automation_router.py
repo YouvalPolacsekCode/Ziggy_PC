@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from core.logger_module import log_info
 from core.debug_bus import bus as _bus, BASIC as _BASIC, VERBOSE as _VERBOSE
+from services.usage_counters import bump as _usage_bump
 from services.ha_automations import (
     list_automations as ha_list_automations,
     get_automation_for_ui,
@@ -860,6 +861,8 @@ async def create_automation_endpoint(body: AutomationBody):
             raise HTTPException(status_code=422, detail=result.get("error", "Add at least one action"))
         raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
     auto_id = result["id"]
+    if not is_update:
+        _usage_bump("automation_created")
     _bus.emit("automation", _BASIC,
               "automation_updated" if is_update else "automation_created",
               automation_id=auto_id, name=body.name,
@@ -1007,6 +1010,9 @@ async def trigger_automation_endpoint(automation_id: str, background_tasks: Back
               automation_id=automation_id, name=label, source="manual",
               ran_in=target)
     if target == "ziggy":
+        # HA-run automations are counted from HA's own last_triggered change
+        # (services/ha_subscriber.py); counting them here too would double.
+        _usage_bump("automation_triggered")
         background_tasks.add_task(
             execute_ziggy_actions, automation_id, label, "manual",
         )

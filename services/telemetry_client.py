@@ -500,6 +500,16 @@ def _build_payload(settings: dict, *, timeout_s: float) -> dict:
     if health is not None:
         payload["health"] = health
     payload["deploy"] = _collect_deploy()
+
+    # ── Feature-usage counters (privacy-preserving, TRACKING_SPEC §4) ────
+    # Whole-home counts for the window since the last post, plus an error
+    # count and the top exception class names. Never per-user, never text.
+    # A counters failure must not cost the fleet its health view.
+    try:
+        from services.usage_counters import snapshot_and_reset
+        payload["usage_counters"] = snapshot_and_reset(settings=settings)
+    except Exception as e:
+        log.debug("usage_counters snapshot failed: %s: %s", type(e).__name__, e)
     return payload
 
 

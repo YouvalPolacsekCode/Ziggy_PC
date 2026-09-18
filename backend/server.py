@@ -16,6 +16,7 @@ from backend.middleware.request_logger import RequestLoggerMiddleware
 from backend.middleware.error_handler import install_error_handlers
 from core.logger_module import log_info, apply_log_level
 from core.settings_loader import settings
+from services.usage_counters import bump as _usage_bump
 
 from backend.routers.intent_router import router as intent_router
 from backend.routers.device_router import router as device_router
@@ -540,6 +541,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = ""):
         return
 
     client_id = await manager.connect(websocket)
+    _usage_bump("app_open")
     log_info(f"[API] WebSocket connected. client_id={client_id} total={manager.count}")
     _bus.emit("ws", _BASIC, "ws_client_connected",
               client_id=client_id, total=manager.count)

@@ -19,6 +19,10 @@ import atexit
 import logging
 import os
 import queue
+import re
+import threading
+import time
+from collections import deque
 from logging.handlers import QueueHandler, QueueListener, TimedRotatingFileHandler
 
 LOG_DIR = "logs"
@@ -50,6 +54,60 @@ atexit.register(_queue_listener.stop)
 
 _root = logging.getLogger()
 _root.addHandler(_queue_handler)
+
+
+# ─── Error ring — what the hub tells the fleet about its own errors ──────────
+#
+# services/usage_counters.py reads this every 5 minutes and ships ONLY a count
+# and the top exception class names inside the telemetry post. Nothing else is
+# retained here: no message text, no request bodies, no paths — an exception's
+# class name is the whole record. That is deliberate; the ring exists so the
+# relay can notice an error burst, not so anyone can read a customer's logs.
+
+_ERROR_RING_MAXLEN = 512
+_UNHANDLED_RE = re.compile(r"^\[Unhandled\] ([A-Za-z_][A-Za-z0-9_.]*):")
+
+
+class ErrorRingHandler(logging.Handler):
+    """Keeps (monotonic_ts, exception_class_name | None) for ERROR+ records."""
+
+    def __init__(self, maxlen: int = _ERROR_RING_MAXLEN) -> None:
+        super().__init__(level=logging.ERROR)
+        self._ring: "deque[tuple[float, str | None]]" = deque(maxlen=maxlen)
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _exc_type(record: logging.LogRecord) -> str | None:
+        exc_info = getattr(record, "exc_info", None)
+        if exc_info and exc_info[0] is not None:
+            return getattr(exc_info[0], "__name__", None)
+        try:
+            m = _UNHANDLED_RE.match(record.getMessage())
+        except Exception:
+            return None
+        return m.group(1) if m else None
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            entry = (time.monotonic(), self._exc_type(record))
+            with self._lock:
+                self._ring.append(entry)
+        except Exception:
+            # A logging handler must never take the process down.
+            pass
+
+    def since(self, t0: float) -> list[str | None]:
+        """Exception class names (or None) of every record at/after monotonic t0."""
+        with self._lock:
+            return [name for ts, name in self._ring if ts >= t0]
+
+    def clear(self) -> None:
+        with self._lock:
+            self._ring.clear()
+
+
+error_ring = ErrorRingHandler()
+_root.addHandler(error_ring)
 
 
 # ─── Bus ↔ stdlib logging bridge ─────────────────────────────────────────────
