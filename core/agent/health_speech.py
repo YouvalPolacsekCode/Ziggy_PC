@@ -303,6 +303,18 @@ def describe_diagnosis(device_label: str, is_on: bool, last_intended: str | None
 # Verdict code → (Hebrew, English). {label} already carries the Hebrew article.
 # {auto} is the automation/routine name, {room} the room's Hebrew/English name.
 _WHY_NOT_LINES: dict[str, tuple[str, str]] = {
+    "light_held": (
+        "כיבית את {label} בעצמך, אז אני משאיר אותו כבוי עד ש{room} יתרוקן. "
+        "אפשר להגיד ״שחרר״ או ללחוץ שחרור על האור.",
+        "You turned the {label} off yourself, so I'm holding it off until the {room} "
+        "empties. Say 'release it' or tap Release on the light.",
+    ),
+    "light_held_morning": (
+        "כיבית את {label} פעמיים הערב, אז אני משאיר אותו כבוי עד {until}. "
+        "אפשר להגיד ״שחרר״ או ללחוץ שחרור על האור.",
+        "You turned the {label} off twice tonight, so I'm holding it off until {until}. "
+        "Say 'release it' or tap Release on the light.",
+    ),
     "device_unreachable": (
         "{label} לא מגיב לזיגי כרגע, אז שום שגרה לא יכלה להדליק אותו. "
         "כדאי לכבות ולהדליק מהמפסק בקיר — ואז אבדוק שוב.",
@@ -373,6 +385,9 @@ def describe_why_not(verdicts: list[str], facts: dict, device_label: str,
                      room_label: str | None, lang: str = "en") -> str:
     """Phrase the top verdict + the next step. Never an id, never an engine word."""
     top = (verdicts or ["unknown"])[0]
+    hold = facts.get("hold") or {}
+    if top == "light_held" and hold.get("state") == "held_until_morning":
+        top = "light_held_morning"
     he, en = _WHY_NOT_LINES.get(top, _WHY_NOT_LINES["unknown"])
     line = he if lang == "he" else en
     autos = facts.get("automations") or []
@@ -395,7 +410,8 @@ def describe_why_not(verdicts: list[str], facts: dict, device_label: str,
     auto_name = (pick or (autos[0] if autos else {})).get("name") or (
         "השגרה" if lang == "he" else "the routine")
     room = room_label or ("החדר" if lang == "he" else "room")
-    out = line.format(label=device_label, auto=auto_name, room=room)
+    until = hold.get("until_text") or ("הבוקר" if lang == "he" else "morning")
+    out = line.format(label=device_label, auto=auto_name, room=room, until=until)
     tried = [r for r in (facts.get("repairs") or []) if r.get("outcome") not in (None, "skipped")]
     if tried and top in ("device_unreachable", "sensor_silent", "sensor_latched"):
         out += _REPAIR_NOTE[0] if lang == "he" else _REPAIR_NOTE[1]

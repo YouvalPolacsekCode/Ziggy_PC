@@ -20,6 +20,7 @@ from core.logger_module import log_error
 
 VERDICTS = (
     "device_unreachable",
+    "light_held",            # a person turned it off; Ziggy is honouring that
     "sensor_latched",
     "sensor_silent",
     "automation_disabled",
@@ -187,10 +188,20 @@ def gather_facts(entity_id: str, hours: float = 3.0, *, directory: dict | None =
             occupancy = {"state": str(snap.state), "reason": snap.reason.description}
     except Exception:
         pass
+    hold = None
+    try:
+        from services import light_hold
+        if light_hold.is_held(entity_id):
+            rec = light_hold.get(entity_id) or {}
+            until = rec.get("until")
+            hold = {"state": rec.get("state"), "since": rec.get("since"), "until": until,
+                    "until_text": (_dt.datetime.fromtimestamp(until).strftime("%H:%M") if until else None)}
+    except Exception:
+        hold = None
     return {
         "entity_id": entity_id, "hours": hours, "room": room,
         "device": device, "automations": autos, "sensors": sensors,
-        "occupancy": occupancy,
+        "occupancy": occupancy, "hold": hold,
         "repairs": _repairs([entity_id] + [s["entity_id"] for s in sensors]),
     }
 
@@ -202,6 +213,9 @@ def judge(facts: dict) -> list[str]:
     dev = facts.get("device") or {}
     if not dev.get("reachable", True):
         v.append("device_unreachable")
+    hold = facts.get("hold") or {}
+    if hold.get("state") in ("held", "held_until_morning") and dev.get("state") in ("off", ""):
+        v.append("light_held")
     for s in facts.get("sensors") or []:
         an = set(s.get("anomalies") or [])
         if "ANOM-12" in an and "sensor_latched" not in v:

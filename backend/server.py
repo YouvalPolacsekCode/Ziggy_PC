@@ -715,9 +715,11 @@ app.include_router(wall_router)
 # worked can change), and every route declares its own auth dependency.
 from backend.routers.mode_router import router as mode_router
 from backend.routers.modes_router import router as modes_router
+from backend.routers.light_hold_router import router as light_hold_router
 from backend.routers.weather_router import router as weather_router
 app.include_router(mode_router)
 app.include_router(modes_router)
+app.include_router(light_hold_router)
 app.include_router(weather_router)
 
 # ---------------------------------------------------------------------------
