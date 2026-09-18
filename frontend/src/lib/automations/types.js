@@ -65,6 +65,8 @@ export function getActionTypes(opts = {}) {
     { value: 'send_intent',          label: tStatic('automations.actionSendIntent') },
     { value: 'delay',                label: tStatic('automations.actionDelay') },
     { value: 'notify',               label: tStatic('automations.actionNotify') },
+    // Flip one of the fixed home modes (backend step: set_mode).
+    { value: 'set_mode',             label: tStatic('automations.actionSetMode') },
     // Multi-day "Away — Simulate Presence" activation. The wizard exposes
     // window/rooms/days/TV controls; the backend hands off to
     // services.fake_occupancy_scheduler once the user taps Run.
@@ -160,7 +162,17 @@ export function getConditionTypes() {
   return [
     { value: 'entity', label: tStatic('automations.cond.entityType') },
     { value: 'time',   label: tStatic('automations.cond.timeType') },
+    // "Only if the house is (not) in a mode" — the fixed home modes.
+    { value: 'mode',   label: tStatic('automations.cond.modeType') },
   ]
+}
+
+// The fixed home modes (services/modes.py). There are no others and nobody
+// can add one — that is the point.
+export const HOME_MODES = ['sleep', 'movie', 'cleaning', 'guest', 'vacation']
+
+export function getModeOptions() {
+  return HOME_MODES.map((id) => ({ value: id, label: tStatic(`modes.${id}`) }))
 }
 
 // State options for "controllable" non-binary entities (lights, switches, TVs, etc.)

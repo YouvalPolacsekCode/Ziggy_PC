@@ -8,7 +8,7 @@ import { useT } from '../../../lib/i18n'
 import { useDeviceStore } from '../../../stores/deviceStore'
 import {
   getBinarySensorConditionStates, getDefaultBinaryCondition,
-  getConditionTypes, getControllableConditionStates,
+  getConditionTypes, getControllableConditionStates, getModeOptions,
 } from '../../../lib/automations/types'
 import { FieldHint } from './Atoms'
 
@@ -60,12 +60,36 @@ function ConditionRow({ condition, onChange, onRemove }) {
         onChange={e => {
           const next = e.target.value
           if (next === 'time') onChange({ type: 'time', after: '21:00', before: '07:00' })
+          else if (next === 'mode') onChange({ type: 'mode', mode: 'sleep', is: false })
           else onChange({ type: 'entity', entity_id: '', operator: 'is', value: 'on' })
         }}
       />
       {children}
     </div>
   )
+
+  // ── Home mode ─────────────────────────────────────────────────────────────
+  if (condType === 'mode') {
+    return sharedWrapper(
+      <>
+        <Select
+          label={t('automations.cond.modeLabel')}
+          options={getModeOptions()}
+          value={condition.mode || 'sleep'}
+          onChange={e => onChange({ ...condition, mode: e.target.value })}
+        />
+        <Select
+          label={t('automations.cond.modeIsLabel')}
+          options={[
+            { value: 'on',  label: t('automations.cond.modeOn') },
+            { value: 'off', label: t('automations.cond.modeOff') },
+          ]}
+          value={condition.is === false ? 'off' : 'on'}
+          onChange={e => onChange({ ...condition, is: e.target.value === 'on' })}
+        />
+      </>
+    )
+  }
 
   // ── Time window ───────────────────────────────────────────────────────────
   if (condType === 'time') {

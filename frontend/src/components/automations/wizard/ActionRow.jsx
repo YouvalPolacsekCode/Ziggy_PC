@@ -8,7 +8,7 @@ import { useT } from '../../../lib/i18n'
 import { useDeviceStore } from '../../../stores/deviceStore'
 import { useFeature } from '../../../stores/featuresStore'
 import { CONTROLLABLE_DOMAINS } from '../../../lib/domainRegistry'
-import { getActionTypes } from '../../../lib/automations/types'
+import { getActionTypes, getModeOptions } from '../../../lib/automations/types'
 import { actionSummary } from '../../../lib/automations/summaries'
 import { cardIconBtn } from '../../../lib/automations/styles'
 import IRDeviceSelect from '../../IRDeviceSelect'
@@ -96,6 +96,8 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
           onChange({ type: nextType, window_start: '19:00', window_end: '23:00', duration_days: 7, brightness_pct: 70, rooms: [], tv_ir_device_id: null })
         } else if (nextType === 'media_play') {
           onChange({ type: nextType, speaker_entity: '', service: 'spotify', profile: '', mode: 'playlist' })
+        } else if (nextType === 'set_mode') {
+          onChange({ type: nextType, mode: 'movie', on: true, hours: null })
         } else {
           onChange({ type: nextType, entity_id: '', service: '' })
         }
@@ -134,6 +136,20 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
       {action.type === 'send_intent' && <SendIntentEditor value={action.text || ''} onChange={text => onChange({ ...action, text })} />}
       {action.type === 'delay'       && <Input type="number" placeholder={t('automations.action.secondsPh')} value={action.seconds || ''} onChange={e => onChange({ ...action, seconds: parseInt(e.target.value) })} />}
       {action.type === 'notify'      && <Input placeholder={t('automations.action.messagePh')} value={action.message || ''} onChange={e => onChange({ ...action, message: e.target.value })} dir="auto" />}
+      {action.type === 'set_mode' && (
+        <>
+          <Select options={getModeOptions()} value={action.mode || 'movie'} onChange={e => onChange({ ...action, mode: e.target.value })} />
+          <Select
+            options={[{ value: 'on', label: t('automations.action.modeOn') }, { value: 'off', label: t('automations.action.modeOff') }]}
+            value={action.on === false ? 'off' : 'on'}
+            onChange={e => onChange({ ...action, on: e.target.value === 'on' })}
+          />
+          {action.on !== false && (
+            <Input type="number" min="0.5" step="0.5" placeholder={t('automations.action.modeHoursPh')}
+              value={action.hours ?? ''} onChange={e => onChange({ ...action, hours: e.target.value === '' ? null : parseFloat(e.target.value) })} />
+          )}
+        </>
+      )}
       {action.type === 'device_command' && <DeviceCommandEditor value={action} onChange={patch => onChange({ ...action, ...patch })} />}
       {action.type === 'fake_occupancy_start' && <FakeOccupancyEditor action={action} onChange={patch => onChange(patch)} />}
       {action.type === 'media_play' && mediaMusic && <MediaPlayActionEditor action={action} onChange={onChange} />}

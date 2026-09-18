@@ -84,6 +84,8 @@ export function actionSummary(action) {
     }
     case 'ir_command':   return `${action.ir_device_name || tStatic('automations.summary.irDevice')} → ${action.ir_sequence || action.ir_command || unk}`
     case 'send_intent':  return tStatic('automations.summary.commandLabel', { text: action.text || unk })
+    case 'set_mode':     return tStatic(action.on === false ? 'automations.summary.modeOff' : 'automations.summary.modeOn',
+                                        { mode: tStatic(`modes.${action.mode || 'movie'}`) })
     case 'delay':        return tStatic('automations.summary.waitSeconds', { n: action.seconds || unk })
     case 'notify':       return tStatic('automations.summary.notifyLabel', { message: action.message || unk })
     case 'fake_occupancy_start': {
@@ -110,6 +112,10 @@ export function behaviorSummary(automation, max = 3) {
 }
 
 export function conditionSummary(c) {
+  if (c.type === 'mode') {
+    return tStatic(c.is === false ? 'automations.summary.condModeOff' : 'automations.summary.condModeOn',
+                   { mode: tStatic(`modes.${c.mode || 'sleep'}`) })
+  }
   if (c.type === 'time') {
     const parts = []
     if (c.after)  parts.push(tStatic('automations.summary.after',  { time: c.after  }))
