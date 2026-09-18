@@ -12,7 +12,10 @@ import backend.routers.ha_router as hr
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    # A fresh loop per call. get_event_loop() has no current loop once an
+    # earlier async test has closed its own, so this file failed only in a
+    # full run and passed in isolation.
+    return asyncio.run(coro)
 
 
 def test_ha_entities_applies_icon_and_is_tile(monkeypatch):
