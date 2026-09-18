@@ -77,8 +77,13 @@ if [ "${1:-}" = "inspect" ]; then echo "ZIGGY_GIT_SHA=$(cat /tmp/.ziggy-test-sha
 # `compose ... config --services` / `ps --services`: a fake three-service stack
 # so the stack report has something to say.
 case "$*" in
-  *"config --services"*) printf 'ziggy\nhomeassistant\nmosquitto\n' ;;
-  *"ps --services"*)     printf 'ziggy\nhomeassistant\n' ;;
+  *"config --services"*)
+    printf 'ziggy\nhomeassistant\nmosquitto\n'
+    # With the zigbee profile active, compose lists its service too.
+    case ",${COMPOSE_PROFILES:-}," in *,zigbee-z2m,*) printf 'zigbee2mqtt\n' ;; esac ;;
+  *"ps --services"*)
+    printf 'ziggy\nhomeassistant\n'
+    [ "${ZIGGY_TEST_Z2M_RUNNING:-0}" = "1" ] && printf 'zigbee2mqtt\n' ;;
 esac
 exit 0
 EOF
@@ -346,6 +351,35 @@ pass "a declared matter profile is part of the compose file set on every run"
 grep -q '"profiles": "zigbee-z2m,matter"' "$HUB/user_files/stack_status.json" \
   || fail "stack report does not carry the declared profiles"
 pass "the stack report carries the declared profiles"
+
+# --- Scenario 9: a running-but-undeclared profile declares itself ------------
+# Every 2026 hub runs zigbee2mqtt under a profile imaging exported for its own
+# session only; ziggy.env never had it. Instead of a human editing three hubs
+# (and every future one), the updater declares what is running.
+ENVF="$WORK/ziggy.env"
+printf 'ZIGGY_COHORT=production\n' > "$ENVF"
+set +e
+PATH="$BIN:$PATH" ZIGGY_ENV_FILE="$ENVF" ZIGGY_COHORT=production \
+ZIGGY_REPO_DIR="$HUB" ZIGGY_INFRA_CHANNEL=off ZIGGY_TEST_Z2M_RUNNING=1 \
+  bash "$HUB/scripts/linux/ziggy-update.sh" > "$WORK/update9.log" 2>&1
+set -e
+grep -q '^ZIGGY_COMPOSE_PROFILES=zigbee-z2m$' "$ENVF" \
+  || fail "updater did not declare the running zigbee profile in ziggy.env: $(cat "$ENVF")"
+pass "a running zigbee2mqtt gets ZIGGY_COMPOSE_PROFILES=zigbee-z2m declared in ziggy.env"
+grep -q '"undeclared_running": \[\]' "$HUB/user_files/stack_status.json" \
+  || fail "stack report still lists zigbee2mqtt as undeclared after self-declaring: $(cat "$HUB/user_files/stack_status.json")"
+grep -q '"profiles": "zigbee-z2m"' "$HUB/user_files/stack_status.json" \
+  || fail "stack report does not carry the self-declared profile"
+pass "the same tick's stack report already shows the profile declared"
+# Idempotent: a second run must not duplicate or rewrite the line.
+set +e
+PATH="$BIN:$PATH" ZIGGY_ENV_FILE="$ENVF" ZIGGY_COHORT=production \
+ZIGGY_REPO_DIR="$HUB" ZIGGY_INFRA_CHANNEL=off ZIGGY_TEST_Z2M_RUNNING=1 \
+  bash "$HUB/scripts/linux/ziggy-update.sh" > "$WORK/update9b.log" 2>&1
+set -e
+[ "$(grep -c '^ZIGGY_COMPOSE_PROFILES=' "$ENVF")" = "1" ] \
+  || fail "ZIGGY_COMPOSE_PROFILES was written more than once"
+pass "self-declaration is idempotent"
 
 echo
 echo "PASS — the updater ships the release without destroying the home."

@@ -151,8 +151,54 @@ dc() { docker compose "${COMPOSE_FILES[@]}" "$@"; }
 # What the stack SHOULD contain vs what is running — for the hub's telemetry
 # (services/telemetry_client.py reads it; the container has no docker socket).
 # Written every tick, even no-op ones, so the view never goes stale.
+# A service running under a profile the env file never declared is a latent
+# loss: the next full stack recreate drops it (how Matter went). Rather than
+# asking a human to edit ziggy.env on every hub, declare what is running.
+# Only services with a known profile are mapped; anything else is reported.
+_profile_for_service() {
+  case "$1" in
+    zigbee2mqtt)          echo "zigbee-z2m" ;;
+    otbr|matter-server)   echo "matter" ;;
+    *)                    echo "" ;;
+  esac
+}
+
+declare_running_profiles() {
+  $DRY_RUN && return 0
+  local run s prof new="$STACK_PROFILES" added=""
+  run="$(dc ps --services --status running 2>/dev/null || true)"
+  for s in $run; do
+    prof="$(_profile_for_service "$s")"
+    [ -n "$prof" ] || continue
+    case ",$new," in *,"$prof",*) continue ;; esac
+    new="${new:+$new,}$prof"
+    added="${added:+$added,}$prof"
+  done
+  [ -n "$added" ] || return 0
+  if [ -f "$ZIGGY_ENV_FILE" ] && [ -w "$ZIGGY_ENV_FILE" ]; then
+    if grep -qE '^ZIGGY_COMPOSE_PROFILES=' "$ZIGGY_ENV_FILE"; then
+      sed -i "s|^ZIGGY_COMPOSE_PROFILES=.*|ZIGGY_COMPOSE_PROFILES=$new|" "$ZIGGY_ENV_FILE"
+    else
+      printf 'ZIGGY_COMPOSE_PROFILES=%s\n' "$new" >> "$ZIGGY_ENV_FILE"
+    fi
+    log "Declared running profile(s) $added in $ZIGGY_ENV_FILE (ZIGGY_COMPOSE_PROFILES=$new) so rebuilds keep them"
+  else
+    log "Running profile(s) $added are undeclared and $ZIGGY_ENV_FILE is not writable — declare ZIGGY_COMPOSE_PROFILES=$new by hand"
+    return 0
+  fi
+  STACK_PROFILES="$new"
+  export COMPOSE_PROFILES="$STACK_PROFILES"
+  case ",$STACK_PROFILES," in
+    *,matter,*)
+      [ -f "$REPO_DIR/docker-compose.matter.yml" ] && ! printf '%s\n' "${COMPOSE_FILES[@]}" | grep -q 'docker-compose.matter.yml' \
+        && COMPOSE_FILES+=(-f docker-compose.matter.yml) ;;
+  esac
+  return 0
+}
+
 write_stack_status() {
   $DRY_RUN && return 0
+  declare_running_profiles
   local exp run mdp="false"
   exp="$(dc config --services 2>/dev/null | sort | tr '\n' ' ' || true)"
   run="$(dc ps --services --status running 2>/dev/null | sort | tr '\n' ' ' || true)"
