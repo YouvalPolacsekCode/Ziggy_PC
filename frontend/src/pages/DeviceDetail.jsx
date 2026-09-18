@@ -15,7 +15,7 @@ import { Button } from '../components/ui/Button'
 import { useDeviceStore } from '../stores/deviceStore'
 import { useUIStore } from '../stores/uiStore'
 import { useSuggestionStore } from '../stores/suggestionStore'
-import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, assignDeviceToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, renameHaDevice, getIrBlaster, setTilePref, setClassification, getClassifyOptions, selfHealRefresh, whoCanDo } from '../lib/api'
+import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, assignDeviceToArea, getAllRooms, removeRegistryEntity, deleteHaEntity, deleteIrDevice, renameHaEntity, renameHaDevice, getIrBlaster, setTilePref, setClassification, getClassifyOptions, selfHealRefresh, whoCanDo, releaseLightHold } from '../lib/api'
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn, normRoomSlug } from '../lib/utils'
 import { patchIrDevice } from '../lib/api'
@@ -539,6 +539,16 @@ function WhoCanUse({ entityId }) {
 function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   const t = useT()
   const { entityId: entityIdParam } = useParams()
+  // Light hold — this light was switched off by a person, so motion rules
+  // leave it alone. Shown with its reason and a Release button.
+  const hold = useDeviceStore(s => s.lightHolds[entityIdParam])
+  const applyLightHoldChanged = useDeviceStore(s => s.applyLightHoldChanged)
+  const onReleaseHold = async () => {
+    try {
+      await releaseLightHold(entityIdParam)
+      applyLightHoldChanged({ entity_id: entityIdParam, state: null })
+    } catch { /* the pill stays; the next WS event is authoritative */ }
+  }
   const entityId = entityIdProp ?? entityIdParam
   const _navigate = useNavigate()
   // Embedded: hand the intended destination to the host and let it decide.
@@ -1223,6 +1233,20 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             <Zap size={18} strokeWidth={1.75} />
             {t('deviceDetail.askFixer')}
           </button>
+        </div>
+      )}
+
+      {hold && (
+        <div className="z-card" style={{ padding: 12, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p className="z-eyebrow" style={{ margin: 0 }}>{t('lightHold.held')}</p>
+            <p className="z-subhead" style={{ margin: '2px 0 0' }} dir="auto">
+              {hold.state === 'held_until_morning'
+                ? t('lightHold.untilTime', { t: hold.until_text || '06:30' })
+                : t('lightHold.untilEmpty')}
+            </p>
+          </div>
+          <Button variant="secondary" onClick={onReleaseHold}>{t('lightHold.release')}</Button>
         </div>
       )}
 

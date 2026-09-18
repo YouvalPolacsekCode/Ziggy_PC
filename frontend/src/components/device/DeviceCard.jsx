@@ -585,6 +585,7 @@ function secondaryLine(facts) {
   if (facts.kind === KIND.AC && facts.hvacMode && facts.isOn) bits.push(facts.hvacMode)
   if ((facts.kind === KIND.TV || facts.kind === KIND.SOUNDBAR) && facts.mediaTitle) bits.push(facts.mediaTitle)
   if (facts.kind === KIND.PERSON) return facts.stateLabel
+  if (facts.held) bits.push(i18nT('lightHold.held'))
   if (facts.isIr) bits.push('IR')
   else if (facts.hasIr) bits.push('IR + WiFi')
   if (!facts.isAvailable) bits.push(i18nT('common.unavailable'))
@@ -690,6 +691,9 @@ function DeviceCardImpl({ entity, variant = 'row', onOpen, dense = false, tileSt
   const navigate = useNavigate()
   const addToast = useUIStore((s) => s.addToast)
   const [pending, setPending] = useState(false)
+  // Light hold — a person switched this light off; motion rules leave it
+  // alone until the room empties (or until morning). Shown as a "Held" pill.
+  const heldState = useDeviceStore((s) => s.lightHolds[entity?.entity_id]?.state)
 
   if (!entity) return null
   const rawFacts = deviceFacts(entity)
@@ -698,9 +702,10 @@ function DeviceCardImpl({ entity, variant = 'row', onOpen, dense = false, tileSt
   // — e.g. "Switcher Boiler" instead of the primary entity's friendly name
   // "Switcher Boiler Power"). Solo entities pass through unchanged.
   const group = entity._group || null
-  const facts = (group && group.name)
+  const namedFacts = (group && group.name)
     ? { ...rawFacts, name: group.name }
     : rawFacts
+  const facts = heldState ? { ...namedFacts, held: heldState } : namedFacts
   const groupMetrics = group?.metrics || []
 
   const open = () => {
