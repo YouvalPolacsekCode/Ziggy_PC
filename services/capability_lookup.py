@@ -26,6 +26,20 @@ _CATALOG_PATH = Path(__file__).resolve().parent.parent / "docs" / "capability-ca
 
 # Statuses that mean "this works in a customer home today".
 LIVE_STATUSES = frozenset({"live-prod"})
+_CANARY_LIVE = LIVE_STATUSES | {"canary-only"}
+
+
+def live_statuses() -> frozenset:
+    """What counts as live ON THIS HUB. A canary hub runs origin/main, so a
+    `canary-only` capability is real here and Ziggy must not deny having it;
+    on a customer hub the same entry is honestly "not yet"."""
+    try:
+        from services.deploy_state import _read_host_state
+        if str((_read_host_state() or {}).get("cohort") or "").strip().lower() == "canary":
+            return _CANARY_LIVE
+    except Exception:
+        pass
+    return LIVE_STATUSES
 # Hebrew stems → English catalog words. Small on purpose; the model already
 # translates the user's intent, this only rescues bare nouns.
 _HE_HINTS = {
@@ -73,8 +87,9 @@ def search(query: str, limit: int = 5, *, live_only: bool = False) -> list[dict]
     if not q:
         return []
     scored: list[tuple[float, dict]] = []
+    live = live_statuses()
     for c in _load():
-        if live_only and c.get("status") not in LIVE_STATUSES:
+        if live_only and c.get("status") not in live:
             continue
         name_t = _tokens(c.get("name", ""))
         body_t = _tokens(" ".join([c.get("pitch", ""), c.get("what_it_does", ""),
@@ -82,7 +97,7 @@ def search(query: str, limit: int = 5, *, live_only: bool = False) -> list[dict]
         score = 3.0 * len(q & name_t) + 1.0 * len(q & body_t)
         if score <= 0:
             continue
-        if c.get("status") in LIVE_STATUSES:
+        if c.get("status") in live:
             score += 0.5
         scored.append((score, c))
     scored.sort(key=lambda s: (-s[0], s[1].get("name", "")))
@@ -124,7 +139,7 @@ def _slim(c: dict) -> dict:
         "pitch": c.get("pitch"),
         "what_it_does": (c.get("what_it_does") or "")[:600],
         "status": c.get("status"),
-        "live": c.get("status") in LIVE_STATUSES,
+        "live": c.get("status") in live_statuses(),
         "layer": c.get("layer"),
         "known_gaps": (c.get("known_gaps") or [])[:3],
         "path": path_for(c),
@@ -133,6 +148,7 @@ def _slim(c: dict) -> dict:
 
 def overview(limit: int = 12) -> list[dict]:
     """A short list of live, user-facing capabilities for 'what can you do'."""
-    live = [c for c in _load() if c.get("status") in LIVE_STATUSES
+    statuses = live_statuses()
+    live = [c for c in _load() if c.get("status") in statuses
             and c.get("audience", "user-facing") == "user-facing"]
     return [_slim(c) for c in live[:limit]]
