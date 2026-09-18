@@ -15,6 +15,7 @@ import { findRoomMetric, roomOccupancy, deviceFacts, sendDeviceCommand } from '.
 import { DeviceIcon } from '../lib/deviceIcons'
 import { QuickControlsPicker } from '../components/QuickControlsPicker'
 import { SystemHealthBanner } from '../components/ui/SystemHealthBanner'
+import ModeChips from '../components/home/ModeChips'
 import { Modal } from '../components/ui/Modal'
 import { Pencil, Play, Sparkles, Check, ChevronRight, ChevronDown, Home, User, Zap } from 'lucide-react'
 import { useT, t as tt, useLang, getLang, translateNamePhrase } from '../lib/i18n'
@@ -1276,6 +1277,9 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* ── Home modes — Sleep · Movie · Cleaning · Guests · Vacation ── */}
+      <ModeChips />
 
       {/* System health banner (services/ha_health.py drives the layered
           failure model — HA-down / coordinator-down / devices-offline / manual

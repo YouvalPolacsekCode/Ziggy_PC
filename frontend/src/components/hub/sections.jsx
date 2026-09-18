@@ -14,9 +14,10 @@ import { useTaskStore } from '../../stores/taskStore'
 import { useUIStore } from '../../stores/uiStore'
 import {
   sendDirectIntent,
-  getWeather, getMode, setMode, getAlerts,
+  getWeather, getAlerts,
   cameraSnapshotUrl, cameraStreamUrl,
 } from '../../lib/api'
+import ModeChips from '../home/ModeChips'
 import { useWsMessages } from '../../hooks/useWebSocket'
 import { useHubStore } from '../../stores/hubStore'
 import DeviceCard from '../device/DeviceCard'
@@ -367,55 +368,17 @@ export function WeatherCardSection({ config = {} }) {
 }
 
 // ─── mode_switcher ───────────────────────────────────────────────────────────
-// Reads /api/mode, listens for `mode_changed` WS events from other tablets,
-// and POSTs on selection. Pure UI for v1 — switching modes doesn't trigger
-// scenes yet; that hook lands in slice 4.
-
-const _MODE_LABELS = { home: 'Home', away: 'Away', night: 'Night', vacation: 'Vacation' }
+// The fixed home modes (sleep / movie / cleaning / guest / vacation) — the
+// same chip row as the Home screen, so a wall tablet and a phone always agree.
+// The old home/away/night/vacation single value had no effect anywhere; these
+// modes gate motion lighting, off-when-empty and everyone-left in the engine.
 
 export function ModeSwitcherSection() {
-  const [mode, setLocalMode] = useState(null)
-  const [busy, setBusy] = useState(false)
-  const addToast = useUIStore(s => s.addToast)
-  const messages = useWsMessages()
-
-  useEffect(() => {
-    getMode().then(r => setLocalMode(r?.mode || 'home')).catch(() => setLocalMode('home'))
-  }, [])
-
-  // Stay in sync if another tablet changes the mode.
-  useEffect(() => {
-    const last = messages[messages.length - 1]
-    if (last?.type === 'mode_changed' && last.mode) setLocalMode(last.mode)
-  }, [messages.length])
-
-  const onPick = async (m) => {
-    if (m === mode || busy) return
-    setBusy(true)
-    const prev = mode
-    setLocalMode(m)  // optimistic
-    try { await setMode(m); addToast(`Mode: ${_MODE_LABELS[m] || m}`, 'success') }
-    catch { setLocalMode(prev); addToast('Could not change mode', 'error') }
-    finally { setBusy(false) }
-  }
-
+  const t = useT()
   return (
     <Card><CardBody>
-      <SectionTitle>Mode</SectionTitle>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-        {Object.entries(_MODE_LABELS).map(([k, label]) => {
-          const active = mode === k
-          return (
-            <button key={k} onClick={() => onPick(k)} disabled={busy}
-              style={{
-                padding: '12px 12px', borderRadius: 10, cursor: 'pointer', fontWeight: 600, fontSize: 12,
-                background: active ? 'var(--accent, var(--info))' : 'var(--bg)',
-                color:      active ? 'white' : 'var(--ink)',
-                border:     `0.5px solid ${active ? 'transparent' : 'var(--line)'}`,
-              }}>{label}</button>
-          )
-        })}
-      </div>
+      <SectionTitle>{t('modes.title')}</SectionTitle>
+      <ModeChips dense />
     </CardBody></Card>
   )
 }

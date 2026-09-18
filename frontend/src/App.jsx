@@ -389,6 +389,8 @@ function AppRoutes() {
   const updateIrDeviceFromAcPacket  = useDeviceStore(s => s.updateIrDeviceFromAcPacket)
   const updateIrDeviceFromStateSnapshot = useDeviceStore(s => s.updateIrDeviceFromStateSnapshot)
   const removeEntity                = useDeviceStore(s => s.removeEntity)
+  const applyModeChanged            = useDeviceStore(s => s.applyModeChanged)
+  const applyLightHoldChanged       = useDeviceStore(s => s.applyLightHoldChanged)
   const renameEntity                = useDeviceStore(s => s.renameEntity)
   const fetchAll                    = useDeviceStore(s => s.fetchAll)
   const fetchAutomations  = useAutomationStore(s => s.fetchAutomations)
@@ -454,6 +456,11 @@ function AppRoutes() {
     if (last.type === 'entity_removed' && last.entity_id) {
       removeEntity(last.entity_id)
     }
+
+    // Home mode flipped (chip, chat, button, automation) / a light hold
+    // started or ended — keep every chip and tile in step without polling.
+    if (last.type === 'mode_changed' && last.mode) applyModeChanged(last)
+    if (last.type === 'light_hold_changed' && last.entity_id) applyLightHoldChanged(last)
 
     // Entity renamed (via Ziggy's rename modal on another tab/device or
     // via HA's UI). Patch the store immediately so every surface shows

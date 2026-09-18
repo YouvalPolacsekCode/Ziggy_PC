@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { getEntities, getRooms, getZiggyDevices, getRoomsWithDevices, getIrDevices, getUiPrefs, putUiPrefs, getDeviceGroups, listOccupancySensors, withRetry } from '../lib/api'
+import { getEntities, getRooms, getZiggyDevices, getRoomsWithDevices, getIrDevices, getUiPrefs, putUiPrefs, getDeviceGroups, listOccupancySensors, withRetry, getModes, setModeState as setModeStateApi, getLightHolds } from '../lib/api'
 import { CONTROLLABLE_DOMAINS, TOGGLEABLE_DOMAINS, DOMAIN_REGISTRY } from '../lib/domainRegistry'
 import { entityDisplayName } from '../lib/utils'
 
@@ -210,6 +210,12 @@ export const useDeviceStore = create((set, get) => ({
   // hide these virtual helpers from the room device grid and to drive the
   // room-tile "occupied" indicator. Sourced from GET /api/occupancy-sensors.
   occupancySensors: [],
+  // The fixed home modes [{id, on, until, since, by, label_en, label_he, …}]
+  // from GET /api/modes; kept live by the `mode_changed` WS event.
+  modes: [],
+  // entity_id → hold record for lights Ziggy is holding off because a person
+  // switched them off (GET /api/light-holds; `light_hold_changed` WS event).
+  lightHolds: {},
   // Unclaimed devices (status=UNCLAIMED — new HA entities not yet placed)
   unclaimedDevices: [],
   // Devices intentionally left without a room (room=null, non-UNCLAIMED)
@@ -579,6 +585,9 @@ export const useDeviceStore = create((set, get) => ({
         loading: false,
         lastUpdated: Date.now(),
       })
+      // Light holds ride along with the device refresh; failure is harmless
+      // (the tile just shows no pill until the next WS event).
+      useDeviceStore.getState().fetchLightHolds?.()
     } catch (e) {
       // Preserve the full error so consumers can describe it via describeError.
       set({ loading: false, error: e })
@@ -699,6 +708,63 @@ export const useDeviceStore = create((set, get) => ({
         groupById: nextGroupById,
         ziggyRooms: nextRooms,
       }
+    })
+  },
+
+  // ── Home modes ────────────────────────────────────────────────────────────
+  fetchModes: async () => {
+    try {
+      const r = await getModes()
+      set({ modes: r?.modes || [] })
+    } catch { /* chips stay as they were */ }
+  },
+  // Optimistic flip; the server record (until/since) replaces the guess.
+  setModeState: async (mode, on, hours = null) => {
+    const prev = useDeviceStore.getState().modes
+    set({ modes: prev.map((m) => (m.id === mode ? { ...m, on } : m)) })
+    try {
+      const rec = await setModeStateApi(mode, on, hours)
+      set((s) => ({
+        modes: s.modes.map((m) => (m.id === mode
+          ? { ...m, on: !!rec.on, until: rec.until ?? null, since: rec.since ?? null, by: rec.by ?? m.by }
+          : m)),
+      }))
+      return rec
+    } catch (e) {
+      set({ modes: prev })
+      throw e
+    }
+  },
+  applyModeChanged: (msg) => {
+    if (!msg?.mode) return
+    set((s) => ({
+      modes: s.modes.map((m) => (m.id === msg.mode ? { ...m, on: !!msg.on, until: msg.until ?? null } : m)),
+    }))
+  },
+
+  // ── Light holds ───────────────────────────────────────────────────────────
+  fetchLightHolds: async () => {
+    try {
+      const r = await getLightHolds()
+      const map = {}
+      for (const h of (r?.holds || [])) if (h?.entity_id) map[h.entity_id] = h
+      set({ lightHolds: map })
+    } catch { /* keep what we have */ }
+  },
+  applyLightHoldChanged: (msg) => {
+    if (!msg?.entity_id) return
+    set((s) => {
+      const next = { ...s.lightHolds }
+      if (msg.state) {
+        next[msg.entity_id] = {
+          ...(next[msg.entity_id] || {}), entity_id: msg.entity_id,
+          state: msg.state, until: msg.until ?? null, room: msg.room ?? next[msg.entity_id]?.room,
+          until_text: msg.until ? new Date(msg.until * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : null,
+        }
+      } else {
+        delete next[msg.entity_id]
+      }
+      return { lightHolds: next }
     })
   },
 

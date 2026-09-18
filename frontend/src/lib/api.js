@@ -1243,6 +1243,15 @@ export const getMode        = () => get('/mode')
 export const getModeOptions = () => get('/mode/options')
 export const setMode        = (mode) => post('/mode', { mode })
 
+// Home modes (the fixed set: sleep / movie / cleaning / guest / vacation) and
+// light holds (a light a person switched off that motion rules leave alone).
+export const getModes         = () => get('/modes')
+export const setModeState     = (mode, on, hours = null) =>
+  post(`/modes/${encodeURIComponent(mode)}`, { on, hours })
+export const getLightHolds    = () => get('/light-holds')
+export const releaseLightHold = (entityId) =>
+  post(`/light-holds/${encodeURIComponent(entityId)}/release`, {})
+
 // Lists (shopping and friends).
 export const getLists = () => get('/lists')
 export const createList = (name) => post('/lists', { name })
