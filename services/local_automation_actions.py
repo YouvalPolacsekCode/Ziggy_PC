@@ -122,6 +122,9 @@ _LOCAL_TYPES = {
     # Used by Good Night / Leaving and available in the routine wizard.
     "turn_off_all_lights",   # every light off (lights only)
     "turn_off_everything",   # lights + TV/media off
+    # Flip one of the fixed home modes (services.modes). HA compiles it to a
+    # deferred placeholder, so it always runs here whoever fired the trigger.
+    "set_mode",
 }
 
 
@@ -218,6 +221,19 @@ def _eval_single_condition(cond: dict) -> tuple[bool, str]:
         else:
             passed = after <= now_hm < before
         return passed, f"time {now_hm} in [{after},{before})"
+
+    # Home-mode condition — one of the FIXED modes in services.modes. Shape:
+    #   {"type": "mode", "mode": "sleep", "is": false}
+    # HA sees the same fact through the mirrored binary_sensor (modes_mqtt), so
+    # an HA-compiled automation and this evaluator agree.
+    if ctype == "mode":
+        from services import modes as _modes
+        mode = str(cond.get("mode", "")).lower()
+        if mode not in _modes.MODES:
+            return True, f"mode {mode!r} unknown — skipped"
+        want = bool(cond.get("is", True))
+        actual = _modes.is_on(mode)
+        return actual == want, f"mode {mode}={'on' if actual else 'off'} (want {'on' if want else 'off'})"
 
     # IR-device condition — gates on ir_manager's assumed_state for IR-only
     # devices that don't have an HA entity (most IR ACs). Shape:
@@ -575,6 +591,20 @@ async def execute_ziggy_actions(
                         result = {"ok": True, "message": "Notification sent"}
                     except Exception as e:
                         result = {"ok": False, "message": f"Notify failed: {e}"}
+
+                # ── Home mode flip ───────────────────────────────────────────────
+                # step: {"type": "set_mode", "mode": "movie", "on": true, "hours": 2}
+                elif kind == "set_mode":
+                    from services import modes as _modes
+                    mode = str(step.get("mode", "")).lower()
+                    on = bool(step.get("on", True))
+                    hours = step.get("hours")
+                    try:
+                        await _modes.set_mode(mode, on, by=f"automation:{automation_id}",
+                                              hours=float(hours) if hours is not None else None)
+                        result = {"ok": True, "message": f"mode {mode} {'on' if on else 'off'}"}
+                    except ValueError as e:
+                        result = {"ok": False, "message": str(e)}
 
                 # ── Actionable notification (push with buttons) ──────────────────
                 # step: {

@@ -214,6 +214,18 @@ def _condition_to_ha(c: dict) -> Optional[dict]:
             cond["for"] = held
         return cond
 
+    # ── Home mode — Ziggy's fixed modes, mirrored into HA ──────────────────
+    # `services.modes_mqtt` publishes each mode as a retained binary_sensor.
+    # Same contract as presence: only compile when HA has discovered it,
+    # otherwise None (Ziggy re-checks) — never a condition on a missing entity.
+    if c.get("type") == "mode":
+        from services import modes_mqtt
+        ent = modes_mqtt.entity_id(str(c.get("mode", "")).lower())
+        if not ent:
+            return None
+        return {"condition": "state", "entity_id": ent,
+                "state": "on" if bool(c.get("is", True)) else "off"}
+
     # ── Time-window condition ──────────────────────────────────────────────
     if c.get("type") == "time":
         result: dict = {"condition": "time"}
@@ -360,6 +372,11 @@ def _action_to_ha(a: dict) -> Optional[dict]:
         label = a.get("virtual_device_name") or a.get("capability", "ziggy_action")
         return {"service": "notify.persistent_notification",
                 "data": {"message": f"[Ziggy] Run: {label}", "title": "Ziggy Capability"}}
+    if kind == "set_mode":
+        # Ziggy owns modes; HA fires an event so the trace shows the step, and
+        # the deferred-actions bridge runs the real flip (see _HA_PLACEHOLDER_TYPES).
+        return {"event": "ziggy_deferred",
+                "event_data": {"step": "set_mode", "mode": str(a.get("mode", ""))}}
     if kind == "ir_command":
         label = f"{a.get('ir_device_name', 'IR device')} → {a.get('ir_sequence') or a.get('ir_command', '')}"
         return {"service": "notify.persistent_notification",
@@ -377,7 +394,7 @@ def _action_to_ha(a: dict) -> Optional[dict]:
 # the phone is sent by Ziggy's notify step. Treating HA's panel row as "already
 # delivered" suppressed it, so Leave Home turned off the lights and the AC four
 # times on 2026-08-14 without saying a word.
-_HA_PLACEHOLDER_TYPES = {"ir_command", "ziggy_intent", "notify"}
+_HA_PLACEHOLDER_TYPES = {"ir_command", "ziggy_intent", "notify", "set_mode"}
 
 
 def ha_defers_action(a: dict) -> bool:
