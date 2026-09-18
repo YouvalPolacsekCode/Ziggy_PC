@@ -51,19 +51,35 @@ Updated: 2026-09-18
   the Desk; inbound support mail accepted by URL token. 73 tests green.
 - **n8n removed** after audit (`N8N_DECISION.md`): all three planned workflows are native.
 
+- **Setup progress (2026-09-18 evening):** connected and green — Cloudflare DNS token
+  (used from the laptop only), Google service account, GA4 (property 554911954, timezone
+  fixed to Israel), Search Console (domain verified, reader added), PostHog EU (project
+  278080), HubSpot (15 Ziggy fields created; "Lost" = other + UNQUALIFIED because
+  HubSpot's lifecycle options are read-only), Brevo (list id 3, domain authenticated,
+  DKIM records written), relay monitor account (created directly in the relay DB — the
+  Fly secrets existed but no user row did), Sentry (org ziggy-vs, 4 projects, DSNs on
+  Desk + Jeff, staged on relay), UptimeRobot (5 monitors, all UP), GitHub (Ziggy_PC only
+  until the token is widened). Google Workspace MX/SPF/DMARC written. Website deployed
+  with GA4 + PostHog + Sentry + consent banner; Plausible gone. End-to-end lead test
+  passed (Desk → Jeff, HubSpot, Brevo, GA4, PostHog) and the test lead was deleted.
+- **Console redesign LIVE** (direction A, chosen from three mockups): grouped sidebar,
+  light theme, tables, Ask Desk in the top bar, plain names. Full Hebrew pass: the
+  knowledge layer has a Hebrew twin (`knowledge_he.py`), every code-generated string goes
+  through `knowledge.dyn(lang, …)`, inbox items store a key + params and render per
+  viewer language, relay headlines get a Hebrew rendering, i18n audited. 78 tests.
+
 ## IN PROGRESS
-- Nothing in flight. Every remaining step waits on a credential or a decision.
+- Nothing in flight.
 
 ## BLOCKED — NEEDS YOUVAL
-All items in `SETUP_CHECKLIST.md` (also live at `/setup` in the Desk). The ones that unblock the most:
-1. Google Workspace (or Cloudflare Email Routing) — `hello@ziggy-home.com` cannot receive mail.
-2. Cloudflare DNS-edit token — lets me write MX/SPF/DKIM/verification records.
-3. GA4 property + PostHog project — the site deploy and the MARKETING/PRODUCT pages.
-4. HubSpot private-app token + Brevo key — the lead engine's CRM/ESP legs (leads are
-   already stored in the Desk and forwarded to Jeff meanwhile).
-5. Relay monitor credentials copied to the Desk — OPERATIONS page.
-6. Sentry DSNs + UptimeRobot keys — SYSTEM HEALTH page.
-7. Review/merge/ship of `feat/company-os` (no n8n machine needed any more).
+Remaining (also live at `/setup`):
+1. Notification webhook URL (Slack/Discord) — turns on the 07:30 digest and urgent pushes.
+2. GitHub token widened to `ziggy-desk` and `ziggy-website`.
+3. Workspace: domain verification TXT (if Google asks) and DKIM value from the admin console.
+4. Meta system-user token; Google Ads developer token (waiting on Google); Stripe and
+   Freshdesk only when wanted.
+5. Review/merge/ship of `feat/company-os` in Ziggy_PC, then `fly deploy` the relay
+   (Sentry DSN + PostHog key are staged there).
 
 ## NEXT (after credentials)
 - Run the bootstrap scripts; import Jeff's waitlist; deploy the website with the IDs;

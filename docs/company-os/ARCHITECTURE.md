@@ -94,17 +94,22 @@ Design rules:
 3. **Independently disableable.** Missing credential → `not_configured`; explicit `COMPANY_DISABLED=hubspot,brevo` → `disabled`. Both show in `/system`.
 4. **Writes go through an outbox** with idempotency keys, exponential backoff, a dead-letter state, and a TODAY item when something has failed three times.
 5. **Privacy by construction.** Analytics receive pseudonymous ids and event properties only. Email lives in the Desk (`leads`), HubSpot and Brevo; GA4 and PostHog receive `lead_id`, never the address. Hubs never contact a third-party analytics or error vendor; they keep using the relay pipe.
-6. **The Desk is the operating system, not an admin panel.** Every page opens with a
+6. **Console layout, Hebrew-first.** A grouped sidebar (Today · Work · Company ·
+   Settings), light surfaces, one accent, tables over prose, Ask Desk in the top bar.
+   All founder-facing text has a Hebrew twin: `knowledge_he.py` for the knowledge layer,
+   `knowledge.dyn()` for code-generated strings, inbox items carry a key + params and
+   render per viewer language.
+7. **The Desk is the operating system, not an admin panel.** Every page opens with a
    plain-language "what is this page", every number has a "?" from the same registry,
    vendor dashboards are linked but never required. Technical tables sit under
    "Technical details". Today is triaged into ACTION REQUIRED / FYI / AUTOMATIC and
    healthy automations never create items. Company Setup verifies itself where it can
    (a connected service turns green on its own; the mail check reads DNS) and collapses
    into System once complete.
-7. **No second automation system.** The three flows planned for n8n (daily digest,
+8. **No second automation system.** The three flows planned for n8n (daily digest,
    support mail → Desk, fleet-down alert) run inside the Desk's scheduler and inbox;
    see `N8N_DECISION.md`.
-8. **Don't break what works.** The Jeff waitlist endpoint, Youval's signup email, the Instagram/Ads queue, the fleet remediator and the hub telemetry pipe are untouched. The website's lead POST target changes to the Desk, which forwards to Jeff.
+9. **Don't break what works.** The Jeff waitlist endpoint, Youval's signup email, the Instagram/Ads queue, the fleet remediator and the hub telemetry pipe are untouched. The website's lead POST target changes to the Desk, which forwards to Jeff.
 
 ## 4. Where new code lives
 
