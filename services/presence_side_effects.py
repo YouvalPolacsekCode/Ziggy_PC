@@ -15,6 +15,7 @@ import asyncio
 from typing import Optional
 
 from core.logger_module import log_info, log_error
+from core.debug_bus import bus as _bus, BASIC
 from services.presence_engine import Decision
 
 
@@ -66,6 +67,17 @@ async def _fire_automations(name: str, new_state: str) -> None:
         if trigger_type == "person_leaves":
             from services.presence_engine import is_all_away
             if is_all_away():
+                # Guest mode: the phones all left, but someone without a
+                # tracked phone is still here. "Everyone left" must not run.
+                try:
+                    from services import modes as _modes
+                    if _modes.blocks_everyone_left():
+                        log_info("[Presence] guest mode on — everyone-left automations held")
+                        _bus.emit("presence", BASIC, "everyone_left_held_by_guest_mode",
+                                  last_person=name)
+                        return
+                except Exception as exc:  # never let the guard break departures
+                    log_error(f"[Presence] guest-mode guard failed: {exc}")
                 for auto in list_automations():
                     if not auto.get("enabled", True):
                         continue
