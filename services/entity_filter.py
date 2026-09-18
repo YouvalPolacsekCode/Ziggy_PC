@@ -79,6 +79,10 @@ _HIDDEN_PATTERNS: list[re.Pattern] = [
         # plain switches with no entity_category, so they masquerade as devices;
         # "_ai_" in a switch id is never a real controllable device.
         r"^switch\..*_ai_",
+        # Ziggy's own home modes mirrored into HA (services/modes_mqtt.py) —
+        # an API adapter so compiled automations can gate on a mode, never a
+        # device. The product surface for modes is the Home screen chip row.
+        r"^binary_sensor\.ziggy_mode_",
     ]
 ]
 
