@@ -98,7 +98,9 @@ Design rules:
    Settings), light surfaces, one accent, tables over prose, Ask Desk in the top bar.
    All founder-facing text has a Hebrew twin: `knowledge_he.py` for the knowledge layer,
    `knowledge.dyn()` for code-generated strings, inbox items carry a key + params and
-   render per viewer language.
+   render per viewer language. On the phone the same pages sit behind a bottom tab bar
+   (Today · Work · Company · More), tables become cards, decisions pin to the bottom, and
+   the Desk installs to the home screen via a web-app manifest.
 7. **The Desk is the operating system, not an admin panel.** Every page opens with a
    plain-language "what is this page", every number has a "?" from the same registry,
    vendor dashboards are linked but never required. Technical tables sit under

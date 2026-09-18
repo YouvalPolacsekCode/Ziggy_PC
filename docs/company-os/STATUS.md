@@ -68,6 +68,14 @@ Updated: 2026-09-18
   through `knowledge.dyn(lang, …)`, inbox items store a key + params and render per
   viewer language, relay headlines get a Hebrew rendering, i18n audited. 78 tests.
 
+- **Phone layout LIVE** (direction A, approved): under 860 px the sidebar is replaced by a
+  bottom tab bar (היום · עבודה · החברה · עוד) with a sub-navigation strip on the Work and
+  Company groups, a `/more` page for everything else, every table renders as stacked cards
+  (`desk.js` labels cells, CSS stacks them), item pages pin אישור · בקשת שינוי · דחייה above
+  the tab bar, Today approves inline with the proposed schedule, 44 px touch targets, and a
+  web-app manifest + icons so "Add to Home Screen" installs Ziggy Desk with the brand icon.
+  Desktop unchanged. 80 tests.
+
 ## IN PROGRESS
 - Nothing in flight.
 
