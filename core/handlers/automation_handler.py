@@ -708,50 +708,43 @@ async def handle_design_automation_set(params: dict, *, source: str = "unknown")
 
     bundle = result["bundle"]
     arts = bundle.get("artifacts") or {}
-    counts = {k: len(v) for k, v in arts.items() if isinstance(v, list) and v}
-    # Voice intents are listed in v1 but can't actually be created (the bundle
-    # executor skips them). A bundle that's voice_intents-only would render a
-    # card the user can't act on — that's the "empty card" failure mode.
-    actionable_kinds = {"occupancy_sensors", "kv_state", "automations"}
-    actionable_count = sum(counts.get(k, 0) for k in actionable_kinds)
-    has_artifacts = bool(counts)
-    has_actionable = actionable_count > 0
+    # Only what the executor will actually CREATE is counted. The 2026-09-18
+    # card announced "5 voice intents" and created none — the count came from
+    # a kind the executor could not build. Never again: buildable kinds only.
+    buildable = {
+        "recipes":           (L("recipe", "מתכון"), L("recipes", "מתכונים")),
+        "automations":       (L("automation", "אוטומציה"), L("automations", "אוטומציות")),
+        "occupancy_sensors": (L("presence sensor", "חיישן נוכחות"), L("presence sensors", "חיישני נוכחות")),
+    }
+    counts = {k: len(arts.get(k) or []) for k in buildable if isinstance(arts.get(k), list)}
+    actionable_count = sum(counts.values())
+    left_out = [x for x in (bundle.get("left_out") or []) if isinstance(x, dict) and x.get("what")]
 
-    # Hard decline: no artifacts at all → surface decline (or generic) as text.
-    if not has_artifacts:
-        return ok(bundle.get("decline") or L("I couldn't design anything for that — try describing the outcome differently.",
-                                              "לא הצלחתי לעצב משהו עבור זה — נסו לתאר את התוצאה בצורה אחרת."))
-
-    # Voice-intents-only is functionally an empty bundle for v1 — apply would
-    # report all voice intents as "manual setup needed". Don't render a card
-    # the user can't act on; surface as text with the manual-setup note.
-    if not has_actionable:
-        phrases = [vi.get("phrase", "") for vi in (arts.get("voice_intents") or [])]
-        phrase_list = ", ".join(f"\"{p}\"" for p in phrases if p)
-        msg = (
-            L(f"I'd add voice commands ({phrase_list}) for this, but voice commands "
-              f"need manual setup for now — there's nothing else I can build automatically.",
-              f"הייתי מוסיף פקודות קוליות ({phrase_list}) עבור זה, אך פקודות קוליות "
-              f"דורשות הגדרה ידנית כרגע — אין עוד משהו שאוכל לבנות אוטומטית.")
-            if phrase_list else
-            L("I couldn't compose any actionable automation for this outcome.",
-              "לא הצלחתי להרכיב אוטומציה ניתנת לביצוע עבור תוצאה זו.")
-        )
-        if bundle.get("decline"):
-            msg = f"{bundle['decline']} {msg}"
+    # Nothing buildable → say so as text (with the honest reasons), no card.
+    if actionable_count == 0:
+        reasons = "; ".join(f"{x['what']} — {x.get('why', '')}".strip(" —") for x in left_out)
+        msg = bundle.get("decline") or L(
+            "I couldn't design anything for that — try describing the outcome differently.",
+            "לא הצלחתי לעצב משהו עבור זה — אפשר לתאר את התוצאה אחרת.")
+        if reasons:
+            msg = f"{msg} " + L(f"Left out: {reasons}.", f"הושאר בחוץ: {reasons}.")
         return ok(msg)
 
-    summary = ", ".join(f"{n} {k.replace('_', ' ')}" for k, n in counts.items()) or "no artifacts"
+    summary = ", ".join(
+        f"{n} {buildable[k][0] if n == 1 else buildable[k][1]}" for k, n in counts.items() if n
+    )
     name = bundle.get("name", "automation bundle")
     rationale = bundle.get("rationale", "")
-    # Soft decline: there ARE actionable artifacts AND a decline note (partial
-    # fulfillment). Surface decline as a note alongside the preview.
     note = L(f" Note: {bundle['decline']}", f" הערה: {bundle['decline']}") if bundle.get("decline") else ""
+    if left_out:
+        reasons = "; ".join(f"{x['what']} — {x.get('why', '')}".strip(" —") for x in left_out)
+        note += L(f" Left out: {reasons}.", f" הושאר בחוץ: {reasons}.")
 
-    log_info(f"[Pro] preview bundle={bundle.get('bundle_id')} name={name!r} counts={counts} actionable={actionable_count} decline={bool(bundle.get('decline'))}")
+    log_info(f"[designer] preview bundle={bundle.get('bundle_id')} name={name!r} counts={counts} "
+             f"left_out={len(left_out)} decline={bool(bundle.get('decline'))}")
     return ok(
         L(f"I designed '{name}': {summary}. {rationale}{note} Review and accept to create.",
-          f"עיצבתי את '{name}': {summary}. {rationale}{note} סקרו ואשרו כדי ליצור."),
+          f"עיצבתי את '{name}': {summary}. {rationale}{note} אפשר לעבור על זה ולאשר."),
         data={"bundle": bundle, "kind": "automation_bundle_preview"},
     )
 

@@ -11,8 +11,10 @@ in v1. Rationale: every artifact created carries the `bundle_id` so the user
 (or a later "discard bundle" handler) can clean up selectively. Hard
 rollback is hostile when half the bundle is already useful on its own.
 
-Voice intents are surfaced as "not supported in v1" errors — see voice
-intent design TODO for the missing primitive.
+Recipes (services/recipes) are the first phase: each is a pure builder that
+returns ready-to-save automations with STABLE aliases, so a re-apply
+overwrites in place. Voice intents are legacy — the designer no longer emits
+them; any that arrive are reported per phrase, never silently dropped.
 """
 from __future__ import annotations
 import uuid
@@ -23,6 +25,30 @@ from services.ha_automations import save_automation
 from services.template_sensors import create_occupancy_sensor
 from services.local_automation_actions import set_local_state
 from services.blueprint_importer import instantiate_blueprint
+
+
+def _save_recipe_automation(auto: dict, *, bundle_id: str, recipe: str) -> dict:
+    """Save one recipe-built automation. Recipes own their ids: `auto_id` when
+    the recipe fixes one (Leave Home, Welcome Home), else the slug of the
+    stable English alias — never save_automation's _2 dedupe."""
+    from services.ha_automations import _slug
+    data = {
+        "name":        auto.get("alias") or auto.get("name") or "automation",
+        "description": auto.get("description", "Created by Ziggy"),
+        "trigger":     auto.get("trigger", {}),
+        "conditions":  auto.get("conditions", []),
+        "actions":     auto.get("actions", []),
+        "mode":        auto.get("mode", "single"),
+        "rooms":       auto.get("rooms", []),
+        "bundle_id":   bundle_id,
+        "recipe":      recipe,
+    }
+    if auto.get("bundle"):
+        data["bundle"] = auto["bundle"]
+    if isinstance(auto.get("ha_native_body"), dict) and auto["ha_native_body"]:
+        data["ha_native_body"] = auto["ha_native_body"]
+    auto_id = auto.get("auto_id") or (_slug(auto["alias"]) if auto.get("alias") else None)
+    return save_automation(data, auto_id=auto_id) if auto_id else save_automation(data)
 
 
 # KV namespace holding one manifest per applied bundle, keyed by bundle_id.
@@ -62,6 +88,50 @@ def execute_bundle(bundle: dict) -> dict:
             "declined":  True,
             "decline":   bundle["decline"],
         }
+
+    # ── Phase 0: Recipes ─────────────────────────────────────────────────────
+    # Deterministic builders (services/recipes). Built against the live home
+    # context at apply time, so the rules reference what exists NOW. Each
+    # recipe error is one row; the rest of the bundle still applies.
+    recipe_list = [r for r in (artifacts.get("recipes") or []) if isinstance(r, dict)]
+    if recipe_list:
+        lang = "he" if bundle.get("language") == "he" else "en"
+        try:
+            from services.home_context import load_home_context
+            home = load_home_context(lang)
+        except Exception as e:
+            log_error(f"[executor] home context unavailable for recipes: {e}")
+            home = {"rooms": []}
+        from services import recipes as _recipes
+        for r in recipe_list:
+            rname = str(r.get("recipe") or "")
+            builder = _recipes.REGISTRY.get(rname)
+            if not builder:
+                errors.append({"kind": "recipe", "recipe": rname, "error": f"unknown recipe {rname!r}"})
+                continue
+            params = {k: v for k, v in r.items() if k != "recipe"}
+            try:
+                out = builder(params, home=home, language=lang)
+            except Exception as e:
+                errors.append({"kind": "recipe", "recipe": rname, "error": str(e)})
+                continue
+            if not out.get("ok"):
+                errors.append({"kind": "recipe", "recipe": rname, "room": out.get("room"),
+                               "error": out.get("error") or "could not build"})
+                continue
+            for auto in out.get("automations") or []:
+                name = auto.get("name") or auto.get("alias") or rname
+                try:
+                    save_result = _save_recipe_automation(auto, bundle_id=bundle_id, recipe=rname)
+                except Exception as e:
+                    errors.append({"kind": "automation", "name": name, "error": str(e)})
+                    continue
+                if save_result.get("ok"):
+                    created.append({"kind": "automation", "name": name, "id": save_result.get("id"),
+                                    "from": f"recipe:{rname}", "bundle_id": bundle_id})
+                else:
+                    errors.append({"kind": "automation", "name": name,
+                                   "error": save_result.get("error", "unknown save error")})
 
     # ── Phase 1: KV flags (no dependencies) ─────────────────────────────────
     for kv in artifacts.get("kv_state") or []:
