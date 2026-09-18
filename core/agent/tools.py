@@ -403,6 +403,37 @@ TOOL_SCHEMAS: list[dict] = [
             "name": {"type": "string"}, "confirmed": {"type": "boolean"},
         }, "required": ["name"]},
     }},
+    # ── Home modes + light hold (2026-09-18 closed loop) ─────────────────────
+    {"type": "function", "function": {
+        "name": "set_mode",
+        "description": (
+            "Put the house in, or take it out of, one of the FIXED home modes — "
+            "'guest mode', 'movie mode for two hours', 'we're cleaning', 'vacation "
+            "mode on', 'מצב אורחים', 'מצב שינה', 'מצב סרט לשעתיים', 'סיימנו לנקות'. "
+            "Modes: sleep (motion won't light rooms until morning), movie (same, 3 h), "
+            "cleaning (lights stay on even when a room looks empty, 2 h), guest "
+            "('everyone left' won't run), vacation (the house looks lived-in in the "
+            "evening). There are no other modes — never invent one. The MODES line in "
+            "your context shows what is on now."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "mode": {"type": "string", "enum": ["sleep", "movie", "cleaning", "guest", "vacation"]},
+            "on": {"type": "boolean", "description": "true to turn the mode on, false to turn it off."},
+            "hours": {"type": "number", "description": "Optional duration in hours (movie/cleaning/sleep)."},
+        }, "required": ["mode", "on"]},
+    }},
+    {"type": "function", "function": {
+        "name": "release_light_hold",
+        "description": (
+            "Let a light that Ziggy is HOLDING OFF come back under motion control — "
+            "'release it', 'let the kitchen light come on again', 'שחרר את האור', "
+            "'תן לאור במטבח להידלק שוב'. A held light is one a person switched off, "
+            "so motion rules leave it alone (see HELD LIGHTS). Pass the exact device id."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "entity_id": {"type": "string", "description": "Exact light id from the directory."},
+        }, "required": ["entity_id"]},
+    }},
 ]
 
 # Tool names that produce a natural action-confirmation and, when they succeed
@@ -443,6 +474,8 @@ _REHEARSAL_BLOCKED = {
     "toggle_automation":    "done (rehearsal — nothing was changed in the home)",
     "delete_automation":    "deleted (rehearsal — nothing was changed in the home)",
     "run_routine":          "ran (rehearsal — nothing was changed in the home)",
+    "set_mode":             "done (rehearsal — nothing was changed in the home)",
+    "release_light_hold":   "released (rehearsal — nothing was changed in the home)",
 }
 
 
@@ -1120,6 +1153,57 @@ async def _exec_passthrough(name: str, args: dict) -> dict:
     }
 
 
+async def _exec_set_mode(args: dict, lang: str, actor: str | None) -> dict:
+    from services import modes as _modes
+    mode = str(args.get("mode") or "").lower()
+    on = bool(args.get("on", True))
+    hours = args.get("hours")
+    try:
+        hours_f = float(hours) if hours is not None else None
+    except (TypeError, ValueError):
+        hours_f = None
+    if mode not in _modes.MODES:
+        return {"ok": False, "message": ("אין מצב כזה. המצבים: שינה, סרט, ניקיון, אורחים, חופשה."
+                                         if lang == "he" else
+                                         "There's no such mode. Modes: sleep, movie, cleaning, guest, vacation.")}
+    try:
+        rec = await _modes.set_mode(mode, on, by=(actor or "chat"), hours=hours_f)
+    except Exception as e:
+        log_error(f"[agent.tools] set_mode failed: {e}")
+        return {"ok": False, "message": ("לא הצלחתי לשנות את המצב." if lang == "he"
+                                         else "I couldn't change the mode.")}
+    meta = _modes.list_modes()
+    label = next((m["label_he" if lang == "he" else "label_en"] for m in meta if m["id"] == mode), mode)
+    until = rec.get("until")
+    until_txt = ""
+    if on and until:
+        import datetime as _dt
+        until_txt = (" עד " if lang == "he" else " until ") + _dt.datetime.fromtimestamp(until).strftime("%H:%M")
+    if lang == "he":
+        msg = f"הפעלתי מצב {label}{until_txt}." if on else f"כיביתי מצב {label}."
+    else:
+        msg = f"{label} mode on{until_txt}." if on else f"{label} mode off."
+    return {"ok": True, "message": msg, "mode": mode, "on": on, "until": until,
+            "data": {"kind": "mode_changed", "mode": mode, "on": on, "until": until}}
+
+
+def _exec_release_light_hold(args: dict, directory: dict, lang: str, actor: str | None) -> dict:
+    from services import light_hold as _hold
+    eid = (args.get("entity_id") or "").strip()
+    dev = _dir.get_device(directory, eid)
+    if not dev:
+        return _no_such_device(lang)
+    label = _device_label(dev, lang)
+    if not _hold.is_held(eid):
+        return {"ok": True, "released": False,
+                "message": (f"{label} לא מוחזק — תנועה כבר יכולה להדליק אותו." if lang == "he"
+                            else f"The {label} isn't held — motion can already turn it on.")}
+    _hold.release(eid, by=(actor or "chat"))
+    return {"ok": True, "released": True,
+            "message": (f"שחררתי את {label} — תנועה תדליק אותו שוב כרגיל." if lang == "he"
+                        else f"Released the {label} — motion will turn it on again as usual.")}
+
+
 async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en",
                        actor: str | None = None) -> dict:
     """Dispatch one tool call. Returns a JSON-serializable result dict.
@@ -1162,6 +1246,10 @@ async def execute_tool(name: str, args: dict, directory: dict, lang: str = "en",
         return await _exec_toggle_automation(args, lang)
     if name == "delete_automation":
         return await _exec_delete_automation(args, lang, actor)
+    if name == "set_mode":
+        return await _exec_set_mode(args, lang, actor)
+    if name == "release_light_hold":
+        return _exec_release_light_hold(args, directory, lang, actor)
     if name == "query_devices":
         return _exec_query_devices(args, directory)
     if name == "room_occupancy":

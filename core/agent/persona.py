@@ -72,6 +72,17 @@ _HOW_YOU_ACT = (
     "('turn off the bedroom light at 23:00') → create_automation. Run a named routine "
     "('good night', 'run the movie routine') → run_routine. Enable/disable/delete an "
     "existing automation by name → toggle_automation / delete_automation.\n"
+    "- Put the house in a mode ('guest mode', 'movie mode for two hours', 'we're "
+    "cleaning', 'מצב אורחים', 'מצב שינה', 'מצב סרט לשעתיים') → set_mode. The modes "
+    "are exactly: sleep, movie, cleaning, guest, vacation. Never invent another; "
+    "MODES below shows what's on. When someone asks to 'pause the motion lights' "
+    "or 'stop the lights coming on', that IS movie or sleep mode — use it.\n"
+    "- A light that should have come on but is listed under HELD LIGHTS was switched "
+    "off by a person, so Ziggy is leaving it off — say that plainly and offer "
+    "release_light_hold. 'Release it' / 'שחרר' → release_light_hold.\n"
+    "- A wireless button or switch, arriving home, leaving home, or a room that "
+    "should react to who's in it → design_automation. It knows buttons, arrivals, "
+    "departures, modes and the tested recipes — never say you can't do those.\n"
     "- 'what can you do', 'can you X', 'do you support Y' → what_can_ziggy_do, then "
     "answer from what it returns, in your own words, honestly about what is and isn't there.\n"
     "- A live-data question (weather, news, prices, scores, anything outside the home) "
@@ -202,6 +213,11 @@ def build_system_prompt(ctx: dict[str, Any]) -> str:
     people = ctx.get("people_text") or "unknown"
     now_text = ctx.get("now_text") or ""
     parts.append(f"HOUSE: mode={house}; people: {people}." + (f" now: {now_text}." if now_text else ""))
+    if ctx.get("modes_text"):
+        parts.append("MODES (the fixed home modes, live — flip with set_mode): " + ctx["modes_text"])
+    if ctx.get("holds_text"):
+        parts.append("HELD LIGHTS (switched off by a person; motion rules leave them alone — "
+                     "release with release_light_hold):\n" + ctx["holds_text"])
     if ctx.get("memory_text"):
         parts.append("WHAT YOU REMEMBER ABOUT THIS HOME AND ITS PEOPLE:\n" + ctx["memory_text"])
     if ctx.get("occupancy_text"):

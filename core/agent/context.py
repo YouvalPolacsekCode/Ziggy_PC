@@ -199,6 +199,41 @@ def rehearsal_active() -> bool:
         return False
 
 
+def modes_text(lang: str = "en") -> str:
+    """'sleep off · movie ON until 23:40 · …' — the fixed home modes, live."""
+    try:
+        from services.modes import summary_text
+        return summary_text(lang)
+    except Exception as e:
+        log_error(f"[agent.context] modes: {e}")
+        return ""
+
+
+def holds_text(directory: dict, lang: str = "en") -> str:
+    """One line per light Ziggy is holding off because a person switched it off."""
+    try:
+        from services.light_hold import list_active
+        holds = list_active()
+    except Exception as e:
+        log_error(f"[agent.context] holds: {e}")
+        return ""
+    if not holds:
+        return ""
+    lines: list[str] = []
+    for h in holds[:12]:
+        dev = _dir.get_device(directory, h.get("entity_id") or "") or {}
+        name = dev.get("name") or h.get("entity_id")
+        room = dev.get("room") or h.get("room") or ""
+        since = h.get("since")
+        since_txt = _dt.datetime.fromtimestamp(since).strftime("%H:%M") if since else "?"
+        if h.get("state") == "held_until_morning":
+            how = f"until {h.get('until_text') or 'morning'} (turned off by hand twice)"
+        else:
+            how = "until the room empties (turned off by hand)"
+        lines.append(f"  {name} ({room}) [{h.get('entity_id')}]: held off since {since_txt} {how}")
+    return "\n".join(lines)
+
+
 def build_context(directory: dict, *, lang: str, channel: str,
                   mode: str | None = None) -> dict[str, Any]:
     people, house_mode = _persons_and_mode()
@@ -214,6 +249,8 @@ def build_context(directory: dict, *, lang: str, channel: str,
         "rehearsal": rehearsal_active(),
     }
     for key, fn in (("occupancy_text", lambda: occupancy_text(directory)),
+                    ("modes_text", lambda: modes_text(lang)),
+                    ("holds_text", lambda: holds_text(directory, lang)),
                     ("automations_text", automations_text),
                     ("recent_text", lambda: recent_text(directory)),
                     ("app_actions_text", lambda: app_actions_text(directory)),
