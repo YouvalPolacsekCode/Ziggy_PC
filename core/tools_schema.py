@@ -925,7 +925,7 @@ TOOLS = [
                 ),
             },
             "friendly_name":    {"type": "string", "description": "Display name for the new sensor. Pass the user's preferred language verbatim (Hebrew supported, e.g. 'תפוסה - חדר שינה')."},
-            "delay_off_seconds":{"type": "integer", "description": "How many seconds after all source sensors go quiet before the occupancy sensor reports clear. Damps flicker. Default 30."},
+            "delay_off_seconds":{"type": "integer", "description": "How many seconds after all source sensors go quiet before the occupancy sensor reports clear. Omit to let Ziggy choose: 300 for a room without a door sensor (the hold IS the presence there), 30 for a room with one (the walk-out grace holds it)."},
         }, "required": ["room"]},
     }},
     # ---- Ziggy Pro Mode designer (D3): outcome → multi-artifact bundle ----

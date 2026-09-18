@@ -78,6 +78,26 @@ def test_field_absent_routes_hold_through_engine(ts, monkeypatch):
     assert enrolled["delay_off_seconds"] == 45
 
 
+def test_omitted_delay_defaults_to_five_minutes_for_doorless_room(ts, monkeypatch):
+    """The wizard/agent may leave the hold to Ziggy: a door-less room gets 300 s."""
+    posts, aborted, enrolled = [], [], {}
+    _install_flow(ts, monkeypatch, has_delay_field=False, posts=posts, aborted=aborted)
+    _install_engine(monkeypatch, enrolled)
+    res = ts.create_occupancy_sensor("bedroom", ["binary_sensor.bed_motion"])
+    assert res["ok"] and res["hold_only"] is True
+    assert enrolled["delay_off_seconds"] == 300
+
+
+def test_omitted_delay_defaults_to_thirty_seconds_for_door_room(ts, monkeypatch):
+    from services import room_presence_engine as engine
+    monkeypatch.setattr(ts, "_classify_sources", lambda ents: (["binary_sensor.door"], ["binary_sensor.bed_motion"]))
+    enrolled = {}
+    _install_engine(monkeypatch, enrolled)
+    res = ts.create_occupancy_sensor("bathroom", ["binary_sensor.door", "binary_sensor.bed_motion"])
+    assert res["ok"] and res["hold_only"] is False
+    assert enrolled["delay_off_seconds"] == 30
+
+
 def test_zero_delay_never_advanced(ts, monkeypatch):
     posts = []
     _install_flow(ts, monkeypatch, has_delay_field=True, posts=posts)

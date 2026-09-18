@@ -356,6 +356,18 @@ async def _process_event(event: dict) -> None:
         except Exception as e:
             log_error(f"[HASubscriber] room-presence hook {entity_id}: {e}")
 
+    # Sensor-profile hook — an FP300 just spoke, which is the only moment a
+    # sleeping battery radar accepts a write. Raise its absence timer to Ziggy's
+    # profile value once (services.sensor_profiles). Cheap early-out on the
+    # entity-id shape; the KV read happens only for FP300s not yet settled.
+    if entity_id.startswith("binary_sensor.") and prev_s != new_s:
+        try:
+            from services import sensor_profiles as _sp
+            if _sp.fp300_ieee(entity_id):
+                await _sp.on_device_report_async(entity_id, state_cache)
+        except Exception as e:
+            log_error(f"[HASubscriber] sensor-profile hook {entity_id}: {e}")
+
     # HA-automation-fired bridge — a stored Ziggy automation with a state/sensor
     # trigger is fired by HA, but its Ziggy-native actions (turn_off_all_lights,
     # IR) are dropped/placeholder'd by the compiler, so HA fires the trigger and

@@ -38,6 +38,13 @@ anomaly_engine:
   quiet_hour_end: 7
   quiet_hour_start: 23
 
+# One-time tuning of radios Ziggy knows well, applied the moment the device
+# next speaks (a sleeping battery radar only takes writes then). Recorded per
+# device; a value the owner lowers afterwards is left alone.
+sensor_profiles:
+  enabled: true
+  fp300_absence_delay_s: 120   # Aqara FP300 ships with 10 s — the radar gives up on a still person
+
 audio:
   ffplay_path: ''        # path to ffplay binary; e.g. /usr/bin/ffplay on Linux
   input_device: null     # null = system default

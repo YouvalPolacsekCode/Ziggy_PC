@@ -570,7 +570,8 @@ async def handle_create_occupancy_sensor(params: dict, *, source: str = "unknown
         ))
 
     friendly = params.get("friendly_name")  # Hebrew names preserved verbatim
-    delay_off = params.get("delay_off_seconds", 30)
+    # None → template_sensors picks: 30 s for a door room, 5 min for a door-less one.
+    delay_off = params.get("delay_off_seconds")
     walkout_grace = params.get("walkout_grace_seconds", 120)
     create_new = bool(params.get("create_new", False))
 

@@ -82,7 +82,12 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
 
   const [roomId, setRoomId]   = useState(initId)
   const [selected, setSelected] = useState(() => new Set())
-  const [delayOff, setDelayOff] = useState(30)
+  // Door-less rooms need a real hold (a PIR takes 90 s to notice stillness, a
+  // battery radar can drop a still person): 5 min. Door rooms are held by the
+  // walk-out grace, so their "clear" delay is just the quiet-while-open 30 s.
+  // The default follows the selection until the user types their own number.
+  const [delayOff, setDelayOff] = useState(300)
+  const [delayTouched, setDelayTouched] = useState(false)
   const [walkoutGrace, setWalkoutGrace] = useState(120)
   const [mode, setMode]       = useState('replace')   // 'replace' main | 'new' additional
   const [newName, setNewName] = useState('')
@@ -119,6 +124,10 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId])
 
+  useEffect(() => {
+    if (!delayTouched) setDelayOff(hasDoor ? 30 : 300)
+  }, [hasDoor, delayTouched])
+
   const steps = ['room', 'devices', 'delay']
   const current = steps[stepIdx]
   const total = steps.length
@@ -136,7 +145,7 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
       const result = await createOccupancySensor({
         room: room.name,
         sensor_entities: Array.from(selected),
-        delay_off_seconds: Number(delayOff) || 30,
+        delay_off_seconds: Number(delayOff) || (hasDoor ? 30 : 300),
         ...(hasDoor ? { walkout_grace_seconds: Number(walkoutGrace) || 120 } : {}),
         ...(addingNew ? { create_new: true, friendly_name: newName.trim() } : {}),
       })
@@ -271,7 +280,7 @@ export default function OccupancySensorForm({ onCreated, onClose, initialRoom = 
         || (existingForRoom.length > 0 && mode === 'new' && !newName.trim())}
       extra={errBox}>
       <Input type="number" inputMode="numeric" min={0} placeholder={t('automations.smartSensor.delayPh')}
-        value={delayOff} onChange={e => setDelayOff(e.target.value)} aria-label={t('automations.smartSensor.delayLabel')} />
+        value={delayOff} onChange={e => { setDelayTouched(true); setDelayOff(e.target.value) }} aria-label={t('automations.smartSensor.delayLabel')} />
       <p className="z-subhead" style={{ margin: 0 }} dir="auto">
         {t('automations.smartSensor.delayHint')}
       </p>

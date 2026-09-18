@@ -59,7 +59,8 @@ class OccupancySensorBody(BaseModel):
     room: str
     sensor_entities: Optional[list] = []
     friendly_name: Optional[str] = None
-    delay_off_seconds: Optional[int] = 30
+    # None → Ziggy chooses: 30 s for a door room, 5 min hold for a door-less one.
+    delay_off_seconds: Optional[int] = None
     # Door-aware only: how long a closed door waits for motion before deciding
     # the room was left empty (walk-out-and-close). Ignored for door-less rooms.
     walkout_grace_seconds: Optional[int] = 120

@@ -30,7 +30,12 @@ from services.local_automation_actions import set_local_state, get_local_state
 
 
 _KV_NAMESPACE = "occupancy_sensors"  # entry_id → metadata
+# Door rooms: the walk-out grace is what holds them; 30 s is only the
+# quiet-while-open clear. Door-less rooms have nothing else: a PIR takes 90 s to
+# notice you stopped moving and a battery radar can drop a still person, so the
+# hold IS the presence. 5 min is the Canary-office-validated figure.
 _DEFAULT_DELAY_OFF_SECONDS = 30
+_DEFAULT_DOORLESS_HOLD_SECONDS = 300
 _DEFAULT_WALKOUT_GRACE_SECONDS = 120
 
 # Synthetic entry_id prefix for door-aware (MQTT-backed) sensors — they have
@@ -181,7 +186,7 @@ def create_occupancy_sensor(
     room: str,
     sensor_entities: list[str],
     friendly_name: Optional[str] = None,
-    delay_off_seconds: int = _DEFAULT_DELAY_OFF_SECONDS,
+    delay_off_seconds: Optional[int] = None,
     walkout_grace_seconds: int = _DEFAULT_WALKOUT_GRACE_SECONDS,
     create_new: bool = False,
 ) -> dict:
@@ -223,6 +228,11 @@ def create_occupancy_sensor(
     # latch semantics: open=enter, closed+motion-after-close=stay until open).
     # No door → the legacy OR template path below, byte-for-byte unchanged.
     doors, motions = _classify_sources(sensor_entities)
+    # Caller left the hold to Ziggy: a door room needs only the short
+    # quiet-while-open clear; a door-less room needs a real hold.
+    if delay_off_seconds is None:
+        delay_off_seconds = (_DEFAULT_DELAY_OFF_SECONDS if doors
+                             else _DEFAULT_DOORLESS_HOLD_SECONDS)
     if doors:
         return _create_door_aware(
             room_slug=room_slug, kv_key=kv_key, name=name,
