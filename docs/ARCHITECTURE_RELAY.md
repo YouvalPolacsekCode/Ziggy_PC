@@ -221,6 +221,10 @@ restart; a `changeme` admin password is an open door.
 | `RELAY_JWT_SECRET` | Fly secrets | Sign user JWTs (30-day expiry) |
 | `RELAY_ADMIN_EMAIL/PASSWORD` | Fly secrets | Bootstrap the `relay_admin` user |
 | master key (per home) | offline/founder custody | Seal/unseal `home_backup_keys` |
+| `RELAY_BACKUP_KEY`, `RELAY_B2_KEY_ID`, `RELAY_B2_APP_KEY` | Fly secrets | Nightly encrypted DB backup to Backblaze (`relay/app/backup_schedule.py` → `db_backup.py`, 03:00 Asia/Jerusalem). All three unset = backup silently not scheduled. |
+| `SENTRY_DSN` | Fly secrets | Error reporting (`relay/app/observability.py`). Unset = Sentry off. Request bodies and `Authorization` / `X-Ziggy-Signature` headers are scrubbed before send; `ZIGGY_ENV` sets the environment, `ZIGGY_GIT_SHA` the release. |
+| `POSTHOG_PROJECT_KEY` | Fly secrets | Forward hub `usage_counters` as PostHog `feature_used` / `hub_errors` events with `distinct_id = home_id` (`relay/app/posthog_forward.py`). Unset = forwarding off. |
+| `POSTHOG_HOST` | Fly env (not secret) | PostHog ingest host; defaults to `https://eu.i.posthog.com` (EU residency). |
 
 `PROVISION_SSH_KEY` and `FLY_API_TOKEN`-for-VM-docker-login are **retired** with
 the Oracle-VM path.

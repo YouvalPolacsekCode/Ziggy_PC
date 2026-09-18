@@ -51,6 +51,11 @@ DISK_DEGRADED_PCT  = 85.0
 DISK_DOWN_PCT      = 95.0   # SQLite + Z2M corrupt when the disk fills
 MEM_DEGRADED_PCT   = 92.0
 
+# ERROR-level log records inside one telemetry window (5 min) before it reads
+# as a burst rather than a flaky device. A healthy hub logs a handful an hour;
+# ten in five minutes is a loop, a dead integration or a bad release.
+ERROR_BURST_MIN    = 10
+
 # Share of devices offline before it reads as an infrastructure fault rather
 # than "one bulb is unplugged". Mirrors the hub-side ha_health thresholds.
 DEVICES_OFFLINE_MANY_SHARE = 0.5
@@ -119,6 +124,24 @@ def _issue(code: str, level: str, message: str, **detail: Any) -> dict:
 
 def _num(v: Any) -> Optional[float]:
     return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def _error_digest(p: dict) -> tuple[Optional[int], list[str], Optional[int]]:
+    """(count, top exception class names, window_s) from usage_counters.errors.
+
+    `None` count means the hub did not report one — an old build, not a clean
+    log. Unknown is not healthy, so callers must not treat None as zero.
+    """
+    uc = p.get("usage_counters") if isinstance(p.get("usage_counters"), dict) else {}
+    errs = uc.get("errors") if isinstance(uc.get("errors"), dict) else {}
+    count = errs.get("count")
+    if not isinstance(count, int) or isinstance(count, bool):
+        return None, [], None
+    top_raw = errs.get("top") if isinstance(errs.get("top"), list) else []
+    top = [str(t) for t in top_raw if t][:3]
+    window = uc.get("window_s")
+    window = window if isinstance(window, int) and not isinstance(window, bool) else None
+    return count, top, window
 
 
 def evaluate(
@@ -352,6 +375,21 @@ def _evaluate_payload(p: dict) -> list[dict]:
             cohort=deploy.get("cohort"), dirty=deploy.get("dirty"),
         ))
 
+    # ── Error burst — the hub's own log is screaming ───────────────────────
+    # `usage_counters.errors` is a count of ERROR-level records in the last
+    # window plus the top exception class names (services/usage_counters.py).
+    # No message text ever reaches here, so the verdict names the *kind* of
+    # failure and leaves reading the log to a human on the hub.
+    e_count, e_top, e_window = _error_digest(p)
+    if e_count is not None and e_count >= ERROR_BURST_MIN:
+        minutes = max(1, round((e_window or 300) / 60))
+        types = ", ".join(e_top) if e_top else "no exception types reported"
+        issues.append(_issue(
+            "error_burst", LEVEL_DEGRADED,
+            f"{e_count} errors in the last {minutes} min: {types}",
+            count=e_count, top=e_top, window_s=e_window,
+        ))
+
     # ── Old hub that doesn't report health at all ──────────────────────────
     if not health:
         issues.append(_issue(
@@ -398,6 +436,9 @@ def vitals(payload: Optional[dict]) -> dict:
         "release_tag":     deploy.get("release_tag") or deploy.get("git_describe"),
         "cohort":          deploy.get("cohort"),
         "drifted":         bool(deploy.get("drifted")),
+        # ERROR-level log records in the hub's last telemetry window. None on
+        # hubs too old to send usage_counters — not zero, unknown.
+        "errors_5m":       _error_digest(p)[0],
     }
 
 
