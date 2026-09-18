@@ -1,425 +1,403 @@
 """
-Automation capability catalog for Ziggy Pro Mode (Session D1).
+Automation capability catalog for the chat designer (Ziggy "Pro Mode").
 
 Single source of truth for "what can Ziggy build in an automation?" Consumed
-by the Ziggy Pro designer (D3) when reasoning about a user's outcome request.
-Also feeds `/api/debug/capabilities`.
+by the designer (services.orchestra_designer) when reasoning about a user's
+outcome request, and by `/api/debug/capabilities`.
 
 Distinct from `services.capability_catalog` (which catalogs virtual-device
 templates for the Ziggy device builder — different domain).
 
-Two halves:
+THE RULE (2026-09-18): `ziggy_supported` is COMPUTED from the converters,
+never typed by hand. The hand-written part of an entry is its description,
+shape, example and the Ziggy-native decline text. Support is true iff:
 
-1. HAND-CURATED CATALOG (`_HA_CAPABILITIES` below) — the full HA automation
-   capability surface (triggers/conditions/actions/modes) annotated with
-   `ziggy_supported: true | "partial" | false`. List of capabilities is
-   stable across HA versions; only the support flags change as Ziggy grows.
+  triggers    — services.ha_automations._trigger_to_ha handles the kind
+  conditions  — BOTH evaluators handle it: local_automation_actions
+                ._eval_single_condition and ha_automations._condition_to_ha
+                (`state` / `numeric_state` are the entity branch in both)
+  actions     — Ziggy's executor runs the step (local_automation_actions
+                ._LOCAL_TYPES) — HA either runs it natively or defers it back
 
-2. RUNTIME INTROSPECTION (`detect_drift`) — reads the live system
-   (tools_schema, the converter shape) to detect mismatches between the
-   curated catalog and reality.
+Why: the previous hand-curated flags drifted in the one direction the old
+drift check could not see — converter-supports / catalog-declines — so chat
+told the operator "I can't set up arrivals" while the app's wizard had a zone
+trigger and the converter had compiled it for months. `detect_drift()` now
+fails in both directions and a test pins it empty.
+
+A deliberate exception is `policy_declined: True` — the converter can, but the
+product says no for now (webhook: inbound HTTP needs a security review). That
+is an explicit decision, not drift, and the decline text still applies.
 
 User-facing rule (non-negotiable, per project memory): when a capability is
 unsupported, Ziggy says "I can't currently do that" in Ziggy-native voice.
-NEVER mention "Home Assistant" / "HA" / integration names to end users. Each
-gap entry carries `decline_message_en` and `decline_message_he` for D3 to
-compose user-facing rejections without leaking jargon.
+NEVER mention "Home Assistant" / "HA" / integration names to end users.
 """
 from __future__ import annotations
-from typing import Any, Literal
+
 import copy
+import inspect
+import re
+from typing import Any, Literal
 
 Support = Literal[True, False, "partial"]
 
 
-# ── HA capability catalog ────────────────────────────────────────────────────
+# ── HA capability entries (descriptions, shapes, decline text) ───────────────
 #
 # Schema per entry:
-#   id            — HA's name for the primitive
-#   description   — internal/LLM-facing; technical wording is fine
-#   shape         — params the LLM passes when composing (dict skeleton)
-#   ziggy_supported — true | false | "partial"
-#   ziggy_via     — which Ziggy primitive currently maps to it (optional)
-#   ziggy_note    — internal caveat for partial / false support
-#   decline_*     — Ziggy-native user-facing message when ziggy_supported=false
-#                   (NEVER mentions HA / integrations / brand names)
-#   example       — one-line example for the LLM
+#   id              — HA's name for the primitive (or Ziggy's for a native one)
+#   description     — internal/LLM-facing; technical wording is fine
+#   shape           — params the LLM passes when composing (dict skeleton)
+#   example         — one-line example for the LLM
+#   ziggy_via       — which Ziggy primitive currently maps to it (optional)
+#   ziggy_note      — internal caveat (optional)
+#   policy_declined — True to refuse a converter-supported primitive on purpose
+#   decline_*       — Ziggy-native user-facing message when unsupported
 #
-# When adding a new HA primitive here, also extend the relevant Ziggy
-# converter (ha_automations._trigger_to_ha / _action_to_ha / save_automation)
-# and flip ziggy_supported. Don't ship an entry as `true` without the
-# converter wired up — `detect_drift()` will surface the mismatch.
+# `ziggy_supported` is filled in by _annotate(); do not write it here.
 
-_HA_CAPABILITIES: dict[str, list[dict[str, Any]]] = {
-    "triggers": [
-        {
-            "id":              "state",
-            "description":     "Fire when an entity's state changes (optionally only after it has held that state for a duration).",
-            "shape":           {"entity_id": "<entity>", "state": "<value>", "for_minutes": "<optional int>"},
-            "ziggy_supported": True,
-            "example":         "When binary_sensor.bedroom_motion is 'off' for 5 minutes",
-        },
-        {
-            "id":              "numeric_state",
-            "description":     "Fire when a numeric sensor crosses an above/below threshold.",
-            "shape":           {"entity_id": "<sensor>", "above": "<float>", "below": "<float>"},
-            "ziggy_supported": True,
-            "example":         "When sensor.living_room_temperature rises above 28",
-        },
-        {
-            "id":              "time",
-            "description":     "Fire at a specific wall-clock time.",
-            "shape":           {"time": "HH:MM"},
-            "ziggy_supported": True,
-            "example":         "Every day at 07:00",
-        },
-        {
-            "id":              "time_pattern",
-            "description":     "Fire periodically (every N seconds / minutes / hours).",
-            "shape":           {"minutes": "/15", "hours": "/2", "seconds": "/30"},
-            "ziggy_supported": "partial",
-            "ziggy_via":       "ziggy_scheduler",
-            "ziggy_note":      "Currently routed to Ziggy's local scheduler (needs_ha doesn't list time_pattern). Functionally works; add to needs_ha if HA-native scheduling is preferred.",
-            "example":         "Every 15 minutes",
-        },
-        {
-            "id":              "sunrise",
-            "description":     "Fire at sunrise (with optional offset).",
-            "shape":           {"offset": "+00:30:00"},
-            "ziggy_supported": True,
-            "example":         "30 minutes after sunrise",
-        },
-        {
-            "id":              "sunset",
-            "description":     "Fire at sunset (with optional offset).",
-            "shape":           {"offset": "-00:15:00"},
-            "ziggy_supported": True,
-            "example":         "15 minutes before sunset",
-        },
-        {
-            "id":                 "zone",
-            "description":        "Fire when a person enters or leaves a geographic zone.",
-            "shape":              {"entity_id": "person.X", "zone": "zone.home", "event": "enter|leave"},
-            "ziggy_supported":    False,
-            "ziggy_note":         "Converter exists but not exposed via create_automation; also requires HA-Companion GPS feed we don't ingest. presence_engine is the Ziggy-native path.",
-            "decline_message_en": "I can't currently set up automations tied to people arriving or leaving home.",
-            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי הגעה או יציאה מהבית.",
-        },
-        {
-            "id":                 "webhook",
-            "description":        "Fire on an inbound HTTP POST to a custom URL.",
-            "shape":              {"webhook_id": "<unique>"},
-            "ziggy_supported":    False,
-            "ziggy_note":         "Converter exists; handler doesn't expose. Security review needed before opening.",
-            "decline_message_en": "I can't currently trigger automations from external web requests.",
-            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות כשמשהו קורא לזיגי מבחוץ.",
-        },
-        {
-            "id":                 "template",
-            "description":        "Fire when an arbitrary Jinja template evaluates to true.",
-            "shape":              {"value_template": "{{ ... }}"},
-            "ziggy_supported":    False,
-            "decline_message_en": "I can't currently set up triggers based on custom expressions yet.",
-            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי ביטויים שהגדרת בעצמך.",
-        },
-        {
-            "id":                 "calendar",
-            "description":        "Fire N minutes before a calendar event starts/ends.",
-            "shape":              {"entity_id": "calendar.X", "event": "start|end", "offset": "-00:30:00"},
-            "ziggy_supported":    False,
-            "decline_message_en": "I can't currently trigger automations from calendar events.",
-            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי אירועים מהיומן.",
-        },
-        {
-            "id":                 "tag",
-            "description":        "Fire when an NFC tag is scanned by a registered reader.",
-            "shape":              {"tag_id": "<uuid>"},
-            "ziggy_supported":    False,
-            "decline_message_en": "I can't currently trigger automations from NFC tag scans.",
-            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי סריקת תג NFC.",
-        },
-        {
-            "id":                 "device",
-            "description":        "Fire on a manufacturer-defined device event (button single/double/long-press, etc.).",
-            "shape":              {"device_id": "<id>", "type": "<event>", "subtype": "<button>"},
-            "ziggy_supported":    False,
-            "decline_message_en": "I can't currently set up automations on button presses or other device-specific events yet.",
-            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי לחיצת כפתור או אירועים מיוחדים אחרים.",
-        },
-        {
-            "id":                 "event",
-            "description":        "Fire on a generic system event.",
-            "shape":              {"event_type": "<name>"},
-            "ziggy_supported":    False,
-            "decline_message_en": "I can't currently set up automations on low-level system events.",
-            "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי אירועים פנימיים של המערכת.",
-        },
-    ],
-    "conditions": [
-        {
-            "id":              "state",
-            "description":     "Require an entity to match a specific state.",
-            "shape":           {"entity_id": "<entity>", "operator": "is|is_not", "value": "<state>"},
-            "ziggy_supported": True,
-        },
-        {
-            "id":              "numeric_state",
-            "description":     "Require a numeric sensor to be above/below a threshold.",
-            "shape":           {"entity_id": "<sensor>", "operator": "above|below", "value": "<float>"},
-            "ziggy_supported": True,
-        },
-        {
-            "id":              "time_window",
-            "description":     "Require current wall-clock time to be within after/before (supports overnight).",
-            "shape":           {"after": "HH:MM", "before": "HH:MM"},
-            "ziggy_supported": "partial",
-            "ziggy_via":       "local_automation_actions",
-            "ziggy_note":      "Local evaluator supports it (local_automation_actions._eval_single_condition); not yet plumbed through the LLM-creation handler (still builds flat AND list).",
-        },
-        {
-            "id":              "or_group",
-            "description":     "Boolean OR of nested conditions.",
-            "shape":           {"conditions": "[<condition>, ...]"},
-            "ziggy_supported": "partial",
-            "ziggy_note":      "Local evaluator supports recursive AND/OR groups; creation handler doesn't expose.",
-        },
-        {
-            "id":              "and_group",
-            "description":     "Boolean AND of nested conditions (equivalent to a flat list).",
-            "ziggy_supported": "partial",
-            "ziggy_note":      "Flat AND already supported; nested groups via local evaluator only.",
-        },
-        {
-            "id":                 "sun",
-            "description":        "Require sun to be above/below the horizon.",
-            "shape":              {"after": "sunrise|sunset", "before": "sunrise|sunset", "elevation": "<deg>"},
-            "ziggy_supported":    False,
-            "decline_message_en": "I can't currently use sun-position conditions yet.",
-            "decline_message_he": "אני עדיין לא יודע להתחשב במיקום השמש.",
-        },
-    ],
-    "actions": [
-        {
-            "id":              "call_service",
-            "description":     "Invoke a service on an entity (turn_on, turn_off, set_temperature, open_cover, etc.).",
-            "shape":           {"entity_id": "<entity>", "service": "turn_on|turn_off|...", "data": "<optional kwargs>"},
-            "ziggy_supported": True,
-        },
-        {
-            "id":              "delay",
-            "description":     "Pause execution for N seconds.",
-            "shape":           {"seconds": "<int>"},
-            "ziggy_supported": True,
-        },
-        {
-            "id":              "notify",
-            "description":     "Send a push/persistent notification.",
-            "shape":           {"message": "<text>"},
-            "ziggy_supported": True,
-        },
-        {
-            "id":              "wait_for_state",
-            "description":     "Pause until an entity reaches a target state, with optional timeout.",
-            "shape":           {"entity_id": "<entity>", "state": "<value>", "timeout": "<sec>"},
-            "ziggy_supported": True,
-        },
-        {
-            "id":              "wait_for_trigger",
-            "description":     "Pause until a trigger fires (e.g. 'until motion stops for 5 minutes').",
-            "ziggy_supported": "partial",
-            "ziggy_via":       "ha_native_body escape hatch",
-            "ziggy_note":      "Available when emitted by blueprint instantiation (save_automation uses ha_native_body for blueprints); not exposed via direct create_automation actions list.",
-        },
-        {
-            "id":              "scene_activate",
-            "description":     "Activate a saved scene (atomic group state restore).",
-            "shape":           {"entity_id": "scene.<id>"},
-            "ziggy_supported": True,
-            "ziggy_via":       "call_service with service=scene.turn_on",
-        },
-        {
-            "id":              "choose",
-            "description":     "Conditional branching (if/elif/else within actions).",
-            "ziggy_supported": "partial",
-            "ziggy_via":       "ha_native_body escape hatch",
-            "ziggy_note":      "Available in blueprint instantiation; not in direct create_automation.",
-        },
-        {
-            "id":              "repeat",
-            "description":     "Loop a block of actions N times or while a condition holds.",
-            "ziggy_supported": "partial",
-            "ziggy_via":       "ha_native_body escape hatch",
-        },
-    ],
-    "modes": [
-        {"id": "single",   "description": "Drop new triggers while running.",                          "ziggy_supported": True, "tip": "Default. Right for time-based or one-shot routines."},
-        {"id": "restart",  "description": "Cancel running instance, start fresh on each new trigger.", "ziggy_supported": True, "tip": "Use for motion-driven automations so the off-timer resets on each new motion event."},
-        {"id": "queued",   "description": "Queue new triggers and run them sequentially.",             "ziggy_supported": True},
-        {"id": "parallel", "description": "Run concurrent instances on each new trigger.",             "ziggy_supported": True},
-    ],
-}
-
-
-# ── Ziggy-native primitives (no HA equivalent) ──────────────────────────────
-#
-# Things Ziggy can do that aren't HA automation shapes. These are full tools
-# the LLM can compose into a bundle alongside automations.
-
-_ZIGGY_NATIVE: list[dict[str, Any]] = [
+_TRIGGERS: list[dict[str, Any]] = [
     {
-        "id":          "occupancy_sensor",
-        "kind":        "sensor_create",
-        "tool":        "create_occupancy_sensor",
-        "description": "Create a binary sensor that ORs multiple presence signals (motion + presence + door) into one 'occupied' entity.",
-        "params":      {"room": "<slug>", "sensor_entities": ["<entity>", "..."], "friendly_name": "<display>"},
-        "use_when":    "User wants 'is this room occupied' as a single signal automations can reference, especially when fusing motion + mmWave + door sensors.",
+        "id":          "state",
+        "description": "Fire when an entity's state changes (optionally only after it has held that state for a duration).",
+        "shape":       {"entity_id": "<entity>", "state": "<value>", "for_minutes": "<optional int>"},
+        "example":     "When binary_sensor.bedroom_motion is 'off' for 5 minutes",
     },
     {
-        "id":          "kv_state",
-        "kind":        "state_store",
-        "tool":        "set_local_state",
-        "description": "Persistent boolean/string flag stored in Ziggy (sleep_mode, guest_mode, vacation_mode, etc.). Survives restarts.",
-        "params":      {"namespace": "modes", "key": "<flag>", "value": "<json>"},
-        "use_when":    "Bundle needs a shared toggle that multiple automations reference as a condition.",
+        "id":          "numeric_state",
+        "description": "Fire when a numeric sensor crosses an above/below threshold.",
+        "shape":       {"entity_id": "<sensor>", "above": "<float>", "below": "<float>"},
+        "example":     "When sensor.living_room_temperature rises above 28",
+    },
+    {
+        "id":          "time",
+        "description": "Fire at a specific wall-clock time.",
+        "shape":       {"time": "HH:MM"},
+        "example":     "Every day at 07:00",
+    },
+    {
+        "id":          "time_pattern",
+        "description": "Fire periodically (every N seconds / minutes / hours).",
+        "shape":       {"minutes": "/15", "hours": "/2", "seconds": "/30"},
+        "example":     "Every 15 minutes",
+    },
+    {
+        "id":          "sunrise",
+        "description": "Fire at sunrise (with optional offset).",
+        "shape":       {"offset": "+00:30:00"},
+        "example":     "30 minutes after sunrise",
+    },
+    {
+        "id":          "sunset",
+        "description": "Fire at sunset (with optional offset).",
+        "shape":       {"offset": "-00:15:00"},
+        "example":     "15 minutes before sunset",
+    },
+    {
+        "id":          "zone",
+        "description": "Fire when a tracked person enters or leaves a geographic zone (HA person entity). "
+                       "PREFER the Ziggy-native arrival/departure recipes (welcome_home / leave_home) — "
+                       "they run on Ziggy's own presence engine with the whole-house-quiet guard.",
+        "shape":       {"entity_id": "person.X", "zone": "zone.home", "event": "enter|leave"},
+        "example":     "When person.youval enters zone.home",
+        "decline_message_en": "I can't currently set up automations tied to people arriving or leaving home.",
+        "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי הגעה או יציאה מהבית.",
+    },
+    {
+        "id":          "controller",
+        "description": "Fire when a button on a wireless remote / scene switch is pressed. "
+                       "Use the controller ids and action names from home_context.controllers.",
+        "shape":       {"controller_id": "<ieee from home_context.controllers>", "action": "<one of that controller's actions, e.g. single_left / double / hold>"},
+        "example":     "When the Aqara switch's left button is pressed once",
+        "decline_message_en": "I can't currently set up automations on button presses yet.",
+        "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי לחיצת כפתור.",
+    },
+    {
+        "id":          "webhook",
+        "description": "Fire on an inbound HTTP POST to a custom URL.",
+        "shape":       {"webhook_id": "<unique>"},
+        "policy_declined": True,
+        "ziggy_note":  "Converter exists; declined by POLICY pending a security review of inbound webhooks.",
+        "decline_message_en": "I can't currently trigger automations from external web requests.",
+        "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות כשמשהו קורא לזיגי מבחוץ.",
+    },
+    {
+        "id":          "template",
+        "description": "Fire when an arbitrary Jinja template evaluates to true.",
+        "shape":       {"value_template": "{{ ... }}"},
+        "decline_message_en": "I can't currently set up triggers based on custom expressions yet.",
+        "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי ביטויים שהגדרת בעצמך.",
+    },
+    {
+        "id":          "calendar",
+        "description": "Fire N minutes before a calendar event starts/ends.",
+        "shape":       {"entity_id": "calendar.X", "event": "start|end", "offset": "-00:30:00"},
+        "decline_message_en": "I can't currently trigger automations from calendar events.",
+        "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי אירועים מהיומן.",
+    },
+    {
+        "id":          "tag",
+        "description": "Fire when an NFC tag is scanned by a registered reader.",
+        "shape":       {"tag_id": "<uuid>"},
+        "decline_message_en": "I can't currently trigger automations from NFC tag scans.",
+        "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי סריקת תג NFC.",
+    },
+    {
+        "id":          "device",
+        "description": "Fire on a manufacturer-defined device event. (Button presses are the `controller` trigger.)",
+        "shape":       {"device_id": "<id>", "type": "<event>", "subtype": "<button>"},
+        "decline_message_en": "I can't currently set up automations on device-specific events yet.",
+        "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי אירועים מיוחדים של מכשיר.",
+    },
+    {
+        "id":          "event",
+        "description": "Fire on a generic system event.",
+        "shape":       {"event_type": "<name>"},
+        "decline_message_en": "I can't currently set up automations on low-level system events.",
+        "decline_message_he": "אני עדיין לא יודע להפעיל אוטומציות לפי אירועים פנימיים של המערכת.",
+    },
+]
+
+_CONDITIONS: list[dict[str, Any]] = [
+    {
+        "id":          "state",
+        "description": "Require an entity to match a specific state (optionally held for N minutes).",
+        "shape":       {"entity_id": "<entity>", "operator": "is|is_not", "value": "<state>", "for_minutes": "<optional int>"},
+    },
+    {
+        "id":          "numeric_state",
+        "description": "Require a numeric sensor to be above/below a threshold.",
+        "shape":       {"entity_id": "<sensor>", "operator": "above|below", "value": "<float>"},
+    },
+    {
+        "id":          "time_window",
+        "description": "Require the wall-clock time to be within after/before (overnight windows allowed).",
+        "shape":       {"type": "time", "after": "HH:MM", "before": "HH:MM"},
+    },
+    {
+        "id":          "sun",
+        "description": "Require it to be dark (after sunset) or light (before sunset / after sunrise).",
+        "shape":       {"type": "sun", "after": "sunset|sunrise", "before": "sunset|sunrise"},
+        "decline_message_en": "I can't currently use sun-position conditions yet.",
+        "decline_message_he": "אני עדיין לא יודע להתחשב במיקום השמש.",
+    },
+    {
+        "id":          "mode",
+        "description": "Require one of the FIXED home modes to be on/off: sleep, movie, cleaning, guest, vacation. "
+                       "Never invent another mode.",
+        "shape":       {"type": "mode", "mode": "sleep|movie|cleaning|guest|vacation", "is": "true|false"},
+        "decline_message_en": "I can't currently use home modes in automations.",
+        "decline_message_he": "אני עדיין לא יודע להשתמש במצבי בית באוטומציות.",
+    },
+    {
+        "id":          "presence",
+        "description": "Require Ziggy's household presence: everyone away, or someone home.",
+        "shape":       {"type": "presence", "value": "all_away|anyone_home", "for_minutes": "<optional int>"},
+    },
+    {
+        "id":          "or_group",
+        "description": "Boolean OR of nested conditions.",
+        "shape":       {"type": "or", "conditions": "[<condition>, ...]"},
+    },
+    {
+        "id":          "and_group",
+        "description": "Boolean AND of nested conditions (a flat list is already AND).",
+        "shape":       {"type": "and", "conditions": "[<condition>, ...]"},
+    },
+]
+
+_ACTIONS: list[dict[str, Any]] = [
+    {
+        "id":          "call_service",
+        "description": "Invoke a service on an entity (turn_on, turn_off, set_temperature, open_cover, ...). "
+                       "Light turn_ons should carry respect_hold=true so a light a person switched off stays off.",
+        "shape":       {"type": "call_service", "entity_id": "<entity>", "service": "turn_on|turn_off|...",
+                        "service_data": "<optional kwargs, e.g. {\"brightness_pct\": 40}>", "respect_hold": "true for light turn_on"},
+    },
+    {
+        "id":          "delay",
+        "description": "Pause execution for N seconds.",
+        "shape":       {"type": "delay", "seconds": "<int>"},
+    },
+    {
+        "id":          "notify",
+        "description": "Send a push notification to the household's phones. Never the ONLY action of a rule.",
+        "shape":       {"type": "notify", "message": "<text>"},
+    },
+    {
+        "id":          "wait_for_state",
+        "description": "Pause until an entity reaches a target state, with a timeout.",
+        "shape":       {"type": "wait_for_state", "entity_id": "<entity>", "state": "<value>", "timeout_seconds": "<int>", "on_timeout": "continue|abort"},
+    },
+    {
+        "id":          "set_mode",
+        "description": "Turn one of the fixed home modes on or off, optionally for N hours.",
+        "shape":       {"type": "set_mode", "mode": "sleep|movie|cleaning|guest|vacation", "on": "true|false", "hours": "<optional float>"},
+    },
+    {
+        "id":          "turn_off_all_lights",
+        "description": "Every light in the home off, in one reliable batch.",
+        "shape":       {"type": "turn_off_all_lights"},
     },
     {
         "id":          "ir_command",
-        "kind":        "action",
-        "tool":        "send_ir_command",
-        "description": "Send an IR command via Broadlink (AC, TV, fan, etc.). Use when the target device isn't on a smart protocol.",
-        "use_when":    "Action target is IR-controlled (older AC, TV, etc.) rather than smart-protocol controlled.",
+        "description": "Send an infrared command (AC, TV, fan) through the home's IR blaster.",
+        "shape":       {"type": "ir_command", "ir_device_id": "<id>", "ir_command": "power_on|power_off|..."},
     },
     {
-        "id":          "blueprint_instantiation",
-        "kind":        "automation_create",
-        "tool":        "instantiate_blueprint",
-        "description": "Create an automation from a pre-validated bundled template. Hebrew-translated, Israeli-defaulted, includes HA-only constructs (wait_for_trigger, choose, etc.) that direct create_automation can't currently emit.",
-        "use_when":    "Outcome matches a bundled template's purpose. PREFER blueprints over composing from scratch when one fits — pre-tested, Hebrew-ready, bypasses some Ziggy-side limitations via the ha_native_body escape hatch.",
+        "id":          "scene_activate",
+        "description": "Activate a saved scene.",
+        "shape":       {"type": "call_service", "entity_id": "scene.<id>", "service": "turn_on"},
+        "ziggy_via":   "call_service with service=scene.turn_on",
+    },
+    {
+        "id":          "wait_for_trigger",
+        "description": "Pause until a trigger fires. Only inside blueprint bodies.",
+        "ziggy_via":   "ha_native_body escape hatch (blueprints)",
+        "decline_message_en": "I can't currently wait for a second event inside one automation.",
+        "decline_message_he": "אני עדיין לא יודע לחכות לאירוע נוסף בתוך אותה אוטומציה.",
+    },
+    {
+        "id":          "choose",
+        "description": "Conditional branching inside actions. Only inside blueprint bodies.",
+        "ziggy_via":   "ha_native_body escape hatch (blueprints)",
+        "decline_message_en": "I can't currently branch inside one automation — I'll build one rule per case instead.",
+        "decline_message_he": "אני עדיין לא יודע להסתעף בתוך אותה אוטומציה — אבנה כלל נפרד לכל מקרה.",
+    },
+    {
+        "id":          "repeat",
+        "description": "Loop a block of actions. Only inside blueprint bodies.",
+        "ziggy_via":   "ha_native_body escape hatch (blueprints)",
+        "decline_message_en": "I can't currently repeat a block of actions in one automation.",
+        "decline_message_he": "אני עדיין לא יודע לחזור על פעולות בתוך אותה אוטומציה.",
+    },
+]
+
+_MODES: list[dict[str, Any]] = [
+    {"id": "single",   "description": "Drop new triggers while running.",                          "tip": "Default. Right for time-based or one-shot routines."},
+    {"id": "restart",  "description": "Cancel running instance, start fresh on each new trigger.", "tip": "Use for motion-driven automations so the off-timer resets on each new motion event."},
+    {"id": "queued",   "description": "Queue new triggers and run them sequentially."},
+    {"id": "parallel", "description": "Run concurrent instances on each new trigger."},
+]
+
+
+# ── Ziggy-native primitives (no HA equivalent) ──────────────────────────────
+
+_ZIGGY_NATIVE: list[dict[str, Any]] = [
+    {
+        "id": "person_arrives", "kind": "trigger",
+        "description": "Fires when a household member arrives home (Ziggy's own presence engine).",
+        "shape": {"type": "person_arrives", "person": "*|<name>"},
+        "use_when": "'when I get home', 'כשאני מגיע הביתה'. Prefer the welcome_home recipe.",
+    },
+    {
+        "id": "person_leaves", "kind": "trigger",
+        "description": "Fires when a household member leaves home.",
+        "shape": {"type": "person_leaves", "person": "*|<name>"},
+    },
+    {
+        "id": "all_persons_left", "kind": "trigger",
+        "description": "Fires when the LAST person leaves. Honours guest mode automatically.",
+        "shape": {"type": "all_persons_left"},
+        "use_when": "'when everyone's out'. Prefer the leave_home recipe (adds the whole-house-quiet guard).",
+    },
+    {
+        "id": "zone_entered", "kind": "trigger",
+        "description": "Fires when a person enters a named Ziggy place (e.g. 'Near Home').",
+        "shape": {"type": "zone_entered", "zone": "<place name>", "person": "*"},
+    },
+    {
+        "id": "zone_left", "kind": "trigger",
+        "description": "Fires when a person leaves a named Ziggy place.",
+        "shape": {"type": "zone_left", "zone": "<place name>", "person": "*"},
+    },
+    {
+        "id": "manual", "kind": "trigger",
+        "description": "Runs only when a person taps Run in the app (an on-demand routine).",
+        "shape": {"type": "manual"},
+    },
+    {
+        "id": "recipe", "kind": "automation_create",
+        "description": "A tested, deterministic bundle. smart_room(room) | motion_light(room, lights?, linger_minutes?) | "
+                       "welcome_home(lights, only_after_dark?) | leave_home(quiet_minutes?, ac?, notify?). "
+                       "ALWAYS prefer a recipe when one fits the outcome.",
+        "shape": {"recipe": "smart_room|motion_light|welcome_home|leave_home", "...": "params"},
+    },
+    {
+        "id": "ir_command", "kind": "action", "tool": "send_ir_command",
+        "description": "Send an IR command via the home's blaster (AC, TV, fan) when the device isn't on a smart protocol.",
+    },
+    {
+        "id": "blueprint_instantiation", "kind": "automation_create", "tool": "instantiate_blueprint",
+        "description": "Create an automation from a pre-validated bundled template. Every input that names a device MUST be a real entity id from the home context.",
     },
 ]
 
 
-# ── Public API ───────────────────────────────────────────────────────────────
+# ── Introspection ────────────────────────────────────────────────────────────
+
+_ALIAS = {"time_window": "time", "or_group": "or", "and_group": "and", "scene_activate": "call_service"}
+_ENTITY_CONDITION_TYPES = {"state", "numeric_state"}   # the entity branch in both evaluators
 
 
-def get_catalog() -> dict:
-    """Full catalog snapshot — HA capabilities annotated for Ziggy support,
-    plus Ziggy-native primitives, plus live blueprint enumeration.
-
-    Designed for LLM context (D3 designer). Returned dict is JSON-serializable.
-    """
-    out: dict[str, Any] = {
-        "ha_capabilities": copy.deepcopy(_HA_CAPABILITIES),
-        "ziggy_native":    copy.deepcopy(_ZIGGY_NATIVE),
-        "blueprints":      _blueprints_summary(),
-        "summary": {
-            "trigger_supported":   _count_supported("triggers"),
-            "condition_supported": _count_supported("conditions"),
-            "action_supported":    _count_supported("actions"),
-            "ziggy_native_count":  len(_ZIGGY_NATIVE),
-        },
-    }
-    return out
-
-
-def get_supported_only() -> dict:
-    """Catalog filtered to what Ziggy CAN do today (true + partial).
-
-    Default LLM context — gaps (false entries) surface only when the user
-    asks for something we can't do, so the designer doesn't waste tokens
-    reasoning about them on every call.
-    """
-    full = get_catalog()
-    for kind in ("triggers", "conditions", "actions"):
-        full["ha_capabilities"][kind] = [
-            c for c in full["ha_capabilities"][kind]
-            if c.get("ziggy_supported") in (True, "partial")
-        ]
-    return full
-
-
-def get_gaps() -> list[dict]:
-    """Just the unsupported HA primitives, each with Ziggy-native decline
-    messages. The designer uses this to compose 'I can't currently do that'
-    replies without leaking HA / integration names.
-    """
-    gaps: list[dict] = []
-    for kind, entries in _HA_CAPABILITIES.items():
-        if kind == "modes":
-            continue
-        for c in entries:
-            if c.get("ziggy_supported") is False:
-                gaps.append({
-                    "kind":               kind[:-1],  # "triggers" → "trigger"
-                    "id":                 c["id"],
-                    "decline_message_en": c.get("decline_message_en", "I can't currently do that."),
-                    "decline_message_he": c.get("decline_message_he", "אני עדיין לא יודע לעשות את זה."),
-                })
-    return gaps
-
-
-def detect_drift() -> dict:
-    """Surface mismatches between the hand-curated catalog and the live system.
-
-    Returns:
-      {
-        "missing_in_converter": [...]   catalog says supported but converter has no branch
-        "missing_in_catalog":    [...]  converter handles a trigger the catalog doesn't list
-        "tool_schema_unknown":   [...]  create_automation tool exposes a trigger_type the catalog doesn't list
-      }
-    """
-    drift: dict[str, list] = {
-        "missing_in_converter": [],
-        "missing_in_catalog":   [],
-        "tool_schema_unknown":  [],
-    }
-    converter_triggers = _introspect_converter_triggers()
-    catalog_trigger_ids = {c["id"] for c in _HA_CAPABILITIES["triggers"]}
-    for cap in _HA_CAPABILITIES["triggers"]:
-        if cap.get("ziggy_supported") in (True, "partial") and cap["id"] not in converter_triggers:
-            drift["missing_in_converter"].append(cap["id"])
-    for tid in converter_triggers:
-        if tid not in catalog_trigger_ids:
-            drift["missing_in_catalog"].append(tid)
-    schema_triggers = _introspect_tool_schema_triggers()
-    for tid in schema_triggers:
-        if tid not in catalog_trigger_ids:
-            drift["tool_schema_unknown"].append(tid)
-    return drift
-
-
-# ── Introspectors ────────────────────────────────────────────────────────────
+def _source_of(fn) -> str:
+    try:
+        return inspect.getsource(fn)
+    except Exception:
+        return ""
 
 
 def _introspect_converter_triggers() -> set[str]:
-    """Scrape _trigger_to_ha for the trigger kinds it actually handles.
-
-    Reads the source rather than executing — keeps the scan side-effect-free
-    and resilient to runtime config issues. Catches both:
-      `if kind == "state":`            single equality
-      `if kind in ("sunrise", "sunset"):`  tuple membership
-    """
-    import inspect
-    import re
+    """Trigger kinds `_trigger_to_ha` actually handles (`kind == "x"` and
+    `kind in ("a", "b")`)."""
     try:
         from services.ha_automations import _trigger_to_ha
-        src = inspect.getsource(_trigger_to_ha)
     except Exception:
         return set()
-    found: set[str] = set()
-    found.update(re.findall(r"kind\s*==\s*['\"](\w+)['\"]", src))
-    # Tuple-membership form: kind in ("a", "b", ...)
-    for tup_body in re.findall(r"kind\s+in\s*\(([^)]+)\)", src):
-        found.update(re.findall(r"['\"](\w+)['\"]", tup_body))
+    src = _source_of(_trigger_to_ha)
+    found = set(re.findall(r"kind\s*==\s*['\"](\w+)['\"]", src))
+    for tup in re.findall(r"kind\s+in\s*\(([^)]+)\)", src):
+        found.update(re.findall(r"['\"](\w+)['\"]", tup))
     return found
 
 
-def _introspect_tool_schema_triggers() -> set[str]:
-    """Scrape the create_automation tool schema for the trigger_type enum.
+def _introspect_local_condition_types() -> set[str]:
+    try:
+        from services.local_automation_actions import _eval_single_condition
+    except Exception:
+        return set()
+    src = _source_of(_eval_single_condition)
+    found = set(re.findall(r"ctype\s*==\s*['\"](\w+)['\"]", src))
+    return found | _ENTITY_CONDITION_TYPES
 
-    If the LLM-facing schema lists a trigger type that's not in our catalog,
-    something is out of sync.
-    """
+
+def _introspect_ha_condition_types() -> set[str]:
+    try:
+        from services.ha_automations import _condition_to_ha
+    except Exception:
+        return set()
+    src = _source_of(_condition_to_ha)
+    found = set(re.findall(r"c\.get\(\"type\"\)\s*==\s*['\"](\w+)['\"]", src))
+    return found | _ENTITY_CONDITION_TYPES
+
+
+def _introspect_condition_types() -> set[str]:
+    """Supported iff BOTH evaluators handle it. Boolean groups are local-only
+    (HA gets them via native bodies) but never split a decision, so they pass."""
+    both = _introspect_local_condition_types() & _introspect_ha_condition_types()
+    return both | ({"and", "or", "not"} & _introspect_local_condition_types())
+
+
+def _introspect_action_types() -> set[str]:
+    try:
+        from services.local_automation_actions import _LOCAL_TYPES
+        return set(_LOCAL_TYPES)
+    except Exception:
+        return set()
+
+
+def _introspect_tool_schema_triggers() -> set[str]:
     try:
         from core.tools_schema import TOOLS
     except Exception:
@@ -429,17 +407,132 @@ def _introspect_tool_schema_triggers() -> set[str]:
         if fn.get("name") != "create_automation":
             continue
         props = (fn.get("parameters", {}) or {}).get("properties", {}) or {}
-        enum = (props.get("trigger_type", {}) or {}).get("enum") or []
-        return set(enum)
+        return set((props.get("trigger_type", {}) or {}).get("enum") or [])
     return set()
 
 
-def _blueprints_summary() -> list[dict]:
-    """Enumerate bundled blueprints as catalog entries.
+# ── Annotation ───────────────────────────────────────────────────────────────
 
-    Each blueprint becomes a concrete 'tool option' the LLM can recommend.
-    Trimmed to id / name / category / inputs so D3's context budget stays sane.
+def _supported_ids(kind: str) -> set[str]:
+    if kind == "triggers":
+        return _introspect_converter_triggers()
+    if kind == "conditions":
+        return _introspect_condition_types()
+    if kind == "actions":
+        return _introspect_action_types()
+    return set()
+
+
+def _annotate(kind: str, entries: list[dict]) -> list[dict]:
+    supported = _supported_ids(kind)
+    out: list[dict] = []
+    for e in entries:
+        c = copy.deepcopy(e)
+        target = _ALIAS.get(c["id"], c["id"])
+        can = target in supported
+        if c.get("policy_declined"):
+            c["ziggy_supported"] = False
+        else:
+            c["ziggy_supported"] = bool(can)
+        c.setdefault("decline_message_en", "I can't currently do that.")
+        c.setdefault("decline_message_he", "אני עדיין לא יודע לעשות את זה.")
+        out.append(c)
+    return out
+
+
+# ── Public API ───────────────────────────────────────────────────────────────
+
+def get_catalog() -> dict:
+    """Full catalog snapshot — HA capabilities annotated for Ziggy support
+    (computed), Ziggy-native primitives, live blueprint enumeration."""
+    caps = {
+        "triggers":   _annotate("triggers", _TRIGGERS),
+        "conditions": _annotate("conditions", _CONDITIONS),
+        "actions":    _annotate("actions", _ACTIONS),
+        "modes":      [dict(m, ziggy_supported=True) for m in _MODES],
+    }
+    return {
+        "ha_capabilities": caps,
+        "ziggy_native":    copy.deepcopy(_ZIGGY_NATIVE),
+        "home_modes":      ["sleep", "movie", "cleaning", "guest", "vacation"],
+        "blueprints":      _blueprints_summary(),
+        "summary": {
+            "trigger_supported":   _count_supported(caps["triggers"]),
+            "condition_supported": _count_supported(caps["conditions"]),
+            "action_supported":    _count_supported(caps["actions"]),
+            "ziggy_native_count":  len(_ZIGGY_NATIVE),
+        },
+    }
+
+
+def get_supported_only() -> dict:
+    """Catalog filtered to what Ziggy CAN do today. Default designer context."""
+    full = get_catalog()
+    for kind in ("triggers", "conditions", "actions"):
+        full["ha_capabilities"][kind] = [
+            c for c in full["ha_capabilities"][kind] if c.get("ziggy_supported") in (True, "partial")
+        ]
+    return full
+
+
+def get_gaps() -> list[dict]:
+    """Unsupported primitives with Ziggy-native decline messages."""
+    gaps: list[dict] = []
+    caps = get_catalog()["ha_capabilities"]
+    for kind in ("triggers", "conditions", "actions"):
+        for c in caps[kind]:
+            if c.get("ziggy_supported") is False:
+                gaps.append({
+                    "kind":               kind[:-1],
+                    "id":                 c["id"],
+                    "decline_message_en": c["decline_message_en"],
+                    "decline_message_he": c["decline_message_he"],
+                })
+    return gaps
+
+
+def detect_drift() -> dict:
+    """Mismatches between the catalog entries and the live converters, BOTH ways.
+
+      missing_in_converter                    catalog says supported, converter has no branch
+      missing_in_catalog                      converter handles a trigger the catalog doesn't list
+      tool_schema_unknown                     create_automation exposes a trigger the catalog doesn't list
+      converter_supports_but_catalog_declines an entry reads unsupported although the converter can
+                                              (policy_declined entries are exempt — explicit decision)
+      catalog_entry_missing_for_converter     a condition/action type the evaluators handle with no entry
     """
+    drift: dict[str, list] = {
+        "missing_in_converter": [], "missing_in_catalog": [], "tool_schema_unknown": [],
+        "converter_supports_but_catalog_declines": [], "catalog_entry_missing_for_converter": [],
+    }
+    caps = get_catalog()["ha_capabilities"]
+    for kind in ("triggers", "conditions", "actions"):
+        supported = _supported_ids(kind)
+        listed = {_ALIAS.get(c["id"], c["id"]) for c in caps[kind]}
+        for c in caps[kind]:
+            target = _ALIAS.get(c["id"], c["id"])
+            if c.get("ziggy_supported") is True and target not in supported:
+                drift["missing_in_converter"].append(f"{kind[:-1]}:{c['id']}")
+            if c.get("ziggy_supported") is False and target in supported and not c.get("policy_declined"):
+                drift["converter_supports_but_catalog_declines"].append(f"{kind[:-1]}:{c['id']}")
+        if kind == "triggers":
+            for tid in supported - listed:
+                drift["missing_in_catalog"].append(tid)
+            for tid in _introspect_tool_schema_triggers() - listed:
+                drift["tool_schema_unknown"].append(tid)
+        else:
+            internal = {"device", "message", "send_intent", "ziggy_intent", "automation", "speak",
+                        "notify_actionable", "wait_cancellable", "cancel_pending", "device_command",
+                        "save_entity_states", "restore_entity_states", "fake_occupancy_start",
+                        "media_play", "turn_off_everything", "ir_device_state", "not"}
+            for tid in sorted((supported - listed) - internal):
+                drift["catalog_entry_missing_for_converter"].append(f"{kind[:-1]}:{tid}")
+    return drift
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _blueprints_summary() -> list[dict]:
     try:
         from services.blueprint_importer import list_blueprints
         bps = list_blueprints()
@@ -462,8 +555,7 @@ def _blueprints_summary() -> list[dict]:
     return out
 
 
-def _count_supported(kind: str) -> dict:
-    items = _HA_CAPABILITIES.get(kind, [])
+def _count_supported(items: list[dict]) -> dict:
     return {
         "true":    sum(1 for c in items if c.get("ziggy_supported") is True),
         "partial": sum(1 for c in items if c.get("ziggy_supported") == "partial"),

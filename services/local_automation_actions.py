@@ -235,6 +235,30 @@ def _eval_single_condition(cond: dict) -> tuple[bool, str]:
         actual = _modes.is_on(mode)
         return actual == want, f"mode {mode}={'on' if actual else 'off'} (want {'on' if want else 'off'})"
 
+    # Sun condition — "after sunset" / "before sunrise". Read from HA's own
+    # sun.sun entity in the live cache (below_horizon / above_horizon), so this
+    # evaluator and HA's `condition: sun` agree. Shape:
+    #   {"type": "sun", "after": "sunset"}   → dark
+    #   {"type": "sun", "before": "sunset"}  → light   (also after: "sunrise")
+    if ctype == "sun":
+        try:
+            from services.ha_subscriber import state_cache as _sc
+            sun_state = (_sc.get("sun.sun") or {}).get("state")
+        except Exception:
+            sun_state = None
+        if sun_state not in ("below_horizon", "above_horizon"):
+            return False, "sun state unknown"
+        dark = sun_state == "below_horizon"
+        after = str(cond.get("after") or "").lower()
+        before = str(cond.get("before") or "").lower()
+        want_dark = (after == "sunset") or (before == "sunrise")
+        want_light = (after == "sunrise") or (before == "sunset")
+        if want_dark and not want_light:
+            return dark, f"sun {'below' if dark else 'above'} horizon (want dark)"
+        if want_light and not want_dark:
+            return (not dark), f"sun {'below' if dark else 'above'} horizon (want light)"
+        return True, "sun condition without after/before — skipped"
+
     # IR-device condition — gates on ir_manager's assumed_state for IR-only
     # devices that don't have an HA entity (most IR ACs). Shape:
     #   {"type": "ir_device_state", "ir_device_id": "...",

@@ -226,6 +226,15 @@ def _condition_to_ha(c: dict) -> Optional[dict]:
         return {"condition": "state", "entity_id": ent,
                 "state": "on" if bool(c.get("is", True)) else "off"}
 
+    # ── Sun condition ──────────────────────────────────────────────────────
+    if c.get("type") == "sun":
+        out: dict = {"condition": "sun"}
+        for key in ("after", "before"):
+            val = str(c.get(key) or "").lower()
+            if val in ("sunrise", "sunset"):
+                out[key] = val
+        return out if len(out) > 1 else None
+
     # ── Time-window condition ──────────────────────────────────────────────
     if c.get("type") == "time":
         result: dict = {"condition": "time"}
