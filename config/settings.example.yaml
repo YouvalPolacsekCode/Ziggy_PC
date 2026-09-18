@@ -594,3 +594,13 @@ web_interface:
   backend_port: 8001
   enabled: true
   frontend_port: 3000
+
+# ── Light hold ─────────────────────────────────────────────────────────────
+# When a person turns a light off (wall switch, app, chat, voice — anything
+# that isn't one of Ziggy's own engines), Ziggy holds it off so motion rules
+# don't relight it. Released once the room has been empty for `empty_minutes`;
+# a second manual off after an automatic relight holds it until `morning`.
+light_hold:
+  enabled: true
+  empty_minutes: 30
+  morning: "06:30"

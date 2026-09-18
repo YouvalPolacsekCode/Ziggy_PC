@@ -509,6 +509,13 @@ async def run_scheduler() -> None:
         except Exception as exc:
             log_error(f"[Scheduler] Modes expiry tick failed: {exc}")
 
+        # ── Every minute: light holds release (room empty 30 min / morning) ──
+        try:
+            from services import light_hold as _light_hold
+            _light_hold.tick()
+        except Exception as exc:
+            log_error(f"[Scheduler] Light hold tick failed: {exc}")
+
         # ── Every 2 minutes: system-health watchdog tick ─────────────────────
         # Drives the ha_health auto-recovery state machine even when nobody
         # is polling /api/health. Without this tick, the Zigbee-coordinator

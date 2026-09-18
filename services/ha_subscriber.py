@@ -311,6 +311,19 @@ async def _process_event(event: dict) -> None:
     except Exception:
         pass
 
+    # Light hold — remember a manual OFF so motion rules don't relight what a
+    # person just switched off (services/light_hold.py). Attribution is the
+    # ENGINE tier on purpose: an app tap, chat or voice is a person deciding,
+    # and must hold just like a wall switch; only Ziggy's own engines don't.
+    if entity_id.startswith("light.") and prev_s != new_s:
+        try:
+            from services import light_hold as _hold
+            from services.manual_overrides import was_ziggy_initiated as _engine_write
+            _hold.on_state_change(entity_id, prev_s, new_s,
+                                  engine_initiated=_engine_write(entity_id))
+        except Exception as e:
+            log_error(f"[HASubscriber] light hold hook failed for {entity_id}: {e}")
+
     # Smart Light Schedule hook — a scheduled light joining/leaving the ramp.
     # off→on: enroll it (snap to the current ramp point). Staying on but with a
     # hand-changed brightness/color (not our own write): mark it manual so the
