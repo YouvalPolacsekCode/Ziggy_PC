@@ -66,6 +66,19 @@ def test_matter_state_present_but_undeclared_is_called_out():
     assert "matter_enabled_not_declared" in _codes(res)
 
 
+def test_running_but_undeclared_service_is_context_not_a_fault():
+    """Every 2026 hub: zigbee2mqtt runs under a profile imaging never wrote to
+    ziggy.env. The house works, so the home stays OK — but the risk is named."""
+    res = _eval({"declared": ["ziggy", "homeassistant", "mosquitto"],
+                 "expected": ["homeassistant", "mosquitto", "zigbee2mqtt", "ziggy"],
+                 "running": ["homeassistant", "mosquitto", "zigbee2mqtt", "ziggy"],
+                 "undeclared_running": ["zigbee2mqtt"], "profiles": ""})
+    issue = next(i for i in res["issues"] if i["code"] == "stack_undeclared_services")
+    assert issue["kind"] == "context"
+    assert "zigbee2mqtt" in issue["message"]
+    assert res["level"] == "ok"
+
+
 def test_old_hub_without_stack_report_is_not_judged():
     res = _eval(None)
     assert not any(c.startswith("stack_") for c in _codes(res))

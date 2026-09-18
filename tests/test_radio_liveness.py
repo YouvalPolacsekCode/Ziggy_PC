@@ -89,6 +89,19 @@ def test_registry_apply_and_restore(tmp_path, monkeypatch):
     assert changed == 1 and row["status"] == dr.CONNECTED and "lost_reason" not in row
 
 
+def test_ha_reconcile_cannot_resurrect_a_device_the_radio_says_left(tmp_path, monkeypatch):
+    """The ghost entity still exists in HA (retained discovery), so the HA-based
+    reconcile used to flip the row back to CONNECTED every 2 minutes — seen on
+    the Canary within minutes of the first radio pass. Radio truth wins."""
+    from services import device_registry as dr
+    rows = [{"entity_id": OFFICE, "status": dr.LOST, "lost_reason": rl.LEFT_HUB, "left_at": 1.0},
+            {"entity_id": LAMP, "status": dr.LOST}]
+    out = dr._reconcile(rows, {OFFICE, LAMP})          # both "present" in HA
+    by = {r["entity_id"]: r for r in out}
+    assert by[OFFICE]["status"] == dr.LOST and by[OFFICE]["lost_reason"] == rl.LEFT_HUB
+    assert by[LAMP]["status"] == dr.CONNECTED           # ordinary rows still heal
+
+
 def test_anomaly_helpers_raise_and_clear(monkeypatch):
     from services import anomaly_engine as ae
     monkeypatch.setattr(ae, "_cooldown_ok", lambda rid, rule_id, cd: True)

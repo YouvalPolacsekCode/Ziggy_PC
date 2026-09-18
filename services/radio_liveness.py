@@ -176,8 +176,25 @@ async def _raise_or_clear_anomalies(rows: list[dict], verdict: dict,
         from services.ha_subscriber import active_anomalies as active
     except Exception:
         return
-    names = {str(r.get("entity_id")): (r.get("name") or r.get("display_name") or r.get("entity_id"))
-             for r in rows}
+    # Human names for the message: HA's friendly_name first (the registry's
+    # `name` is often the raw hex id on Zigbee2MQTT homes), then the registry.
+    friendly: dict[str, str] = {}
+    try:
+        from services.ha_subscriber import state_cache
+        for eid in ieee_of:
+            fn = ((state_cache.get(eid) or {}).get("attributes") or {}).get("friendly_name")
+            if fn:
+                friendly[eid] = str(fn)
+    except Exception:
+        pass
+    names = {}
+    for r in rows:
+        eid = str(r.get("entity_id"))
+        reg = r.get("display_name") or r.get("name")
+        if reg and not _IEEE_RE.search(str(reg)):
+            names[eid] = str(reg)
+    for eid, fn in friendly.items():
+        names.setdefault(eid, fn)
     for eid, ieee in ieee_of.items():
         if ieee in present:
             ae.clear_left_hub(active, eid)

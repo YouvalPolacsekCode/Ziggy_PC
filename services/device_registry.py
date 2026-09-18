@@ -501,7 +501,16 @@ def _reconcile(devices: list[dict], live_ids: set[str]) -> list[dict]:
             # Catches pattern-filtered entities (phone sensors, router sensors, sun sub-sensors)
             log_info(f"[DeviceRegistry] Removing filtered entity from registry: {eid}")
             continue
-        if eid in live_ids:
+        if d.get("lost_reason") == "left_hub":
+            # The radio says this device is gone (services.radio_liveness).
+            # Home Assistant still holds its retained ghost entity, so "present
+            # in HA" proves nothing here — radio truth wins, and only the radio
+            # (device rejoined) may restore it. Never prune: it is a real device
+            # the user will pair again.
+            d["status"] = LOST
+            d.pop("_lost_since", None)
+            keep.append(d)
+        elif eid in live_ids:
             d["status"] = CONNECTED
             d.pop("_lost_since", None)   # back in HA — clear the prune timer
             keep.append(d)

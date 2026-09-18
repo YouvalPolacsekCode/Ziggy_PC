@@ -160,10 +160,19 @@ write_stack_status() {
   python3 - "$TS" "$STACK_PROFILES" "$exp" "$run" "$mdp" > "$USER_FILES/stack_status.json.tmp" <<'PY' 2>/dev/null && mv -f "$USER_FILES/stack_status.json.tmp" "$USER_FILES/stack_status.json"
 import json, sys
 ts, profiles, exp, run, mdp = sys.argv[1:6]
+declared = [s for s in exp.split() if s]
+running = [s for s in run.split() if s]
+# A service that is running is expected by definition — imaging started it
+# under a profile the env file may never have declared (zigbee2mqtt on every
+# 2026 hub). `undeclared_running` names that latent risk: a full stack
+# recreate would drop it, exactly how Matter was lost.
+expected = sorted(set(declared) | set(running))
 print(json.dumps({
     "at": ts, "profiles": profiles,
-    "expected": [s for s in exp.split() if s],
-    "running": [s for s in run.split() if s],
+    "declared": declared,
+    "expected": expected,
+    "running": running,
+    "undeclared_running": [s for s in running if s not in declared],
     "matter_data_present": mdp == "true",
 }))
 PY

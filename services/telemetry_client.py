@@ -374,6 +374,8 @@ def _collect_stack_status() -> Optional[dict]:
         return {
             "expected": [str(s) for s in (d.get("expected") or [])],
             "running": [str(s) for s in (d.get("running") or [])],
+            "declared": [str(s) for s in (d.get("declared") or [])],
+            "undeclared_running": [str(s) for s in (d.get("undeclared_running") or [])],
             "profiles": str(d.get("profiles") or ""),
             "matter_data_present": bool(d.get("matter_data_present")),
             "at": d.get("at"),

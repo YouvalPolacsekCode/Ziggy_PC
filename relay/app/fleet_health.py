@@ -104,6 +104,7 @@ def _iso_to_epoch(ts: Optional[str]) -> Optional[float]:
 # report health".
 _CONTEXT_ONLY = frozenset({
     "recently_rebooted", "no_health_telemetry", "never_reported",
+    "stack_undeclared_services",
 })
 
 
@@ -330,6 +331,17 @@ def _evaluate_payload(p: dict) -> list[dict]:
                 f"Declared service{'s' if len(missing) != 1 else ''} not running: {', '.join(missing)}.",
                 missing=missing, expected=expected,
             ))
+        undeclared = [str(s) for s in (stack.get("undeclared_running") or [])]
+        if undeclared:
+            # Running today, but under a profile the hub never declared — a full
+            # stack recreate would drop it (that is how Matter went). Context,
+            # not a fault: the house works; the operator declares the profile.
+            issues.append(_issue(
+                "stack_undeclared_services", LEVEL_OK,
+                f"Running but not declared in the hub's stack: {', '.join(undeclared)} "
+                f"(set ZIGGY_COMPOSE_PROFILES so a rebuild keeps them).",
+                undeclared=undeclared,
+            ))
         profiles = str(stack.get("profiles") or "")
         if stack.get("matter_data_present") and "matter" not in profiles:
             issues.append(_issue(
@@ -429,6 +441,7 @@ def vitals(payload: Optional[dict]) -> dict:
         "stack_expected":  len((p.get("stack") or {}).get("expected") or []) if isinstance(p.get("stack"), dict) else None,
         "stack_running":   len((p.get("stack") or {}).get("running") or []) if isinstance(p.get("stack"), dict) else None,
         "stack_profiles":  (p.get("stack") or {}).get("profiles") if isinstance(p.get("stack"), dict) else None,
+        "stack_undeclared": list((p.get("stack") or {}).get("undeclared_running") or []) if isinstance(p.get("stack"), dict) else None,
         "disk_pct":        _num(p.get("disk_pct_used")),
         "mem_pct":         _num(p.get("mem_pct")),
         "cpu_pct":         _num(p.get("cpu_pct")),

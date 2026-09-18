@@ -849,6 +849,11 @@ step_update_channel() {
     printf 'ZIGGY_REPO_DIR=%s\n' "$REPO_DIR"
     printf 'ZIGGY_API_URL=http://127.0.0.1:8001\n'
     printf 'ZIGGY_CONTAINER=ziggy-ziggy-1\n'
+    # Declare the compose profiles this hub runs, so every OTA rebuild keeps
+    # them and fleet health can judge "declared vs running". Imaging used to
+    # export COMPOSE_PROFILES only for its own session; the updater never saw
+    # it, which is exactly how Matter vanished from the Canary (2026-08-14).
+    if [[ "$ENABLE_ZIGBEE" == "1" ]]; then printf 'ZIGGY_COMPOSE_PROFILES=zigbee-z2m\n'; fi
   } > "$ETC_DIR/ziggy.env"
   chmod 0600 "$ETC_DIR/ziggy.env"
 

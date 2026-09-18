@@ -324,8 +324,10 @@ pass "the backup pile is capped and the newest snapshot survives"
 python3 - "$HUB/user_files/stack_status.json" <<'PY' || fail "stack_status.json has the wrong shape"
 import json, sys
 d = json.load(open(sys.argv[1]))
+assert d["declared"] == ["homeassistant", "mosquitto", "ziggy"], d
 assert d["expected"] == ["homeassistant", "mosquitto", "ziggy"], d
 assert d["running"] == ["homeassistant", "ziggy"], d
+assert d["undeclared_running"] == [], d
 assert "matter_data_present" in d and "profiles" in d and d.get("at")
 PY
 pass "every tick writes a stack report (expected vs running services)"

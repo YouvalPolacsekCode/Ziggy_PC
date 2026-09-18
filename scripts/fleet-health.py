@@ -190,7 +190,9 @@ def render(report: dict, *, color: bool) -> None:
         if se is not None or sr is not None:
             prof = f" · profiles {v.get('stack_profiles')}" if v.get("stack_profiles") else ""
             note = "" if (se is None or sr is None or sr >= se) else "   <-- SERVICE MISSING"
-            print(f"        stack: {sr}/{se} services running{prof}{note}")
+            und = v.get("stack_undeclared")
+            und_s = f" · undeclared: {', '.join(und)}" if und else ""
+            print(f"        stack: {sr}/{se} services running{prof}{und_s}{note}")
         for issue in home.get("issues") or []:
             print(f"        - {issue.get('message')}")
         if home.get("actionable"):
