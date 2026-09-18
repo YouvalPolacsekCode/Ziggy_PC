@@ -82,7 +82,10 @@ _HIDDEN_PATTERNS: list[re.Pattern] = [
         # Ziggy's own home modes mirrored into HA (services/modes_mqtt.py) —
         # an API adapter so compiled automations can gate on a mode, never a
         # device. The product surface for modes is the Home screen chip row.
-        r"^binary_sensor\.ziggy_mode_",
+        # Both spellings: HA derives `ziggy_modes_<x>_mode` from the device
+        # name on first discovery (seen live on Canary 2026-09-19); fresh homes
+        # get the pinned `ziggy_mode_<x>` object_id.
+        r"^binary_sensor\.ziggy_modes?_",
     ]
 ]
 

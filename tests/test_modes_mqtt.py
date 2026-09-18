@@ -48,4 +48,11 @@ def test_entity_id_none_when_not_discovered(monkeypatch):
 
 def test_mode_entities_hidden_from_device_lists():
     assert entity_filter.is_hidden_entity("binary_sensor.ziggy_mode_sleep")
+    # the id HA actually minted on Canary from the device name
+    assert entity_filter.is_hidden_entity("binary_sensor.ziggy_modes_sleep_mode")
+    assert entity_filter.is_hidden_entity("binary_sensor.ziggy_modes_guests_mode")
     assert not entity_filter.is_hidden_entity("binary_sensor.kitchen_motion")
+
+
+def test_discovery_pins_object_id():
+    assert MM.discovery_payload("movie")["object_id"] == "ziggy_mode_movie"

@@ -44,6 +44,10 @@ def discovery_payload(mode: str) -> dict:
     return {
         "name": f"{label} mode",
         "unique_id": unique_id(mode),
+        # Pin the entity's object id on FIRST discovery. Without it HA derives
+        # `ziggy_modes_sleep_mode` from the device name (what Canary got);
+        # existing entities keep whatever id they already have.
+        "object_id": unique_id(mode),
         "state_topic": state_topic(mode),
         "availability_topic": AVAILABILITY_TOPIC,
         "payload_on": "ON",
