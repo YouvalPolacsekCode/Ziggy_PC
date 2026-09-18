@@ -352,6 +352,12 @@ def _action_to_ha(a: dict) -> Optional[dict]:
     kind = a.get("type", "call_service")
     if kind == "call_service":
         entity_id = a.get("entity_id", "")
+        # A hold-aware turn-on runs in Ziggy, never natively in HA, so the
+        # light-hold check lives in exactly one evaluator. HA fires an event
+        # (visible in its trace) and the deferred-actions bridge does the call.
+        if a.get("respect_hold"):
+            return {"event": "ziggy_deferred",
+                    "event_data": {"step": "call_service", "entity_id": entity_id}}
         svc = a.get("service", "homeassistant.turn_on")
         domain = entity_id.split(".")[0] if "." in entity_id else "homeassistant"
         action_name = svc.split(".")[-1]
@@ -411,6 +417,8 @@ def ha_defers_action(a: dict) -> bool:
     """
     kind = a.get("type", "call_service")
     if kind in _HA_PLACEHOLDER_TYPES:
+        return True
+    if kind == "call_service" and a.get("respect_hold"):
         return True
     return _action_to_ha(a) is None
 

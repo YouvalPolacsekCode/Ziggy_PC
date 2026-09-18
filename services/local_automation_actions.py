@@ -473,6 +473,24 @@ async def execute_ziggy_actions(
                         prev_kind = kind
                         continue
 
+                    # Light-hold gate — a person turned this light off; a rule
+                    # that opted in (`respect_hold`, every recipe's turn_on)
+                    # leaves it off. Turn-offs are never held. This is the ONE
+                    # place the hold is enforced; HA defers such steps here.
+                    if (entity_id and step.get("respect_hold") and svc_key == "turn_on"):
+                        from services import light_hold as _light_hold
+                        if _light_hold.is_held(entity_id):
+                            log_info(f"[Executor] {entity_id} held off by hand — skipping turn_on")
+                            _bus.emit("light_hold", BASIC, "turn_on_held",
+                                      automation_id=automation_id, entity_id=entity_id)
+                            result = {
+                                "ok": True, "skipped": True, "reason": "held",
+                                "message": f"{entity_id} held off by hand — left alone.",
+                            }
+                            results.append(result)
+                            prev_kind = kind
+                            continue
+
                     # Block immediately if HA reports the entity as clearly unreachable.
                     # "off" is intentionally excluded: HA state can be stale (TV shown as
                     # "on" while physically off, or vice versa), so we try anyway and retry.
