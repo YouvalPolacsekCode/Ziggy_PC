@@ -25,15 +25,22 @@ Updated: 2026-09-18
   waitlist import, connector check.
 - **Jeff:** optional Sentry init committed on `main` (`50803d4`), 727 tests green, not deployed.
 
+- **Website tracking foundation committed** (`673893f` on `feat/agentic-os-frontend`
+  in the `YouvalCorp.` monorepo, 32 files under `ziggy/website/`): consent banner,
+  GA4 Consent Mode v2, PostHog EU, canonical events, first/last-touch attribution,
+  Desk lead pipeline with Jeff fallback on any non-2xx except 422/429, honeypot,
+  marketing-consent checkbox, privacy policy rewritten, Plausible removed, dead
+  `#define` page and `DH_*` taxonomy deleted. 26 vitest + 67 define tests green, build
+  green. **Not deployed** — waits on GA4/PostHog IDs (checklist 5, 9, 20).
+- **Ziggy_PC `feat/company-os` pushed** (5 commits on top of `main` 6395ef3): hub usage
+  counters in the 5-minute telemetry, relay → PostHog forwarding, `error_burst` fleet
+  rule, relay Sentry init, HTTP health check, nightly DB backup scheduling, CI workflow,
+  in-app `/welcome` waitlist → Desk, company-os docs. 2,895 tests green (11
+  pre-existing failures deselected and documented in the workflow). **Not merged, not
+  shipped** (checklist 21).
+
 ## IN PROGRESS
-- **Website tracking foundation** (consent banner, GA4 Consent Mode v2, PostHog EU,
-  canonical events, first-touch attribution, Desk lead pipeline with Jeff fallback,
-  privacy policy rewrite, vitest) — being implemented in the website repo; commit
-  pending; deploy waits on GA4/PostHog IDs (checklist 5, 9, 20).
-- **Ziggy_PC `feat/company-os`** (worktree off `main`): hub usage counters in the
-  5-minute telemetry, relay → PostHog forwarding, `error_burst` fleet rule, relay
-  Sentry init, HTTP health check, nightly DB backup scheduling, CI workflow, in-app
-  `/welcome` waitlist → Desk. Commit pending; **not shipped** (checklist 21).
+- Nothing in flight. Every remaining step waits on a credential or a decision.
 
 ## BLOCKED — NEEDS YOUVAL
 All 21 items in `SETUP_CHECKLIST.md`. The ones that unblock the most:
