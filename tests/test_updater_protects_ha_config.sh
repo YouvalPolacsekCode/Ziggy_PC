@@ -70,8 +70,16 @@ BIN="$WORK/bin"; mkdir -p "$BIN"
 cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
 # compose build/up/pull succeed silently; `inspect` reports the target SHA so
-# the updater's verification passes without a container.
+# the updater's verification passes without a container. Every invocation is
+# logged so a scenario can assert WHICH compose files the updater used.
+echo "$*" >> "${ZIGGY_TEST_DOCKER_LOG:-/dev/null}"
 if [ "${1:-}" = "inspect" ]; then echo "ZIGGY_GIT_SHA=$(cat /tmp/.ziggy-test-sha 2>/dev/null || echo unknown)"; fi
+# `compose ... config --services` / `ps --services`: a fake three-service stack
+# so the stack report has something to say.
+case "$*" in
+  *"config --services"*) printf 'ziggy\nhomeassistant\nmosquitto\n' ;;
+  *"ps --services"*)     printf 'ziggy\nhomeassistant\n' ;;
+esac
 exit 0
 EOF
 cat > "$BIN/curl" <<'EOF'
@@ -304,6 +312,38 @@ kept="$(ls -1 "$HUB/user_files/ha-config-backups" | wc -l | tr -d ' ')"
 ls -1 "$HUB/user_files/ha-config-backups" | grep -q '^2026\|^20[3-9]' \
   || fail "pruning kept the fake old snapshots and dropped the real newest one"
 pass "the backup pile is capped and the newest snapshot survives"
+
+# --- Scenario 8: the stack report, and declared profiles survive a rebuild ---
+# Matter/Thread ran as an optional compose profile. The updater rebuilt from
+# base + prod only, so the first OTA after enabling Matter silently dropped
+# otbr + matter-server (Canary, 2026-08-14 → 09-18), and nothing compared
+# "should run" with "is running". Now: a declared profile is part of every
+# rebuild, and every tick writes user_files/stack_status.json for telemetry.
+[ -f "$HUB/user_files/stack_status.json" ] \
+  || fail "updater did not write user_files/stack_status.json"
+python3 - "$HUB/user_files/stack_status.json" <<'PY' || fail "stack_status.json has the wrong shape"
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["expected"] == ["homeassistant", "mosquitto", "ziggy"], d
+assert d["running"] == ["homeassistant", "ziggy"], d
+assert "matter_data_present" in d and "profiles" in d and d.get("at")
+PY
+pass "every tick writes a stack report (expected vs running services)"
+
+touch "$HUB/docker-compose.matter.yml"
+DLOG="$WORK/docker-args.log"; : > "$DLOG"
+set +e
+PATH="$BIN:$PATH" ZIGGY_ENV_FILE=/nonexistent ZIGGY_COHORT=production \
+ZIGGY_REPO_DIR="$HUB" ZIGGY_INFRA_CHANNEL=off ZIGGY_COMPOSE_PROFILES="zigbee-z2m,matter" \
+ZIGGY_TEST_DOCKER_LOG="$DLOG" \
+  bash "$HUB/scripts/linux/ziggy-update.sh" > "$WORK/update8.log" 2>&1
+set -e
+grep -q "docker-compose.matter.yml" "$DLOG" \
+  || fail "ZIGGY_COMPOSE_PROFILES=matter was declared but the updater never passed docker-compose.matter.yml to compose"
+pass "a declared matter profile is part of the compose file set on every run"
+grep -q '"profiles": "zigbee-z2m,matter"' "$HUB/user_files/stack_status.json" \
+  || fail "stack report does not carry the declared profiles"
+pass "the stack report carries the declared profiles"
 
 echo
 echo "PASS — the updater ships the release without destroying the home."

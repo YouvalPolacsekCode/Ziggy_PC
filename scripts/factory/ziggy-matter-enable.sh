@@ -49,6 +49,27 @@ docker ps --format '{{.Names}}' | grep -q '^ziggy-ziggy-1$' || _die "ziggy stack
 COMPOSE=(docker compose -f "$REPO_DIR/docker-compose.yml" -f "$REPO_DIR/docker-compose.prod.yml" -f "$REPO_DIR/docker-compose.matter.yml" --env-file "$ENV_FILE")
 dc() { sudo -n env COMPOSE_PROFILES=matter "${COMPOSE[@]}" "$@"; }
 
+# Declare the profile where the OTA updater reads it (/etc/ziggy/ziggy.env →
+# ZIGGY_COMPOSE_PROFILES). Without this the next OTA rebuild — base + prod only
+# — silently dropped otbr + matter-server (Canary, 2026-08-14 → 09-18).
+declare_matter_profile() {
+  local envf=/etc/ziggy/ziggy.env cur
+  sudo -n mkdir -p /etc/ziggy
+  sudo -n touch "$envf"
+  cur="$(sudo -n grep -E '^ZIGGY_COMPOSE_PROFILES=' "$envf" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+  case ",$cur," in
+    *,matter,*) _ok "profile already declared: ZIGGY_COMPOSE_PROFILES=$cur"; return 0 ;;
+  esac
+  local new="${cur:+$cur,}matter"
+  if [[ -n "$cur" ]]; then
+    sudo -n sed -i "s|^ZIGGY_COMPOSE_PROFILES=.*|ZIGGY_COMPOSE_PROFILES=$new|" "$envf"
+  else
+    echo "ZIGGY_COMPOSE_PROFILES=$new" | sudo -n tee -a "$envf" >/dev/null
+  fi
+  _ok "declared ZIGGY_COMPOSE_PROFILES=$new (OTA rebuilds now keep Matter)"
+}
+declare_matter_profile
+
 # ---------------------------------------------------------------------------
 # 1. Pick + flash the Thread dongle
 # ---------------------------------------------------------------------------

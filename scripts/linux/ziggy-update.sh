@@ -135,9 +135,43 @@ heartbeat() {
 # survived so long — nothing else re-applied it.
 COMPOSE_FILES=(-f docker-compose.yml)
 [ -f "$REPO_DIR/docker-compose.prod.yml" ] && COMPOSE_FILES+=(-f docker-compose.prod.yml)
+# Optional profiles the hub DECLARES (ZIGGY_COMPOSE_PROFILES in ziggy.env, e.g.
+# "zigbee-z2m,matter"). Matter/Thread lives in its own overlay; the enable
+# script brought it up by hand and the very next OTA rebuild — which knew only
+# base + prod — silently dropped it. The Canary ran without Matter for a month
+# and nothing said so. A declared profile is now part of every rebuild, and the
+# stack report below lets the relay see when a declared service is missing.
+STACK_PROFILES="${ZIGGY_COMPOSE_PROFILES:-}"
+case ",$STACK_PROFILES," in
+  *,matter,*) [ -f "$REPO_DIR/docker-compose.matter.yml" ] && COMPOSE_FILES+=(-f docker-compose.matter.yml) ;;
+esac
+[ -n "$STACK_PROFILES" ] && export COMPOSE_PROFILES="$STACK_PROFILES"
 dc() { docker compose "${COMPOSE_FILES[@]}" "$@"; }
 
+# What the stack SHOULD contain vs what is running — for the hub's telemetry
+# (services/telemetry_client.py reads it; the container has no docker socket).
+# Written every tick, even no-op ones, so the view never goes stale.
+write_stack_status() {
+  $DRY_RUN && return 0
+  local exp run mdp="false"
+  exp="$(dc config --services 2>/dev/null | sort | tr '\n' ' ' || true)"
+  run="$(dc ps --services --status running 2>/dev/null | sort | tr '\n' ' ' || true)"
+  [ -d "$REPO_DIR/docker/matter-data" ] && [ -n "$(ls -A "$REPO_DIR/docker/matter-data" 2>/dev/null)" ] && mdp="true"
+  python3 - "$TS" "$STACK_PROFILES" "$exp" "$run" "$mdp" > "$USER_FILES/stack_status.json.tmp" <<'PY' 2>/dev/null && mv -f "$USER_FILES/stack_status.json.tmp" "$USER_FILES/stack_status.json"
+import json, sys
+ts, profiles, exp, run, mdp = sys.argv[1:6]
+print(json.dumps({
+    "at": ts, "profiles": profiles,
+    "expected": [s for s in exp.split() if s],
+    "running": [s for s in run.split() if s],
+    "matter_data_present": mdp == "true",
+}))
+PY
+  return 0
+}
+
 heartbeat "starting"
+write_stack_status
 
 # --- Fleet-wide clock nudge (mirror of w32tm /resync) -----------------------
 # The anomaly engine flags clock_skew_suspected once the local clock drifts a

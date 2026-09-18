@@ -55,6 +55,9 @@ MEM_DEGRADED_PCT   = 92.0
 # than "one bulb is unplugged". Mirrors the hub-side ha_health thresholds.
 DEVICES_OFFLINE_MANY_SHARE = 0.5
 DEVICES_OFFLINE_MIN        = 1
+# Compose services without which a hub is not a hub. Anything else declared but
+# absent (matter-server, otbr, …) is degraded, not down.
+STACK_CORE_SERVICES = frozenset({"ziggy", "homeassistant", "mosquitto", "zigbee2mqtt"})
 
 # A registry where (nearly) everything is "lost" is the 2026-08-09 signature:
 # not 23 dead devices, but one bad reconcile telling the user their home was
@@ -304,6 +307,39 @@ def _evaluate_payload(p: dict) -> list[dict]:
                 offline=d_off, total=d_total,
             ))
 
+    # ── Stack integrity: declared services vs running ──────────────────────
+    # The hub's updater writes what the compose stack SHOULD contain (base +
+    # prod + declared profiles) and what is running. Matter/Thread vanished
+    # from the Canary for a month because the OTA rebuild never included the
+    # optional profile and nothing compared the two (2026-08-14 → 09-18).
+    stack = p.get("stack") if isinstance(p.get("stack"), dict) else None
+    if stack:
+        expected = [str(s) for s in (stack.get("expected") or [])]
+        running = {str(s) for s in (stack.get("running") or [])}
+        missing = [s for s in expected if s not in running]
+        core_down = [s for s in missing if s in STACK_CORE_SERVICES]
+        if core_down:
+            issues.append(_issue(
+                "stack_service_down", LEVEL_DOWN,
+                f"Core service{'s' if len(core_down) != 1 else ''} not running: {', '.join(core_down)}.",
+                missing=missing, expected=expected,
+            ))
+        elif missing:
+            issues.append(_issue(
+                "stack_service_missing", LEVEL_DEGRADED,
+                f"Declared service{'s' if len(missing) != 1 else ''} not running: {', '.join(missing)}.",
+                missing=missing, expected=expected,
+            ))
+        profiles = str(stack.get("profiles") or "")
+        if stack.get("matter_data_present") and "matter" not in profiles:
+            issues.append(_issue(
+                "matter_enabled_not_declared", LEVEL_DEGRADED,
+                "Matter/Thread was set up on this hub but is not part of its declared "
+                "stack, so it is not running. Declare it (ZIGGY_COMPOSE_PROFILES=matter) "
+                "or remove its state.",
+                profiles=profiles,
+            ))
+
     # ── Containers ─────────────────────────────────────────────────────────
     for c in (p.get("container_health") or []):
         if not isinstance(c, dict):
@@ -389,6 +425,10 @@ def vitals(payload: Optional[dict]) -> dict:
         "automations_ziggy":     autos.get("ziggy_total"),
         "automations_ha_backed": autos.get("ziggy_ha_backed"),
         "automations_ha":        autos.get("ha_total"),
+        # Stack: declared compose services vs running (hub updater, every tick).
+        "stack_expected":  len((p.get("stack") or {}).get("expected") or []) if isinstance(p.get("stack"), dict) else None,
+        "stack_running":   len((p.get("stack") or {}).get("running") or []) if isinstance(p.get("stack"), dict) else None,
+        "stack_profiles":  (p.get("stack") or {}).get("profiles") if isinstance(p.get("stack"), dict) else None,
         "disk_pct":        _num(p.get("disk_pct_used")),
         "mem_pct":         _num(p.get("mem_pct")),
         "cpu_pct":         _num(p.get("cpu_pct")),

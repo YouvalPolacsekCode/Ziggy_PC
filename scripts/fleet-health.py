@@ -184,6 +184,13 @@ def render(report: dict, *, color: bool) -> None:
         if z is not None or h is not None:
             note = "" if z == h else "   <-- MISMATCH"
             print(f"        automations: ziggy={z} ha={h}{note}")
+        # Stack: what the hub declares it runs vs what is actually up. Matter
+        # was silently gone from the Canary for a month before this line.
+        se, sr = v.get("stack_expected"), v.get("stack_running")
+        if se is not None or sr is not None:
+            prof = f" · profiles {v.get('stack_profiles')}" if v.get("stack_profiles") else ""
+            note = "" if (se is None or sr is None or sr >= se) else "   <-- SERVICE MISSING"
+            print(f"        stack: {sr}/{se} services running{prof}{note}")
         for issue in home.get("issues") or []:
             print(f"        - {issue.get('message')}")
         if home.get("actionable"):

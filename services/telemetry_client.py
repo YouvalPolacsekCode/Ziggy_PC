@@ -361,6 +361,27 @@ def _collect_last_automation_trigger() -> Optional[str]:
 # Containers (docker SDK if available)
 # ---------------------------------------------------------------------------
 
+def _collect_stack_status() -> Optional[dict]:
+    """Host-side stack report (scripts/linux/ziggy-update.sh writes it)."""
+    import json as _json
+    import os as _os
+    path = _os.path.join("user_files", "stack_status.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            d = _json.load(f)
+        if not isinstance(d, dict):
+            return None
+        return {
+            "expected": [str(s) for s in (d.get("expected") or [])],
+            "running": [str(s) for s in (d.get("running") or [])],
+            "profiles": str(d.get("profiles") or ""),
+            "matter_data_present": bool(d.get("matter_data_present")),
+            "at": d.get("at"),
+        }
+    except Exception:
+        return None
+
+
 def _collect_containers() -> Optional[list]:
     """Legacy container collector — kept for backwards compat with any
     consumer pinned to {name, state}. The richer view lives in
@@ -477,6 +498,16 @@ def _build_payload(settings: dict, *, timeout_s: float) -> dict:
     container_health = _collect_container_health()
     if container_health is not None:
         payload["container_health"] = container_health
+
+    # ── Stack integrity (written by the host updater every tick) ─────────
+    # The container has no docker socket, so the host-side updater records
+    # what the compose stack should contain and what is running:
+    # user_files/stack_status.json → {"expected": [...], "running": [...],
+    # "profiles": "...", "matter_data_present": bool, "at": ts}. The relay
+    # compares the two; a declared service that is not running is an issue.
+    stack = _collect_stack_status()
+    if stack is not None:
+        payload["stack"] = stack
 
     # ── Last automation trigger (legacy name + spec-named alias) ─────────
     lat = _collect_last_automation_trigger()
