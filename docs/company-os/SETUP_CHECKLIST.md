@@ -1,5 +1,11 @@
 # Company OS — Human setup checklist (Phase 2)
 
+> **This checklist is now live inside the Desk at `https://ziggy-desk.fly.dev/setup`**,
+> with the same steps in plain language, a progress bar, and automatic verification
+> (a task turns green when its service is connected and answering; the mail task reads
+> the domain's DNS). The Desk version is generated from `desk/company/knowledge.py`;
+> this file is the long-form reference and stays in sync by hand.
+
 Everything below needs a human because it is an account, a legal acceptance, a
 domain verification, billing, or an OAuth consent. I could not generate any of
 these values. Everything that *could* be done programmatically is already done
@@ -125,20 +131,19 @@ Order matters only where noted. Items 1–3 unblock the most.
 - **VALUE I NEED:** both keys; the main key goes only into your shell for `scripts/company/uptimerobot_bootstrap.py`, then can be deleted.
 - **WHERE STORED:** Fly secret `UPTIMEROBOT_READ_KEY` on `ziggy-desk`.
 
-## 15. n8n (self-hosted on Fly)
+## 15. Inbound support mail (replaces the n8n support workflow)
 
-- **SERVICE:** n8n, Fly app `ziggy-n8n`
-- **ACTION REQUIRED:** (a) confirm the ~US$5/month always-on 1 GB machine (I did not create paid infrastructure without your yes); (b) after I deploy, open https://ziggy-n8n.fly.dev once and create the owner account (n8n's first-run screen); (c) Settings → n8n API → Create API key.
-- **EXACT PAGE:** https://ziggy-n8n.fly.dev (after deploy) → Settings → n8n API.
-- **VALUE I NEED:** "yes" for (a); the API key for (c).
-- **WHERE STORED:** Fly secret `N8N_API_KEY` on `ziggy-desk` (with `N8N_BASE_URL=https://ziggy-n8n.fly.dev`); on `ziggy-n8n`: `DESK_URL`, `DESK_API_KEY` (I generate a new author-role Desk key for n8n), `NOTIFY_WEBHOOK_URL`.
+- **SERVICE:** Brevo inbound parsing (or any mail forwarder that can POST JSON)
+- **ACTION REQUIRED:** nothing until Brevo exists (item 11). Then: Brevo → Transactional → Inbound parsing → add `support@ziggy-home.com` (or `hello@`) with the webhook URL `https://ziggy-desk.fly.dev/api/company/support/inbound/<token>`. I generate the token and set it as `SUPPORT_INBOUND_TOKEN`; you paste the URL.
+- **VALUE I NEED:** none.
+- **WHERE STORED:** Fly secret `SUPPORT_INBOUND_TOKEN` on `ziggy-desk`.
 
 ## 16. Notification webhook (Slack, Discord, or WhatsApp via Jeff)
 
 - **SERVICE:** whichever you read daily
 - **ACTION REQUIRED:** create an incoming webhook (Slack: https://api.slack.com/apps → Incoming Webhooks; Discord: channel → Integrations → Webhooks). The Desk already posts Hebrew text to `NOTIFY_WEBHOOK_URL` on decisions; the daily digest and fleet-down alerts use the same URL.
 - **VALUE I NEED:** the webhook URL.
-- **WHERE STORED:** Fly secret `NOTIFY_WEBHOOK_URL` on `ziggy-desk` and `ziggy-n8n`.
+- **WHERE STORED:** Fly secret `NOTIFY_WEBHOOK_URL` on `ziggy-desk`. The Desk then sends the 07:30 Hebrew digest (`DIGEST_AT`) and every urgent item (home down, monitor down, urgent ticket) to it.
 
 ## 17. Relay monitor account → Desk
 
@@ -182,5 +187,6 @@ Order matters only where noted. Items 1–3 unblock the most.
 - Website tracking foundation committed (consent banner, GA4 Consent Mode v2, PostHog, canonical events, first-touch attribution, Desk lead pipeline with Jeff fallback, privacy policy rewritten).
 - `Ziggy_PC` branch `feat/company-os`: hub usage counters, relay → PostHog forwarding, `error_burst` fleet rule, Sentry init, HTTP health check, nightly backup scheduling, CI workflow.
 - Jeff: optional Sentry init committed (deploys with the next `fly deploy -a youval-jeff`).
-- n8n: Fly config, README and three workflows in `ziggy-desk/n8n/` (deploy on your yes in item 15).
+- n8n audited and removed: its three workflows run inside the Desk (`N8N_DECISION.md`).
+- Operator layer live in the Desk: `/setup` (this checklist, self-verifying), `/ask`, `/flows`, Services/cost view on `/system`, help on every number, Today triage.
 - Bootstrap scripts in `ziggy-desk/scripts/company/` for HubSpot, Brevo, UptimeRobot, Cloudflare DNS, Jeff waitlist import, connector check.

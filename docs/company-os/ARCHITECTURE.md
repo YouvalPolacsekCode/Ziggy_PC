@@ -70,8 +70,7 @@ Other Fly apps in the account are Jeff satellites (`jeff-whatsapp`, `youval-jeff
 ```
                  ┌──────────────────────── external sources of truth ────────────────────────┐
                  │ GA4 · Search Console · Google Ads · Meta Ads/IG · PostHog · HubSpot ·      │
-                 │ Brevo · Freshdesk · Sentry · UptimeRobot · GitHub · Stripe (dormant) ·    │
-                 │ n8n (self-hosted, optional flows)                                          │
+                 │ Brevo · Freshdesk · Sentry · UptimeRobot · GitHub · Stripe (dormant)      │
                  └──────────────┬────────────────────────────────────────────┬──────────────┘
                                 │ read (connectors, cached snapshots)        │ write (outbox, retries)
                                 ▼                                            │
@@ -95,7 +94,17 @@ Design rules:
 3. **Independently disableable.** Missing credential → `not_configured`; explicit `COMPANY_DISABLED=hubspot,brevo` → `disabled`. Both show in `/system`.
 4. **Writes go through an outbox** with idempotency keys, exponential backoff, a dead-letter state, and a TODAY item when something has failed three times.
 5. **Privacy by construction.** Analytics receive pseudonymous ids and event properties only. Email lives in the Desk (`leads`), HubSpot and Brevo; GA4 and PostHog receive `lead_id`, never the address. Hubs never contact a third-party analytics or error vendor; they keep using the relay pipe.
-6. **Don't break what works.** The Jeff waitlist endpoint, Youval's signup email, the Instagram/Ads queue, the fleet remediator and the hub telemetry pipe are untouched. The website's lead POST target changes to the Desk, which forwards to Jeff.
+6. **The Desk is the operating system, not an admin panel.** Every page opens with a
+   plain-language "what is this page", every number has a "?" from the same registry,
+   vendor dashboards are linked but never required. Technical tables sit under
+   "Technical details". Today is triaged into ACTION REQUIRED / FYI / AUTOMATIC and
+   healthy automations never create items. Company Setup verifies itself where it can
+   (a connected service turns green on its own; the mail check reads DNS) and collapses
+   into System once complete.
+7. **No second automation system.** The three flows planned for n8n (daily digest,
+   support mail → Desk, fleet-down alert) run inside the Desk's scheduler and inbox;
+   see `N8N_DECISION.md`.
+8. **Don't break what works.** The Jeff waitlist endpoint, Youval's signup email, the Instagram/Ads queue, the fleet remediator and the hub telemetry pipe are untouched. The website's lead POST target changes to the Desk, which forwards to Jeff.
 
 ## 4. Where new code lives
 
@@ -108,7 +117,8 @@ Design rules:
 | Sentry init | `ziggy-desk/desk/app.py`, `ziggy_pc/relay/app/main.py`, `jeff/jeff/app.py`, website `src/lib/analytics/sentry.js` |
 | Hub feature-usage counters (no PII) | `ziggy_pc/services/usage_counters.py` → `telemetry_client` extra → relay `routers/telemetry.py` → PostHog server-side |
 | Bootstrap scripts (run once from the laptop with a main key) | `ziggy-desk/scripts/company/` |
-| n8n | `ziggy-desk/n8n/` (fly.toml, Dockerfile, exported workflows) |
+| Knowledge registry (help, setup, ask, flows, services) | `ziggy-desk/desk/company/knowledge.py`; rendered to `KNOWLEDGE.md` by `scripts/company/render_knowledge.py` |
+| Today triage, Company Setup, Ask Desk, digest | `ziggy-desk/desk/company/{triage,setup,ask,digest,services_view}.py` |
 | CI | `.github/workflows/tests.yml` in `ziggy-desk` and `Ziggy_PC` |
 
 ## 5. Known limitations recorded during the audit

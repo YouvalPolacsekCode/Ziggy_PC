@@ -39,11 +39,23 @@ Updated: 2026-09-18
   pre-existing failures deselected and documented in the workflow). **Not merged, not
   shipped** (checklist 21).
 
+- **Operator layer LIVE in the Desk** (2026-09-18, second pass): one knowledge registry
+  (`desk/company/knowledge.py`) drives "?" help on every number and an "about this page"
+  on every page; Today = 30-second glance + ACTION REQUIRED / FYI / AUTOMATIC; `/setup`
+  = self-verifying Company Setup (23 tasks, progress %, manual ticks, DNS check for
+  mail); `/ask` = deterministic Ask Desk (English + Hebrew keywords, live answers for
+  "what do I need to do", "is Ziggy healthy", "which systems cost money"); `/flows` =
+  Automation Map (7 processes, each step AUTOMATIC / HUMAN APPROVAL / HUMAN ACTION);
+  `/system` = Services view (purpose, plan, limit, cost, API, status, fallback, near-limit
+  flag) with technical tables collapsed. Daily Hebrew digest and urgent pushes are sent by
+  the Desk; inbound support mail accepted by URL token. 73 tests green.
+- **n8n removed** after audit (`N8N_DECISION.md`): all three planned workflows are native.
+
 ## IN PROGRESS
 - Nothing in flight. Every remaining step waits on a credential or a decision.
 
 ## BLOCKED — NEEDS YOUVAL
-All 21 items in `SETUP_CHECKLIST.md`. The ones that unblock the most:
+All items in `SETUP_CHECKLIST.md` (also live at `/setup` in the Desk). The ones that unblock the most:
 1. Google Workspace (or Cloudflare Email Routing) — `hello@ziggy-home.com` cannot receive mail.
 2. Cloudflare DNS-edit token — lets me write MX/SPF/DKIM/verification records.
 3. GA4 property + PostHog project — the site deploy and the MARKETING/PRODUCT pages.
@@ -51,7 +63,7 @@ All 21 items in `SETUP_CHECKLIST.md`. The ones that unblock the most:
    already stored in the Desk and forwarded to Jeff meanwhile).
 5. Relay monitor credentials copied to the Desk — OPERATIONS page.
 6. Sentry DSNs + UptimeRobot keys — SYSTEM HEALTH page.
-7. "Yes" for the ~US$5/month n8n machine; review/merge/ship of `feat/company-os`.
+7. Review/merge/ship of `feat/company-os` (no n8n machine needed any more).
 
 ## NEXT (after credentials)
 - Run the bootstrap scripts; import Jeff's waitlist; deploy the website with the IDs;
