@@ -85,8 +85,22 @@ def _turn_on_actions(lights: list[str], brightness: int, kelvin: Optional[int], 
         actions.append({
             "type": "call_service", "entity_id": eid,
             "service": "light.turn_on", "service_data": data,
+            # A light a person switched off stays off (services/light_hold.py).
+            # HA defers this step to Ziggy's executor, the one place the hold
+            # is checked — see ha_automations._action_to_ha.
+            "respect_hold": True,
         })
     return actions
+
+
+# Conditions every recipe's "lights ON" rule carries: motion never lights a
+# room in sleep or movie mode. Fixed home modes — services/modes.py.
+_NO_MOTION_LIGHTING = [
+    {"type": "mode", "mode": "sleep", "is": False},
+    {"type": "mode", "mode": "movie", "is": False},
+]
+# …and every "lights OFF when empty" rule: not while someone is cleaning.
+_NOT_CLEANING = [{"type": "mode", "mode": "cleaning", "is": False}]
 
 
 def _scheduled_lights_set() -> set:
@@ -165,15 +179,28 @@ def _off_rule_native_body(occ: str, lights: list[str], off_delay_minutes: int) -
     point of the re-check, so no epsilon fudge is warranted here.
     """
     window = _hhmmss(off_delay_minutes)
+    conditions = [
+        {"condition": "state", "entity_id": occ, "state": "off", "for": window},
+        {"condition": "template", "value_template": _leftover_lights_template(occ, lights)},
+    ]
+    # Cleaning mode: the Off rule's actions run natively in HA, so the mode
+    # guard must be in HA's own conditions. Compiled only when HA has
+    # discovered the mirrored mode entity (announced at every boot); the
+    # Ziggy-side `mode` condition on the rule is the fallback evaluator.
+    try:
+        from services.ha_automations import _condition_to_ha
+        for c in _NOT_CLEANING:
+            ha_c = _condition_to_ha(c)
+            if ha_c:
+                conditions.append(ha_c)
+    except Exception as e:
+        log_error(f"[smart_room_recipe] cleaning-mode condition not compiled: {e}")
     return {
         "triggers": [
             {"platform": "state", "entity_id": occ, "to": "off", "for": window},
             {"platform": "time_pattern", "minutes": "/1"},
         ],
-        "conditions": [
-            {"condition": "state", "entity_id": occ, "state": "off", "for": window},
-            {"condition": "template", "value_template": _leftover_lights_template(occ, lights)},
-        ],
+        "conditions": conditions,
     }
 
 
@@ -344,7 +371,8 @@ def build_smart_room_bundle(
             "source": "custom",
             "trigger": {"type": "state", "entity_id": occ, "state": "on"},
             # Daytime window = after night_end (06:30) and before night_start (19:00).
-            "conditions": [{"type": "time", "after": opt["night_end"], "before": opt["night_start"]}],
+            "conditions": [{"type": "time", "after": opt["night_end"], "before": opt["night_start"]},
+                           *_NO_MOTION_LIGHTING],
             "actions": _turn_on_actions(lights, opt["day_brightness"], None, caps, sched_owned),
             "mode": "single",
         },
@@ -353,7 +381,8 @@ def build_smart_room_bundle(
             "alias": _alias("Night"),
             "source": "custom",
             "trigger": {"type": "state", "entity_id": occ, "state": "on"},
-            "conditions": [{"type": "time", "after": opt["night_start"], "before": opt["night_end"]}],
+            "conditions": [{"type": "time", "after": opt["night_start"], "before": opt["night_end"]},
+                           *_NO_MOTION_LIGHTING],
             "actions": _turn_on_actions(lights, opt["night_brightness"], opt["night_kelvin"], caps, sched_owned),
             "mode": "single",
         },
@@ -363,6 +392,7 @@ def build_smart_room_bundle(
             "source": "custom",
             "trigger": {"type": "state", "entity_id": occ, "state": "off",
                         "for_minutes": int(opt["off_delay_minutes"])},
+            "conditions": list(_NOT_CLEANING),
             "actions": _turn_off_actions(lights),
             # Additive: the Ziggy-shaped `trigger` and the per-light `actions`
             # above stay authoritative for the installed Smart Room card, which
@@ -374,18 +404,12 @@ def build_smart_room_bundle(
         },
     ]
 
-    # ── Sleep KV + voice ("good night"/"good morning") ─────────────────────────
-    # The KV mode records intent; suppression itself is handled by the occupancy
-    # edge (no manual toggle needed). Voice turns the lights off/on directly.
-    # Zone Smart Rooms get NO voice phrases — a second "good night" would
-    # collide with the main room's; the zone is driven purely by its sensor.
-    kv = [{"namespace": "modes", "key": f"{zone_slug}_sleep", "default": False}]
-    gn = "לילה טוב" if lang == "he" else "good night"
-    gm = "בוקר טוב" if lang == "he" else "good morning"
-    voice = [] if zone_name else [
-        {"phrase": gn, "action_description": (f"turn off the {label} lights and set {room_slug} sleep on")},
-        {"phrase": gm, "action_description": (f"turn on the {label} lights and set {room_slug} sleep off")},
-    ]
+    # No per-room `_sleep` flag and no voice phrases any more (2026-09-18):
+    # the flag was written and never read, and the phrases only registered on
+    # the retired v1 engine. Sleep is now a HOME mode (services/modes.py) that
+    # the Day/Night rules condition on; "good night" is the On-demand routine.
+    kv: list[dict] = []
+    voice: list[dict] = []
 
     guard_note = ("" if has_presence else
                   (" (בלי חיישן נוכחות ייעודי — ההגנה מסתמכת על חיישן התפוסה בלבד)"

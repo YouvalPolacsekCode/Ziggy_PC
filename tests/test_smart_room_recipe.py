@@ -36,19 +36,26 @@ def test_full_recipe_shape(monkeypatch):
     day, night, off = autos
     # day: occupancy edge on + daytime window + bright
     assert day["trigger"] == {"type": "state", "entity_id": "binary_sensor.bedroom_occupied", "state": "on"}
-    assert day["conditions"] == [{"type": "time", "after": "06:30", "before": "19:00"}]
+    # …and never in sleep / movie mode (fixed home modes, services/modes.py)
+    _no_motion = [{"type": "mode", "mode": "sleep", "is": False}, {"type": "mode", "mode": "movie", "is": False}]
+    assert day["conditions"] == [{"type": "time", "after": "06:30", "before": "19:00"}, *_no_motion]
     assert day["actions"][0]["service_data"]["brightness_pct"] == 100
+    # every turn-on honours a manual off (services/light_hold.py)
+    assert all(a2["respect_hold"] is True for a2 in day["actions"] + night["actions"])
     # night: same edge, night window, warm + dim (color_temp because the light supports it)
-    assert night["conditions"] == [{"type": "time", "after": "19:00", "before": "06:30"}]
+    assert night["conditions"] == [{"type": "time", "after": "19:00", "before": "06:30"}, *_no_motion]
     assert night["actions"][0]["service_data"]["brightness_pct"] == 30
     assert night["actions"][0]["service_data"]["color_temp_kelvin"] == 2700
     # off: occupancy off for 5 min
     assert off["trigger"] == {"type": "state", "entity_id": "binary_sensor.bedroom_occupied",
                               "state": "off", "for_minutes": 5}
     assert off["actions"][0]["service"] == "light.turn_off"
-    # sleep KV + good night/morning voice
-    assert a["kv_state"] == [{"namespace": "modes", "key": "bedroom_sleep", "default": False}]
-    assert [v["phrase"] for v in a["voice_intents"]] == ["good night", "good morning"]
+    assert off["conditions"] == [{"type": "mode", "mode": "cleaning", "is": False}]
+    assert all("respect_hold" not in a2 for a2 in off["actions"])
+    # No per-room sleep flag and no voice phrases any more: sleep is a HOME
+    # mode the rules condition on; "good night" is the On-demand routine.
+    assert a["kv_state"] == []
+    assert a["voice_intents"] == []
 
 
 def test_scheduled_light_defers_brightness_to_schedule(monkeypatch):
@@ -127,7 +134,7 @@ def test_hebrew_names(monkeypatch):
     monkeypatch.setattr(sr, "_light_color_caps", lambda: {})
     r = sr.build_smart_room_bundle("bedroom", occupancy_entity=OCC, home=_home(), language="he")
     assert r["bundle"]["name"] == "חדר שינה חכם"
-    assert [v["phrase"] for v in r["bundle"]["artifacts"]["voice_intents"]] == ["לילה טוב", "בוקר טוב"]
+    assert r["bundle"]["artifacts"]["voice_intents"] == []
 
 
 # ── per-instance lights + zone scoping ───────────────────────────────────────
@@ -170,7 +177,7 @@ def test_zone_sensor_gets_zone_keyed_rules_and_no_voice(monkeypatch):
     # Sensor's friendly name labels the bundle; no voice phrase collision.
     assert "מקלחת הורים" in b["name"]
     assert a["voice_intents"] == []
-    assert a["kv_state"][0]["key"] == "bedroom_2_sleep"
+    assert a["kv_state"] == []
 
 
 def test_main_sensor_keeps_legacy_aliases_and_voice(monkeypatch):
@@ -184,7 +191,7 @@ def test_main_sensor_keeps_legacy_aliases_and_voice(monkeypatch):
     b = r["bundle"]
     assert b["zone"] == "bedroom"
     assert all(a2["alias"].startswith("Ziggy Smart Room Bedroom ") for a2 in b["artifacts"]["automations"])
-    assert len(b["artifacts"]["voice_intents"]) == 2
+    assert b["artifacts"]["voice_intents"] == []
 
 
 # ── Off rule: self-healing, so a vacancy that started before the rule existed
