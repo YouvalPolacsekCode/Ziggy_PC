@@ -1643,9 +1643,12 @@ const STATUS_DOT = {
   unconfigured: 'bg-line',
   connected:    'bg-ok',
 }
-function getStatusLabel(t, status) {
+function getStatusLabel(t, status, row) {
   switch (status) {
-    case 'lost':         return t('devices.statusLost')
+    // The coordinator itself says this device is no longer on the radio
+    // network (services.radio_liveness). Not "removed" by anyone — it left,
+    // and pairing again is the fix.
+    case 'lost':         return row?.lost_reason === 'left_hub' ? t('devices.statusLeftHub') : t('devices.statusLost')
     case 'unclaimed':    return t('devices.statusUnclaimed')
     case 'unconfigured': return t('devices.statusUnconfigured')
     default:             return null
@@ -2704,7 +2707,7 @@ export default function Devices() {
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: d.status === 'lost' ? 'var(--accent)' : 'var(--line-2)', flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p dir="auto" style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{translateNamePhrase(d.display_name || eid || d.device_type, lang)}</p>
-                    <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }} dir="auto">{d.roomName ? `${translateNamePhrase(d.roomName, lang)} · ` : ''}{getStatusLabel(t, d.status) || d.status}</p>
+                    <p style={{ fontSize: 10.5, color: 'var(--ink-faint)', fontFamily: '"IBM Plex Mono", monospace' }} dir="auto">{d.roomName ? `${translateNamePhrase(d.roomName, lang)} · ` : ''}{getStatusLabel(t, d.status, d) || d.status}</p>
                   </div>
                   {eid && (
                     <button

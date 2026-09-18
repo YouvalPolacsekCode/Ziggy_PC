@@ -1215,6 +1215,38 @@ def get_status(room: str, device_type: str) -> Optional[str]:
     return None
 
 
+def apply_radio_liveness(left: list[str], back: list[str]) -> int:
+    """Radio ground truth (services.radio_liveness): rows whose Zigbee device is
+    absent from the coordinator's list become LOST with `lost_reason=left_hub`;
+    rows whose device reappeared go back to CONNECTED. Returns rows changed.
+
+    Deliberately narrow: only `left_hub` losses are restored here, so a LOST set
+    by the HA reconcile (entity deleted in HA) is left to that path."""
+    import time as _t
+    global _registry
+    changed = 0
+    left_set, back_set = set(left or []), set(back or [])
+    if not left_set and not back_set:
+        return 0
+    with _lock:
+        for d in _registry:
+            eid = d.get("entity_id")
+            if eid in left_set and not (d.get("status") == LOST and d.get("lost_reason") == "left_hub"):
+                d["status"] = LOST
+                d["lost_reason"] = "left_hub"
+                d["left_at"] = _t.time()
+                changed += 1
+            elif eid in back_set and d.get("status") == LOST and d.get("lost_reason") == "left_hub":
+                d["status"] = CONNECTED
+                d.pop("lost_reason", None)
+                d.pop("left_at", None)
+                changed += 1
+        if changed:
+            _save_persistent(_registry)
+            _rebuild_indexes()
+    return changed
+
+
 def get_all() -> list[dict]:
     with _lock:
         return list(_registry)

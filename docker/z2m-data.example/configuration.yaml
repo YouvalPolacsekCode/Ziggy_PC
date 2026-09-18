@@ -12,6 +12,12 @@
 
 homeassistant: true       # auto-publish MQTT discovery for HA's MQTT integration
 permit_join: false        # never auto-open the network; permit is driver-initiated
+# Availability tracking ON. Without it a device that leaves the network (a
+# factory-reset bulb, 2026-09-16 on the Canary) keeps its last state in Home
+# Assistant forever and every "is it reachable" rule downstream is blind.
+# Routers get an active ping every 10 min; battery devices are passive.
+availability:
+  enabled: true
 mqtt:
   base_topic: zigbee2mqtt
   server: 'mqtt://mosquitto:1883'

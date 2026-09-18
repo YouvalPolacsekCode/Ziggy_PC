@@ -423,6 +423,13 @@ def _push_anomaly(active: dict, room_id: str, rule: AnomalyRule,
         log_info(f"[AnomalyEngine] {rule.rule_id} suppressed (conf {result.confidence:.2f} < {MIN_CONFIDENCE})")
         return
 
+    # Daily push budget (alert doctrine). The anomaly is already recorded and
+    # shown in the app above; past the budget only the phone stays quiet.
+    if not _push_budget_ok(rule.severity):
+        log_info(f"[AnomalyEngine] {rule.rule_id} push held — daily budget spent "
+                 f"({_push_budget_state.get('suppressed')} held today)")
+        return
+
     try:
         from services.push_notify import push_notify_fire_and_forget
         category = "anomaly_critical" if rule.severity == "critical" else "anomaly_warning"
@@ -1544,3 +1551,90 @@ async def sweep_stuck_occupancy(cache: dict | None = None, active: dict | None =
 # ── Module init ───────────────────────────────────────────────────────────────
 _db_init()
 _load_snooze_from_db()
+
+
+# ── Alert doctrine: a daily push budget ─────────────────────────────────────
+#
+# On 2026-09-17 the Canary got ~134 pushes in one day, all but one false. The
+# one true alert (a bulb that had left the network) drowned. Warnings past the
+# budget are still recorded and shown in the app; the phone stays quiet.
+# Critical alerts always go through. Budget resets at UTC midnight.
+_DEFAULT_DAILY_PUSH_BUDGET = 12
+_push_budget_state: dict = {}     # {"day": "YYYY-MM-DD", "sent": n, "suppressed": n}
+
+
+def _push_budget_ok(severity: str, now: float | None = None) -> bool:
+    from datetime import datetime as _dt, timezone as _tzu
+    now = time.time() if now is None else now
+    day = _dt.fromtimestamp(now, _tzu.utc).strftime("%Y-%m-%d")
+    st = _push_budget_state
+    if st.get("day") != day:
+        st.clear()
+        st.update({"day": day, "sent": 0, "suppressed": 0})
+    if severity == "critical":
+        st["sent"] += 1
+        return True
+    try:
+        budget = int(_cfg().get("daily_push_budget", _DEFAULT_DAILY_PUSH_BUDGET))
+    except Exception:
+        budget = _DEFAULT_DAILY_PUSH_BUDGET
+    if st["sent"] >= budget:
+        st["suppressed"] += 1
+        return False
+    st["sent"] += 1
+    return True
+
+
+def push_budget_status() -> dict:
+    """For ops status: how many pushes today, how many held back."""
+    return dict(_push_budget_state)
+
+
+# ── ANOM-14: a Zigbee device LEFT the hub (ground truth from the coordinator) ─
+#
+# Raised by services.radio_liveness when a device Ziggy owns is absent from
+# Zigbee2MQTT's own device list. Not a guess: the coordinator says it is gone.
+# The only remedy that works is pairing it again, so that is the message.
+_ANOM14_RULE = AnomalyRule(rule_id="ANOM-14", scope="entity", severity="warning",
+                           cooldown_s=86400, fn=lambda _: None)
+
+
+def raise_left_hub(active: dict, entity_id: str, name: str) -> None:
+    if _is_snoozed(entity_id, "ANOM-14") or not _cooldown_ok(entity_id, "ANOM-14", 86400):
+        return
+    msg = (f"{name} has left the hub — it is no longer on the home's radio network, "
+           f"so nothing can switch it. Pair it again from the Devices page to bring it back.")
+    _push_anomaly(active, entity_id, _ANOM14_RULE,
+                  AnomalyResult(message=msg, confidence=0.95, action_available=True,
+                                suggested_action="pair_again"))
+
+
+def clear_left_hub(active: dict, entity_id: str) -> None:
+    _clear_anomaly(active, entity_id, "ANOM-14")
+
+
+# ── ANOM-15: an automation points at a device that no longer exists ─────────
+#
+# Raised by services.automation_integrity. An entity id is a property of a
+# pairing, not a device: re-pair a bulb over a different radio and every rule
+# bound to the old id runs "successfully" against nothing (Canary bedroom,
+# five weeks; Tslil balcony). Keyed by automation id.
+_ANOM15_RULE = AnomalyRule(rule_id="ANOM-15", scope="entity", severity="warning",
+                           cooldown_s=86400, fn=lambda _: None)
+
+
+def raise_broken_automation(active: dict, auto_id: str, name: str, missing: list[str]) -> None:
+    if _is_snoozed(auto_id, "ANOM-15") or not _cooldown_ok(auto_id, "ANOM-15", 86400):
+        return
+    n = len(missing)
+    msg = (f"'{name}' points at {n} device{'s' if n != 1 else ''} that no longer exist"
+           f"{'s' if n == 1 else ''}, so it runs but nothing happens. Open it and pick the "
+           f"device{'s' if n != 1 else ''} again.")
+    _push_anomaly(active, auto_id, _ANOM15_RULE,
+                  AnomalyResult(message=msg, confidence=0.95, action_available=True,
+                                suggested_action="edit_automation",
+                                context=",".join(missing)))
+
+
+def clear_broken_automation(active: dict, auto_id: str) -> None:
+    _clear_anomaly(active, auto_id, "ANOM-15")

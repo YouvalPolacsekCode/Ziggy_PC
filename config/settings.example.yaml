@@ -29,6 +29,9 @@ anomaly_engine:
   # called healthy lights "hasn't responded" on every home. Needs a real
   # liveness signal before it may run unattended.
   anom13_down_sweep_enabled: false
+  # Warning pushes per day, per home. Past it, alerts are still recorded and
+  # shown in the app; the phone stays quiet. Critical alerts always go through.
+  daily_push_budget: 12
   # Let alerts ACT on the radio network (Z2M re-interview / permit-join) before
   # nagging. Off: a false alert must never touch a customer's Zigbee devices.
   auto_repair_ladder: false

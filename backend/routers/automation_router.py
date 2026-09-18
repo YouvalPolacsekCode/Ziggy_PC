@@ -90,7 +90,27 @@ async def get_automations():
     # piling up other requests behind it. Wrapping releases the loop while
     # HA replies.
     autos = await asyncio.to_thread(ha_list_automations)
+    # Badge automations whose trigger/conditions/stored actions point at devices
+    # that no longer exist (services.automation_integrity). Cheap: the WS state
+    # cache, no HA round-trip. HA's own action lists are covered by the hourly
+    # sweep, whose findings are exposed at /api/automations/integrity.
+    try:
+        from services.automation_integrity import annotate
+        from services.ha_subscriber import state_cache
+        annotate(autos, set(state_cache.keys()) if state_cache else set())
+    except Exception:
+        pass
     return {"automations": autos}
+
+
+@router.get("/api/automations/integrity")
+async def get_automations_integrity(refresh: bool = False):
+    """Which automations reference devices that no longer exist — the full check
+    including the action lists Home Assistant holds. `refresh=1` runs it now."""
+    from services import automation_integrity
+    if refresh or not automation_integrity.last_report.get("at"):
+        await automation_integrity.sweep()
+    return automation_integrity.last_report
 
 
 # Cap-map cache. detect_capabilities() iterates every HA state + IR device

@@ -541,6 +541,38 @@ async def run_scheduler() -> None:
             except Exception as exc:
                 log_error(f"[Scheduler] Controller refresh tick failed: {exc}")
 
+        # ── Every 5 minutes: radio liveness (ground truth from the coordinator) ─
+        # Zigbee2MQTT's own device list vs the devices Ziggy owns. A device that
+        # left the network (factory reset, re-paired elsewhere) never becomes
+        # `unavailable` in HA with availability tracking off, so the HA-based
+        # reconcile above cannot see it. The Canary office light sat "connected"
+        # for two days after leaving (2026-09-16). This is the check that sees it.
+        if _tick % 5 == 0:
+            try:
+                from services import radio_liveness
+                await radio_liveness.reconcile()
+            except Exception as exc:
+                log_error(f"[Scheduler] radio liveness tick failed: {exc}")
+        if _tick == 5:
+            # Once per process, well after boot: ask Z2M to track availability so
+            # HA itself starts saying `unavailable` (effective at Z2M's next restart).
+            try:
+                from services import radio_liveness
+                await radio_liveness.ensure_z2m_availability()
+            except Exception as exc:
+                log_error(f"[Scheduler] Z2M availability request failed: {exc}")
+
+        # ── Hourly: automation integrity ──────────────────────────────────────
+        # Every automation's trigger/conditions/actions must point at devices
+        # that exist. Re-pairing a device changes its entity id; the bedroom
+        # Smart Room ran against dead ids for five weeks (2026-08-12 → 09-18).
+        if _tick % 60 == 30:
+            try:
+                from services import automation_integrity
+                await automation_integrity.sweep()
+            except Exception as exc:
+                log_error(f"[Scheduler] automation integrity sweep failed: {exc}")
+
         # ── Daily: encrypted backup to B2 (DESIGN_BACKUP_DR.md §6) ───────────
         # Time-of-day gated, off unless backup.enabled=true in settings.
         # Runs off-thread so the scheduler keeps ticking during upload.
