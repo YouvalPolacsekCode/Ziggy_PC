@@ -516,6 +516,21 @@ async def run_scheduler() -> None:
         except Exception as exc:
             log_error(f"[Scheduler] Light hold tick failed: {exc}")
 
+        # ── Recipe automations installed before respect_hold existed ─────────
+        # Shortly after boot, then hourly. Reads first and writes nothing once
+        # every turn-on carries the flag, so the hourly pass is free — and it
+        # self-heals a rule re-saved by an older client.
+        if _tick == 2 or _tick % 60 == 5:
+            try:
+                from services import hold_migration
+                res = await asyncio.to_thread(hold_migration.tick)
+                if res.get("migrated"):
+                    _dbus.emit("automation", BASIC, "hold_migration_applied",
+                               migrated=[m["id"] for m in res["migrated"]],
+                               errors=len(res.get("errors") or []))
+            except Exception as exc:
+                log_error(f"[Scheduler] Hold migration failed: {exc}")
+
         # ── Every 2 minutes: system-health watchdog tick ─────────────────────
         # Drives the ha_health auto-recovery state machine even when nobody
         # is polling /api/health. Without this tick, the Zigbee-coordinator

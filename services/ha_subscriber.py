@@ -395,6 +395,15 @@ async def _process_event(event: dict) -> None:
             old_fired = old_a.get("last_triggered")
             new_fired = attrs.get("last_triggered")
             if new_fired and new_fired != old_fired:
+                # Attribute the turn-ons this rule is about to cause BEFORE they
+                # land, so a relight of a held light reads as the automation and
+                # not as the person clearing their own hold. Must come first:
+                # the deferred actions below can reach the device immediately.
+                try:
+                    from services import light_hold as _hold
+                    _hold.note_automation_fired(entity_id, attrs)
+                except Exception as e:
+                    log_error(f"[HASubscriber] hold attribution for {entity_id}: {e}")
                 await _run_deferred_automation_actions(entity_id, attrs)
         except Exception as e:
             log_error(f"[HASubscriber] automation-fired bridge {entity_id}: {e}")

@@ -51,6 +51,27 @@ HELD_UNTIL_MORNING = "held_until_morning"
 
 _DEFAULTS = {"enabled": True, "empty_minutes": 30, "morning": "06:30"}
 
+# How long after an automation fires a turn-on on one of its lights still counts
+# as THAT automation, not a person.
+#
+# Why this exists (found on the operator's own hub, 2026-09-19): a rule whose
+# actions Home Assistant executes natively sets neither attribution tier —
+# exactly like a wall switch. So an automation relighting a held lamp read as
+# "the user turned it back on" and ERASED the hold, which is the one outcome
+# the feature exists to prevent. `note_automation_fired` closes that: when an
+# automation fires we remember which lights it acts on, and a turn-on inside
+# this window is treated as an engine relight (it feeds the second-strike
+# memory) instead of clearing the hold.
+#
+# 20s is generous for an HA call plus a slow Zigbee report. The cost of being
+# too generous is small and one-directional: a person flipping a light on
+# within 20s of an automation firing keeps their hold instead of clearing it.
+_ENGINE_WINDOW_S = 20.0
+
+#: entity_id → epoch until which a turn-on is attributable to an automation.
+#: In-memory: a transient hint, exactly like manual_overrides' windows.
+_engine_touch: dict[str, float] = {}
+
 
 # ── Settings ─────────────────────────────────────────────────────────────────
 
@@ -266,6 +287,66 @@ def on_engine_on(entity_id: str, *, now: Optional[float] = None) -> None:
         _put(entity_id, rec)
 
 
+def note_engine_activity(entity_ids, *, now: Optional[float] = None) -> None:
+    """Remember that an ENGINE is about to act on these lights, so the resulting
+    turn-on is not mistaken for a person's."""
+    ids = entity_ids if isinstance(entity_ids, (list, tuple, set)) else [entity_ids]
+    until = (time.time() if now is None else float(now)) + _ENGINE_WINDOW_S
+    for eid in ids:
+        if isinstance(eid, str) and eid.startswith("light."):
+            _engine_touch[eid] = until
+
+
+def _engine_recent(entity_id: str, now: Optional[float] = None) -> bool:
+    exp = _engine_touch.get(entity_id)
+    if not exp:
+        return False
+    if exp < (time.time() if now is None else float(now)):
+        _engine_touch.pop(entity_id, None)
+        return False
+    return True
+
+
+def lights_an_automation_turns_on(automation_id: str) -> list[str]:
+    """The lights an automation switches ON, from its stored Ziggy steps.
+
+    Covers every Ziggy-created automation (recipes, Library bundles, the
+    wizard) because they all persist their steps. A hand-written Home
+    Assistant automation has no stored steps and returns [] — its relight
+    still reads as manual, which is the honest answer when we cannot tell.
+    """
+    try:
+        from services.local_automation_actions import get_all_saved_actions
+        steps = get_all_saved_actions(automation_id) or []
+    except Exception as e:
+        log_error(f"[LightHold] could not read steps for {automation_id}: {e}")
+        return []
+    out: list[str] = []
+    for s in steps:
+        if not isinstance(s, dict) or s.get("type") not in ("call_service", "device"):
+            continue
+        eid = s.get("entity_id")
+        if not isinstance(eid, str) or not eid.startswith("light."):
+            continue
+        svc = f"{s.get('service', '')}{s.get('service_value', '')}{s.get('ha_service', '')}{s.get('action', '')}"
+        if "turn_on" in svc and eid not in out:
+            out.append(eid)
+    return out
+
+
+def note_automation_fired(automation_entity_id: str, attrs: Optional[dict] = None,
+                          *, now: Optional[float] = None) -> list[str]:
+    """Called by ha_subscriber the moment an automation's last_triggered moves.
+    Marks the lights it turns on, so their relight is attributed to it."""
+    aid = ((attrs or {}).get("id")
+           or automation_entity_id[len("automation."):] if automation_entity_id.startswith("automation.")
+           else automation_entity_id)
+    lights = lights_an_automation_turns_on(aid)
+    if lights:
+        note_engine_activity(lights, now=now)
+    return lights
+
+
 def on_state_change(entity_id: str, prev_s: str, new_s: str, *, engine_initiated: bool,
                     now: Optional[float] = None) -> None:
     """Single entry point for ha_subscriber. Lights only."""
@@ -275,7 +356,10 @@ def on_state_change(entity_id: str, prev_s: str, new_s: str, *, engine_initiated
         if not engine_initiated:
             on_manual_off(entity_id, now=now)
     elif prev_s == "off" and new_s == "on":
-        if engine_initiated:
+        # `engine_initiated` only catches a call Ziggy's executor made itself.
+        # An automation Home Assistant ran natively sets nothing — so also ask
+        # whether an automation that acts on this light just fired.
+        if engine_initiated or _engine_recent(entity_id, now):
             on_engine_on(entity_id, now=now)
         else:
             on_manual_on(entity_id, now=now)
