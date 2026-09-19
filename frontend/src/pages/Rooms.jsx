@@ -31,6 +31,7 @@ import { useT, useTranslatedName } from '../lib/i18n'
 // resting Rooms page is byte-for-byte the one that shipped.
 import { useLongPress } from '../motion/gestures'
 import { captureOriginFromEvent, useMorphOrigin, useMorphReturn, useMorphTarget } from '../motion/morph'
+import { useMotionOn } from '../motion/flag'
 
 // DOMAIN_GROUPS and domainGroup imported from domainRegistry.js
 const ROOM_DOMAIN_GROUPS = DOMAIN_GROUPS
@@ -122,6 +123,7 @@ async function toggleRoomLights(room, roomLabel, addToast, t) {
 }
 
 function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
+  const motionOn = useMotionOn()
   const t = useT()
   const roomName = useTranslatedName(room.name)
   const addToast = useUIStore(s => s.addToast)
@@ -168,7 +170,10 @@ function RoomTile({ room, onClick, onDelete, onEditPhoto }) {
   return (
     <motion.div
       ref={morphRef}
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={T_ENTER}
+      // The rooms grid is a `data-motion-stagger` — with the layer on, CSS
+      // already brings each tile in, and this JS fade was a second entrance
+      // on top of it (see DeviceCard in Devices.jsx). Off, it stays.
+      initial={motionOn ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={T_ENTER}
       onMouseEnter={() => canHover() && setHovered(true)} onMouseLeave={() => setHovered(false)}
       className={photo ? undefined : 'z-room-plain'}
       // The box that actually holds the room photo — the rounded, clipped

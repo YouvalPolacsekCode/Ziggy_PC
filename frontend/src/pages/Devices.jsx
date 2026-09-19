@@ -1151,7 +1151,7 @@ function buildGroupFilters(entities, irEntities) {
 // consumes (HA → /api/ha/entities → store.entities). The Ziggy-only metadata
 // (origin, ziggy_sources, friendly source names) is attached by the page
 // before render — see `smartSensorEntries` in the Devices component.
-function SmartSensorCard({ entity, lang, layoutKey }) {
+function SmartSensorCard({ entity, lang, layoutKey, layoutArmed }) {
   const t = useT()
   const motionOn = useMotionOn()
   const [sourcesOpen, setSourcesOpen] = useState(false)
@@ -1205,8 +1205,11 @@ function SmartSensorCard({ entity, lang, layoutKey }) {
     : (entity.room || '').replace(/_/g, ' ')
 
   return (
-    <motion.div layout layoutDependency={layoutKey}
-      initial={{ opacity: 0, scale: 0.96 }}
+    <motion.div layout={layoutArmed} layoutDependency={layoutKey}
+      // With the layer on, the grid's CSS stagger already brings the card
+      // in; a second, JS-driven fade on top was measured as 50 concurrent
+      // framer animations on entry. See DeviceCard.
+      initial={motionOn ? false : { opacity: 0, scale: 0.96 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ duration: 0.15 }}
@@ -1393,7 +1396,7 @@ function _isSmartSensorRecord(d) {
 }
 
 // ── Collapsible group header ───────────────────────────────────────────────────
-function CollapsibleGroup({ label, count, open, onToggle, children, action, room, onRoomClick }) {
+function CollapsibleGroup({ label, count, open, onToggle, children, action, room, onRoomClick, onArm }) {
   const t = useT()
   const photo = room ? getRoomPhoto(room) : null
   const motionOn = useMotionOn()
@@ -1406,7 +1409,8 @@ function CollapsibleGroup({ label, count, open, onToggle, children, action, room
             <img src={photo} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
         )}
-        <button onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'start' }}>
+        {/* onArm on pointerdown, a beat before the click: see `armLayout`. */}
+        <button onClick={onToggle} onPointerDown={onArm} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'start' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <span dir="auto" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.005em' }}>{label}</span>
             {count != null && <span className="z-mono" style={{ fontSize: 10, color: 'var(--ink-faint)', marginInlineStart: 6 }}>{count === 1 ? t('devices.deviceCountOne') : t('devices.deviceCountMany', { n: count })}</span>}
@@ -1769,8 +1773,9 @@ const DeviceCard = forwardRef(function DeviceCard({
   onIrCommand, onIrChannel, onIrStateChange, onEditIr, onDeleteIr,
   onLinkIr, onUnlinkIr,
   isHidden, showAssign, ziggyStatus,
-  // When to FLIP — see `layoutKey` in Devices(). Undefined = framer default.
-  layoutKey,
+  // When to FLIP — see `layoutKey` / `armLayout` in Devices(). Undefined =
+  // framer default.
+  layoutKey, layoutArmed,
 }, ref) {
   const t = useT()
   const navigate = useNavigate()
@@ -1883,8 +1888,13 @@ const DeviceCard = forwardRef(function DeviceCard({
 
   return (
     <motion.div
-      ref={ref} layout layoutDependency={layoutKey}
-      initial={{ opacity: 0, scale: 0.96 }}
+      ref={ref} layout={layoutArmed} layoutDependency={layoutKey}
+      // Two entrances were running per card: the grid's CSS stagger (motion
+      // layer) AND this JS-driven fade+scale — 50 framer animations at once
+      // on a phone, on top of the mount. With the layer on, the stagger owns
+      // the entrance; `initial={false}` mounts at the resting state. With
+      // the layer off nothing else animates the card, so the fade stays.
+      initial={motionOn ? false : { opacity: 0, scale: 0.96 }}
       animate={{ opacity: isHidden ? 0.45 : 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ duration: 0.15 }}
@@ -2571,9 +2581,29 @@ export default function Devices() {
   // the key keeps framer's default (see MeasureLayout: undefined → always).
   const layoutKey = `${viewMode}|${domain}|${search}|${[...collapsedGroups].sort().join(',')}`
 
+  // FLIP is armed by intent, not paid on every mount.
+  //
+  // `layout` on a card makes framer measure it (a forced layout read) the
+  // moment it mounts — 50 cards, ~100 ms at 8× throttle, before a single
+  // pixel of entrance has drawn. That measurement only earns its keep when
+  // the user is about to reorder the grid. So the cards carry `layout` only
+  // from the pointerdown on a filter chip, the view toggle, the search box
+  // or a group header — a beat BEFORE the click that reorders, which is
+  // when framer needs its "before" snapshot — until 900 ms after the last
+  // change. Reorders still glide; entering the page pays nothing.
+  const [layoutArmed, setLayoutArmed] = useState(false)
+  const disarmRef = useRef(null)
+  const armLayout = () => {
+    setLayoutArmed(true)
+    clearTimeout(disarmRef.current)
+    disarmRef.current = setTimeout(() => setLayoutArmed(false), 900)
+  }
+  useEffect(() => () => clearTimeout(disarmRef.current), [])
+
   const deviceCardProps = (entity, assign = false) => ({
     entity,
     layoutKey,
+    layoutArmed,
     rooms: roomsForPicker,
     onToggle: handleToggle,
     onService: handleService,
@@ -2752,12 +2782,12 @@ export default function Devices() {
           <span style={{ position: 'absolute', insetInlineStart: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-faint)' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           </span>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('devices.searchPlaceholderShort')} dir="auto" className="z-input" style={{ paddingInlineStart: 34 }} />
+          <input value={search} onChange={e => { armLayout(); setSearch(e.target.value) }} onPointerDown={armLayout} onFocus={armLayout} placeholder={t('devices.searchPlaceholderShort')} dir="auto" className="z-input" style={{ paddingInlineStart: 34 }} />
         </div>
       )}
 
       {/* View mode + filter chips */}
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, marginBottom: 20 }} className="scrollbar-thin">
+      <div onPointerDownCapture={armLayout} style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, marginBottom: 20 }} className="scrollbar-thin">
         {/* View mode toggle */}
         {[{ id: 'room', label: 'By room' }, { id: 'type', label: 'By type' }].map(v => (
           <button key={v.id} onClick={() => setViewMode(v.id)} style={{
@@ -2931,7 +2961,7 @@ export default function Devices() {
         return (
           <>
             {roomGroups.map(({ room, items }) => (
-              <CollapsibleGroup key={room.id} label={translateNamePhrase(room.name, lang)} count={items.length} open={!collapsedGroups.has(room.id)} onToggle={() => toggleGroup(room.id)} room={room} onRoomClick={() => navigate(`/rooms/${room.id}`)}>
+              <CollapsibleGroup key={room.id} label={translateNamePhrase(room.name, lang)} count={items.length} open={!collapsedGroups.has(room.id)} onArm={armLayout} onToggle={() => toggleGroup(room.id)} room={room} onRoomClick={() => navigate(`/rooms/${room.id}`)}>
                 <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {items.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
@@ -2951,19 +2981,19 @@ export default function Devices() {
                 label={t('devices.groupSmartSensors')}
                 count={smartSensorEntries.length}
                 open={!collapsedGroups.has('__smart_sensors__')}
-                onToggle={() => toggleGroup('__smart_sensors__')}
+                onArm={armLayout} onToggle={() => toggleGroup('__smart_sensors__')}
               >
                 <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {smartSensorEntries.map(entity => (
-                      <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} layoutKey={layoutKey} />
+                      <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} layoutKey={layoutKey} layoutArmed={layoutArmed} />
                     ))}
                   </AnimatePresence>
                 </div>
               </CollapsibleGroup>
             )}
             {noRoomItems.length > 0 && (
-              <CollapsibleGroup label="No Room" count={noRoomItems.length} open={!collapsedGroups.has('__noroom__')} onToggle={() => toggleGroup('__noroom__')}>
+              <CollapsibleGroup label="No Room" count={noRoomItems.length} open={!collapsedGroups.has('__noroom__')} onArm={armLayout} onToggle={() => toggleGroup('__noroom__')}>
                 <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {noRoomItems.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
@@ -2972,7 +3002,7 @@ export default function Devices() {
               </CollapsibleGroup>
             )}
             {unroomedItems.length > 0 && (
-              <CollapsibleGroup label="Unassigned" count={unroomedItems.length} open={!collapsedGroups.has('__unassigned__')} onToggle={() => toggleGroup('__unassigned__')}>
+              <CollapsibleGroup label="Unassigned" count={unroomedItems.length} open={!collapsedGroups.has('__unassigned__')} onArm={armLayout} onToggle={() => toggleGroup('__unassigned__')}>
                 <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {unroomedItems.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity, true)} />)}
@@ -2992,7 +3022,7 @@ export default function Devices() {
         return (
           <>
             {groups.map(g => (
-              <CollapsibleGroup key={g.id} label={groupLabel(g.id)} count={g.items.length} open={!collapsedGroups.has(g.id)} onToggle={() => toggleGroup(g.id)}>
+              <CollapsibleGroup key={g.id} label={groupLabel(g.id)} count={g.items.length} open={!collapsedGroups.has(g.id)} onArm={armLayout} onToggle={() => toggleGroup(g.id)}>
                 <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {g.items.map(entity => <DeviceCard key={entity.entity_id} {...deviceCardProps(entity)} />)}
@@ -3008,12 +3038,12 @@ export default function Devices() {
                 label={t('devices.groupSmartSensors')}
                 count={smartSensorEntries.length}
                 open={!collapsedGroups.has('__smart_sensors__')}
-                onToggle={() => toggleGroup('__smart_sensors__')}
+                onArm={armLayout} onToggle={() => toggleGroup('__smart_sensors__')}
               >
                 <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {smartSensorEntries.map(entity => (
-                      <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} layoutKey={layoutKey} />
+                      <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} layoutKey={layoutKey} layoutArmed={layoutArmed} />
                     ))}
                   </AnimatePresence>
                 </div>
@@ -3032,12 +3062,12 @@ export default function Devices() {
           label={t('devices.groupSmartSensors')}
           count={filtered.length}
           open={!collapsedGroups.has('__smart_sensors_only__')}
-          onToggle={() => toggleGroup('__smart_sensors_only__')}
+          onArm={armLayout} onToggle={() => toggleGroup('__smart_sensors_only__')}
         >
           <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
             <AnimatePresence mode="popLayout">
               {filtered.map(entity => (
-                <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} layoutKey={layoutKey} />
+                <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} layoutKey={layoutKey} layoutArmed={layoutArmed} />
               ))}
             </AnimatePresence>
           </div>
