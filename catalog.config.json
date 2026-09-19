@@ -202,7 +202,8 @@
         "backend/routers/dashboard_router.py",
         "backend/routers/ui_prefs_router.py",
         "backend/routers/wall_router.py",
-        "frontend/src/App.jsx"
+        "frontend/src/App.jsx",
+        "frontend/src/motion/**"
       ],
       "root": "ziggy_pc"
     },
@@ -388,7 +389,12 @@
         "core/errors.py",
         "core/logger_module.py",
         "backend/routers/debug_router.py",
-        "backend/routers/ha_router.py"
+        "backend/routers/ha_router.py",
+        "backend/routers/mcp_router.py",
+        "backend/routers/external_tokens_router.py",
+        "services/external_tokens.py",
+        "core/actions/**",
+        "backend/routers/actions_router.py"
       ],
       "root": "ziggy_pc"
     }
