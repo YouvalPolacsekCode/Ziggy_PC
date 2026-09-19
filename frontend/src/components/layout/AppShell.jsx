@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, Outlet } from 'react-router-dom'
 import { X, Maximize2 } from 'lucide-react'
 import { Sidebar } from './Sidebar'
@@ -253,10 +253,21 @@ export function AppShell({ connected }) {
     el.style.willChange = ''
   }, [location.pathname])
 
+  // Route-level Suspense boundary.
+  //
+  // Every page but Dashboard is React.lazy. App.jsx has a Suspense around the
+  // whole <Routes> tree, but that boundary sits ABOVE this shell — so a page
+  // suspending on first visit used to blank the ENTIRE app (sidebar, nav,
+  // content) to that `null` fallback and remount the lot once the chunk
+  // landed. That was the flicker. React resolves to the nearest boundary, so
+  // this one keeps the shell painted and swaps only the content area. The
+  // fallback holds height rather than collapsing so nothing reflows on land.
   const routed = (
-    <ErrorBoundary label={`route:${location.pathname}`} key={location.pathname} fullHeight={false}>
-      <Outlet />
-    </ErrorBoundary>
+    <Suspense fallback={<div aria-hidden style={{ minHeight: '60vh' }} />}>
+      <ErrorBoundary label={`route:${location.pathname}`} key={location.pathname} fullHeight={false}>
+        <Outlet />
+      </ErrorBoundary>
+    </Suspense>
   )
 
   return (
@@ -278,6 +289,12 @@ export function AppShell({ connected }) {
           // flush at viewport top on desktop while mobile main content clears
           // the status bar on iOS PWA (black-translucent) and Android cutouts.
           paddingTop: 'var(--safe-top)',
+          // Reserve the scrollbar track even on pages that don't scroll.
+          // Without this, going from a long page to a short one removes the
+          // scrollbar and every child shifts sideways by its width (4px
+          // Chrome / ~11px Firefox) — reads as the page "jumping". A no-op
+          // where scrollbars overlay the content (iOS / Android).
+          scrollbarGutter: 'stable',
         }}
       >
         {/* Connection banner — owns its own debounce + offline/connecting

@@ -154,6 +154,14 @@ export default function Automations() {
     return { circadianGroup, smartRoomGroups, visibleAutomations: visible }
   }, [automations, roomNameMap, occupancySensors])
 
+  // Layout (FLIP) animations answer to the user, not to data — same rule as
+  // Devices.jsx. The climate rows resolve async AFTER the list is up and sit
+  // above it, so by default their arrival shoved every automation card down
+  // in a slide. Keyed on the counts the user changes (a delete, the tab), a
+  // removal still closes its gap; a late-arriving row just lands. Climate is
+  // deliberately NOT in the key — it is the thing that arrives late.
+  const layoutKey = `${tab}|${smartRoomGroups.length}|${visibleAutomations.length}`
+
   // ?focus=<id>: once the focused card exists in the list, scroll it into
   // view (AutomationCard stamps data-automation-id) and drop the ring after a
   // beat. An id that never shows up (grouped / filtered / gone) just does nothing.
@@ -514,6 +522,7 @@ export default function Automations() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {circadianStatus && (circadianStatus.lights || []).length > 0 && (
                 <CircadianGroupRow
+                  layoutKey={layoutKey}
                   status={circadianStatus}
                   onToggle={handleCircadianToggle}
                   onSync={handleCircadianSync}
@@ -525,6 +534,7 @@ export default function Automations() {
               {Object.entries(climateStatus?.rooms || {}).map(([room, slice]) => (
                 <ClimateGroupRow
                   key={`climate-${room}`}
+                  layoutKey={layoutKey}
                   status={slice}
                   onToggle={(enabled) => handleClimateToggle(room, enabled)}
                   onSync={() => handleClimateSync(room)}
@@ -536,6 +546,7 @@ export default function Automations() {
               {smartRoomGroups.map(group => (
                 <SmartRoomGroupRow
                   key={group.room}
+                  layoutKey={layoutKey}
                   group={group}
                   onToggleAll={(toEnabled) => handleSmartRoomToggleAll(group, toEnabled)}
                   onView={() => openSmartRoom(group, false)}
@@ -545,6 +556,7 @@ export default function Automations() {
               ))}
               {visibleAutomations.map(a => (
                 <AutomationCard key={a.id} automation={a} offlineEntityIds={offlineEntityIds}
+                  layoutKey={layoutKey}
                   highlighted={!!focusId && a.id === focusId}
                   onToggle={toggleAutomation} onView={handleView} onEdit={handleEdit} onDelete={handleDelete}
                   onTrigger={async id => { try { await triggerAutomation(id); addToast(t('automations.triggered'), 'success') } catch (e) { addToast(e?.userMessage || t('automations.failedToTrigger'), 'error') } }} />

@@ -27,6 +27,8 @@ const AutomationCard = React.memo(function AutomationCard({
   // Deep-link focus (/actions?focus=<id> from a chat card): accent ring for a
   // moment so the eye lands on the right card after the scroll.
   highlighted = false,
+  // When to FLIP — see `layoutKey` in Actions.jsx. Undefined = framer default.
+  layoutKey,
 }) {
   const t = useT()
   const automationName = useTranslatedName(automation.name)
@@ -77,7 +79,7 @@ const AutomationCard = React.memo(function AutomationCard({
   ]
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={T_ENTER} data-automation-id={automation.id}>
+    <motion.div layout layoutDependency={layoutKey} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={T_ENTER} data-automation-id={automation.id}>
       <div style={{
         padding: 12, borderRadius: 'var(--r-card)', background: 'var(--surface)',
         border: `0.5px solid ${hasOfflineDep ? 'color-mix(in srgb, var(--warn) 40%, var(--line))' : 'var(--line)'}`,

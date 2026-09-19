@@ -43,7 +43,7 @@ function getSuggestionStatusMeta() {
 // never auto-deploys. A separate, legacy SuggestionCard lives in pages/Suggestions.jsx
 // (the standalone /suggestions page) with an older accept/reject UX; do not edit
 // that one for new work.
-function SuggestionCard({ suggestion, onConfigure, onReject, onSnooze }) {
+function SuggestionCard({ suggestion, onConfigure, onReject, onSnooze, layoutKey }) {
   const t = useT()
   const [acting,   setActing]   = useState(null)
   const isPending = suggestion.status === 'pending'
@@ -54,7 +54,7 @@ function SuggestionCard({ suggestion, onConfigure, onReject, onSnooze }) {
   const act = async (fn, label) => { setActing(label); try { await fn() } finally { setActing(null) } }
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={T_ENTER}
+    <motion.div layout layoutDependency={layoutKey} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={T_ENTER}
       style={{ padding: 12, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', color: isPending ? 'var(--ink)' : 'var(--ink-mute)' }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -147,7 +147,9 @@ function SuggestionNudgeStrip({ suggestions, onConfigure, onReject, onSnooze, on
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <AnimatePresence mode="popLayout">
           {shown.map(s => (
-            <SuggestionCard key={s.id} suggestion={s} onConfigure={() => onConfigure(s)} onReject={() => onReject(s.id)} onSnooze={(days) => onSnooze(s.id, days)} />
+            // FLIP only when a card leaves (reject / snooze): `pending.length`
+            // moves, the next one glides up. See `layoutKey` in Actions.jsx.
+            <SuggestionCard key={s.id} suggestion={s} layoutKey={pending.length} onConfigure={() => onConfigure(s)} onReject={() => onReject(s.id)} onSnooze={(days) => onSnooze(s.id, days)} />
           ))}
         </AnimatePresence>
       </div>
@@ -193,7 +195,7 @@ function SuggestedTab({ suggestions, loading, analyzing, onConfigure, onReject, 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <AnimatePresence mode="popLayout">
             {displayed.map(s => (
-              <SuggestionCard key={s.id} suggestion={s} onConfigure={() => onConfigure(s)} onReject={() => onReject(s.id)} onSnooze={(days) => onSnooze(s.id, days)} />
+              <SuggestionCard key={s.id} suggestion={s} layoutKey={`${subtab}|${displayed.length}`} onConfigure={() => onConfigure(s)} onReject={() => onReject(s.id)} onSnooze={(days) => onSnooze(s.id, days)} />
             ))}
           </AnimatePresence>
         </div>

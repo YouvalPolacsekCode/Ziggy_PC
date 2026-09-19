@@ -14,7 +14,7 @@ import { cardIconBtn } from '../../lib/automations/styles'
 //
 // Same anatomy as AutomationCard: 44px line glyph · Headline · one Subhead ·
 // one Footnote/chip · switch · 44px actions. The gold tint is gone.
-function CircadianGroupRow({ status, onToggle, onSync, onView, onEdit, onDelete }) {
+function CircadianGroupRow({ status, onToggle, onSync, onView, onEdit, onDelete, layoutKey }) {
   const t = useT()
   const enabled = !!status?.enabled
   const cur = status?.current || {}
@@ -23,7 +23,7 @@ function CircadianGroupRow({ status, onToggle, onSync, onView, onEdit, onDelete 
   const title = t('automations.circadian.installedBadge')
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={T_ENTER}>
+    <motion.div layout layoutDependency={layoutKey} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={T_ENTER}>
       <div style={{ padding: 12, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 16 }}>
         <button onClick={onView} title={t('automations.circadian.view')} aria-label={t('automations.circadian.view')}
           style={{ ...cardIconBtn(enabled ? 'var(--ink-2)' : 'var(--ink-faint)'), background: 'var(--surface-2)' }}>

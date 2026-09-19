@@ -153,7 +153,12 @@ function OpsPageWrapper({ title }) {
         <span style={{ fontSize: 11, color: 'var(--ink)', fontWeight: 600 }}>{title}</span>
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        <Outlet />
+        {/* Nearest Suspense boundary, same reason as AppShell's: the ops
+            pages are lazy, and without this the top-level boundary blanks
+            the whole app (including this header) while a chunk loads. */}
+        <Suspense fallback={<div aria-hidden style={{ minHeight: '60vh' }} />}>
+          <Outlet />
+        </Suspense>
       </div>
     </div>
   )

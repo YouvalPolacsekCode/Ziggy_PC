@@ -1151,7 +1151,7 @@ function buildGroupFilters(entities, irEntities) {
 // consumes (HA → /api/ha/entities → store.entities). The Ziggy-only metadata
 // (origin, ziggy_sources, friendly source names) is attached by the page
 // before render — see `smartSensorEntries` in the Devices component.
-function SmartSensorCard({ entity, lang }) {
+function SmartSensorCard({ entity, lang, layoutKey }) {
   const t = useT()
   const motionOn = useMotionOn()
   const [sourcesOpen, setSourcesOpen] = useState(false)
@@ -1205,7 +1205,7 @@ function SmartSensorCard({ entity, lang }) {
     : (entity.room || '').replace(/_/g, ' ')
 
   return (
-    <motion.div layout
+    <motion.div layout layoutDependency={layoutKey}
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
@@ -1769,6 +1769,8 @@ const DeviceCard = forwardRef(function DeviceCard({
   onIrCommand, onIrChannel, onIrStateChange, onEditIr, onDeleteIr,
   onLinkIr, onUnlinkIr,
   isHidden, showAssign, ziggyStatus,
+  // When to FLIP — see `layoutKey` in Devices(). Undefined = framer default.
+  layoutKey,
 }, ref) {
   const t = useT()
   const navigate = useNavigate()
@@ -1881,7 +1883,7 @@ const DeviceCard = forwardRef(function DeviceCard({
 
   return (
     <motion.div
-      ref={ref} layout
+      ref={ref} layout layoutDependency={layoutKey}
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: isHidden ? 0.45 : 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
@@ -2556,8 +2558,22 @@ export default function Devices() {
   // ── By-room grouping (primary view) ──────────────────────────────────────────
   const [viewMode, setViewMode] = useState('room') // 'room' | 'type'
 
+  // Layout (FLIP) animations answer to the user, not to data.
+  //
+  // Every card below is a `motion.div layout`, and framer's default is to
+  // re-measure on EVERY render — so a store refresh after mount, the room
+  // list resolving, a WS state tick that changed one tile's height, all slid
+  // every other card to its new spot. That was "components bounce into
+  // position" on entering the page, and it survived `?motion=off` because
+  // none of this is the motion layer. `layoutDependency` gates the measure:
+  // keyed on what the user changes (view, filter, search, folded groups), a
+  // reorder still glides; data landing just lands. A card rendered without
+  // the key keeps framer's default (see MeasureLayout: undefined → always).
+  const layoutKey = `${viewMode}|${domain}|${search}|${[...collapsedGroups].sort().join(',')}`
+
   const deviceCardProps = (entity, assign = false) => ({
     entity,
+    layoutKey,
     rooms: roomsForPicker,
     onToggle: handleToggle,
     onService: handleService,
@@ -2940,7 +2956,7 @@ export default function Devices() {
                 <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {smartSensorEntries.map(entity => (
-                      <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} />
+                      <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} layoutKey={layoutKey} />
                     ))}
                   </AnimatePresence>
                 </div>
@@ -2997,7 +3013,7 @@ export default function Devices() {
                 <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
                   <AnimatePresence mode="popLayout">
                     {smartSensorEntries.map(entity => (
-                      <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} />
+                      <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} layoutKey={layoutKey} />
                     ))}
                   </AnimatePresence>
                 </div>
@@ -3021,7 +3037,7 @@ export default function Devices() {
           <div data-motion-stagger="" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8, marginBottom: 4 }}>
             <AnimatePresence mode="popLayout">
               {filtered.map(entity => (
-                <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} />
+                <SmartSensorCard key={entity.entity_id} entity={entity} lang={lang} layoutKey={layoutKey} />
               ))}
             </AnimatePresence>
           </div>

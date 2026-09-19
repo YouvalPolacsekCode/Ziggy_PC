@@ -13,13 +13,13 @@ import { cardIconBtn } from '../../lib/automations/styles'
 //
 // Props: group { room, roomName, members, allEnabled, count }, onToggleAll,
 //        onView, onEdit, onDelete.
-function SmartRoomGroupRow({ group, onToggleAll, onView, onEdit, onDelete }) {
+function SmartRoomGroupRow({ group, onToggleAll, onView, onEdit, onDelete, layoutKey }) {
   const t = useT()
   const { roomName, allEnabled } = group
   const title = t('automations.smartRoom.cardTitle', { room: roomName })
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={T_ENTER}>
+    <motion.div layout layoutDependency={layoutKey} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={T_ENTER}>
       <div style={{ padding: 12, borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', display: 'flex', alignItems: 'flex-start', gap: 16 }}>
         <button onClick={onView} title={t('common.view')} aria-label={t('common.view')}
           style={{ ...cardIconBtn(allEnabled ? 'var(--ink-2)' : 'var(--ink-faint)'), background: 'var(--surface-2)' }}>
