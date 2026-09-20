@@ -1,3 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- The charset is not optional here even though two of the three places this
+     page is served declare it for us (Jeff sends text/html; charset=utf-8, and
+     the artifact host injects its own <meta>). This file is handed around as a
+     self-contained page, and opened any other way — file://, a plain static
+     host — a missing charset turns every em dash into "â€"" and every Hebrew
+     string into mojibake. Seen for real, 2026-09-20. -->
 <title>Ziggy Capability Catalog</title>
 <style>
   :root{
@@ -115,6 +124,25 @@
   .count-stat{ text-align:right; }
   .count-stat .n{ font-size:22px; font-weight:600; }
   .count-stat .label{ display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; margin-top:2px; }
+
+  /* refresh — a published copy of this page is a snapshot unless it can
+     re-read the live catalog; see the fetch in the script below. */
+  .refresh-wrap{ display:flex; flex-direction:column; align-items:flex-end; gap:5px; }
+  .refresh-btn{
+    display:inline-flex; align-items:center; gap:7px;
+    border:1px solid var(--hairline); background:var(--surface); color:var(--ink);
+    padding:7px 13px; border-radius:100px; font-size:12.5px; font-weight:600;
+    cursor:pointer; white-space:nowrap;
+    transition:border-color .12s ease, background .12s ease;
+  }
+  .refresh-btn:hover:not(:disabled){ border-color:var(--accent); color:var(--accent); }
+  .refresh-btn:disabled{ opacity:0.6; cursor:progress; }
+  .refresh-btn svg{ flex-shrink:0; }
+  .refresh-btn.spinning svg{ animation:rf-spin 0.9s linear infinite; }
+  @keyframes rf-spin{ to{ transform:rotate(360deg); } }
+  .refresh-note{ font-size:11.5px; color:var(--muted); max-width:30ch; text-align:right; line-height:1.4; }
+  .refresh-note.ok{ color:var(--st-live); }
+  .refresh-note.err{ color:var(--st-orphaned); }
 
   .legend-row{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
@@ -433,6 +461,13 @@
       <div class="counts">
         <div class="count-stat"><span class="n num" id="cap-count"></span><span class="label">Capabilities</span></div>
         <div class="count-stat"><span class="n num" id="mech-count"></span><span class="label">Mechanisms</span></div>
+        <div class="refresh-wrap">
+          <button class="refresh-btn" id="refresh-btn" type="button">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M14 8a6 6 0 1 1-1.76-4.24M14 2v4h-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Refresh
+          </button>
+          <span class="refresh-note" id="refresh-note" role="status" aria-live="polite"></span>
+        </div>
       </div>
     </div>
     <div class="legend-row" id="legend-row">
@@ -526,44 +561,55 @@
   };
 
   /* ---------------- header: counts + legend ---------------- */
-  document.getElementById('built-commit').textContent = DATA.built_from_commit || '—';
-  document.getElementById('cap-count').textContent = DATA.counts.capabilities;
-  document.getElementById('mech-count').textContent = DATA.counts.mechanisms;
-
+  /* Rebuildable, because Refresh can replace the whole catalog under it. */
   var legendRow = document.getElementById('legend-row');
-  STATUS_ORDER.forEach(function(st){
-    var n = DATA.counts.by_status[st] || 0;
-    var chip = document.createElement('button');
-    chip.className = 'chip';
-    chip.dataset.status = st;
-    chip.innerHTML = '<span class="dot"></span>' + esc(STATUS_LABEL[st]) + ' <span class="cnt num">' + n + '</span>';
-    chip.addEventListener('click', function(){
-      if(state.statusFilter.has(st)) state.statusFilter.delete(st);
-      else state.statusFilter.add(st);
-      state.deadOnly = false;
+  var deadBtn, clearBtn;
+
+  function buildHeader(){
+    document.getElementById('built-commit').textContent = DATA.built_from_commit || '—';
+    document.getElementById('cap-count').textContent = DATA.counts.capabilities;
+    document.getElementById('mech-count').textContent = DATA.counts.mechanisms;
+
+    Array.prototype.slice.call(
+      legendRow.querySelectorAll('.chip, .dead-btn, .clear-filters')
+    ).forEach(function(n){ n.parentNode.removeChild(n); });
+
+    STATUS_ORDER.forEach(function(st){
+      var n = DATA.counts.by_status[st] || 0;
+      var chip = document.createElement('button');
+      chip.className = 'chip';
+      chip.dataset.status = st;
+      chip.innerHTML = '<span class="dot"></span>' + esc(STATUS_LABEL[st]) + ' <span class="cnt num">' + n + '</span>';
+      chip.addEventListener('click', function(){
+        if(state.statusFilter.has(st)) state.statusFilter.delete(st);
+        else state.statusFilter.add(st);
+        state.deadOnly = false;
+        syncChips(); renderFeatures();
+      });
+      legendRow.appendChild(chip);
+    });
+
+    deadBtn = document.createElement('button');
+    deadBtn.className = 'dead-btn';
+    deadBtn.id = 'dead-btn';
+    var deadCount = (DATA.counts.by_status['orphaned']||0) + (DATA.counts.by_status['abandoned']||0);
+    deadBtn.innerHTML = '⚠ Built but not running <span class="cnt num">' + deadCount + '</span>';
+    deadBtn.addEventListener('click', function(){
+      state.deadOnly = !state.deadOnly;
+      if(state.deadOnly){ state.statusFilter = new Set(['orphaned','abandoned']); }
+      else { state.statusFilter = new Set(); }
       syncChips(); renderFeatures();
     });
-    legendRow.appendChild(chip);
-  });
-  var deadBtn = document.createElement('button');
-  deadBtn.className = 'dead-btn';
-  deadBtn.id = 'dead-btn';
-  var deadCount = (DATA.counts.by_status['orphaned']||0) + (DATA.counts.by_status['abandoned']||0);
-  deadBtn.innerHTML = '⚠ Built but not running <span class="cnt num">' + deadCount + '</span>';
-  deadBtn.addEventListener('click', function(){
-    state.deadOnly = !state.deadOnly;
-    if(state.deadOnly){ state.statusFilter = new Set(['orphaned','abandoned']); }
-    else { state.statusFilter = new Set(); }
-    syncChips(); renderFeatures();
-  });
-  legendRow.appendChild(deadBtn);
-  var clearBtn = document.createElement('button');
-  clearBtn.className = 'clear-filters';
-  clearBtn.textContent = 'Clear';
-  clearBtn.addEventListener('click', function(){
-    state.statusFilter = new Set(); state.deadOnly = false; syncChips(); renderFeatures();
-  });
-  legendRow.appendChild(clearBtn);
+    legendRow.appendChild(deadBtn);
+
+    clearBtn = document.createElement('button');
+    clearBtn.className = 'clear-filters';
+    clearBtn.textContent = 'Clear';
+    clearBtn.addEventListener('click', function(){
+      state.statusFilter = new Set(); state.deadOnly = false; syncChips(); renderFeatures();
+    });
+    legendRow.appendChild(clearBtn);
+  }
 
   function syncChips(){
     legendRow.querySelectorAll('.chip[data-status]').forEach(function(ch){
@@ -583,11 +629,18 @@
   });
 
   /* ---------------- Features view ---------------- */
-  var layers = Array.from(new Set(CAPS.map(function(c){ return c.layer; }))).sort();
   var layerSel = document.getElementById('layer-filter');
-  layers.forEach(function(l){
-    var o = document.createElement('option'); o.value = l; o.textContent = l; layerSel.appendChild(o);
-  });
+  function buildLayerFilter(){
+    var chosen = state.layer;
+    layerSel.innerHTML = '<option value="">All layers</option>';
+    Array.from(new Set(CAPS.map(function(c){ return c.layer; }))).sort().forEach(function(l){
+      var o = document.createElement('option'); o.value = l; o.textContent = l; layerSel.appendChild(o);
+    });
+    // Keep the user's choice across a refresh, unless that layer is gone.
+    layerSel.value = chosen || '';
+    if(layerSel.value !== (chosen || '')){ state.layer = ''; layerSel.value = ''; }
+  }
+  buildLayerFilter();
   layerSel.addEventListener('change', function(){ state.layer = layerSel.value; renderFeatures(); });
 
   var audSel = document.getElementById('audience-filter');
@@ -714,11 +767,18 @@
   /* ---------------- Compose view ---------------- */
   var composeA = document.getElementById('compose-a');
   var composeB = document.getElementById('compose-b');
-  var capsSorted = CAPS.slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
-  capsSorted.forEach(function(c){
-    var oa = document.createElement('option'); oa.value = c.id; oa.textContent = c.name; composeA.appendChild(oa);
-    var ob = document.createElement('option'); ob.value = c.id; ob.textContent = c.name; composeB.appendChild(ob);
-  });
+  function buildComposePickers(){
+    var pa = composeA.value, pb = composeB.value;
+    composeA.innerHTML = '<option value="">Choose a capability…</option>';
+    composeB.innerHTML = '<option value="">Choose another…</option>';
+    CAPS.slice().sort(function(a,b){ return a.name.localeCompare(b.name); }).forEach(function(c){
+      var oa = document.createElement('option'); oa.value = c.id; oa.textContent = c.name; composeA.appendChild(oa);
+      var ob = document.createElement('option'); ob.value = c.id; ob.textContent = c.name; composeB.appendChild(ob);
+    });
+    composeA.value = capById[pa] ? pa : '';
+    composeB.value = capById[pb] ? pb : '';
+  }
+  buildComposePickers();
   composeA.addEventListener('change', renderCompose);
   composeB.addEventListener('change', renderCompose);
 
@@ -905,7 +965,86 @@
     }
   });
 
+  /* ---------------- refresh ----------------
+     This page is published in more than one place (served by Jeff, and as a
+     standalone copy elsewhere). A standalone copy is a SNAPSHOT: it embeds the
+     catalog it was built with and never learns anything again — one sat at 76
+     capabilities while every other surface said 84. Refresh re-reads the
+     canonical JSON so any copy can catch up without being rebuilt.
+
+     The embedded catalog stays as the fallback: if the fetch fails (offline,
+     the app asleep, the endpoint moved) the page keeps working exactly as it
+     did, and says so rather than emptying itself. */
+  var LIVE_URL = 'https://youval-jeff.fly.dev/ziggy-catalog.json';
+  var refreshBtn = document.getElementById('refresh-btn');
+  var refreshNote = document.getElementById('refresh-note');
+
+  function note(msg, kind){
+    refreshNote.textContent = msg;
+    refreshNote.className = 'refresh-note' + (kind ? ' ' + kind : '');
+  }
+
+  function looksLikeCatalog(d){
+    return !!(d && Array.isArray(d.capabilities) && d.capabilities.length
+              && Array.isArray(d.mechanisms) && d.counts);
+  }
+
+  function applyCatalog(next){
+    DATA = next;
+    CAPS = DATA.capabilities;
+    MECHS = DATA.mechanisms;
+    capById = {}; CAPS.forEach(function(c){ capById[c.id] = c; });
+    mechById = {}; MECHS.forEach(function(m){ mechById[m.id] = m; });
+    closePanel();
+    state.panelStack = [];
+    buildHeader();
+    buildLayerFilter();
+    buildComposePickers();
+    syncChips();
+    renderFeatures();
+    renderFoundations();
+    renderCompose();
+  }
+
+  function refresh(){
+    var wasCaps = DATA.counts.capabilities;
+    var wasBuilt = DATA.built_from_commit || '';
+    refreshBtn.disabled = true;
+    refreshBtn.classList.add('spinning');
+    note('Checking…');
+    // cache-bust: a stale intermediary is the one thing that would make this
+    // button lie about being up to date.
+    fetch(LIVE_URL + '?t=' + Date.now(), { cache: 'no-store' })
+      .then(function(r){
+        if(!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(d){
+        if(!looksLikeCatalog(d)) throw new Error('unexpected shape');
+        var same = (d.built_from_commit || '') === wasBuilt
+                   && d.counts.capabilities === wasCaps;
+        applyCatalog(d);
+        if(same){
+          note('Already up to date — ' + d.counts.capabilities + ' capabilities.', 'ok');
+        } else {
+          var delta = d.counts.capabilities - wasCaps;
+          note('Updated to ' + d.counts.capabilities + ' capabilities'
+               + (delta ? ' (' + (delta > 0 ? '+' : '') + delta + ')' : '') + '.', 'ok');
+        }
+      })
+      .catch(function(err){
+        note('Could not reach the live catalog (' + err.message
+             + '). Still showing the built-in copy.', 'err');
+      })
+      .then(function(){
+        refreshBtn.disabled = false;
+        refreshBtn.classList.remove('spinning');
+      });
+  }
+  refreshBtn.addEventListener('click', refresh);
+
   /* ---------------- init ---------------- */
+  buildHeader();
   syncChips();
   renderFeatures();
   renderFoundations();
