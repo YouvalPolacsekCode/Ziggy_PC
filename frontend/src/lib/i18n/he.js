@@ -3349,7 +3349,7 @@ export default {
   'invite.newHomeBadge':         'בית חדש',
   'invite.email':                'אימייל',
   'homeSensing.myName.title':                'השם שלך',
-  'homeSensing.myName.desc':                 'איך הבית קורא לך. זה השם שתבחר כשאוטומציה רצה בשבילך — "כש{name} מגיע הביתה".',
+  'homeSensing.myName.desc':                 'איך הבית קורא לך — השם שתבחר כשאוטומציה אמורה לרוץ בשבילך. שינוי שלו מעדכן גם את האוטומציות.',
   'homeSensing.myName.placeholder':          'יובל',
   'homeSensing.myName.saved':                'השם עודכן',
   'homeSensing.myName.savedWithAutomations': 'השם עודכן — {n} אוטומציות משתמשות בו',

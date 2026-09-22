@@ -3851,7 +3851,7 @@ export default {
   'invite.newHomeBadge':         'New home',
   'invite.email':                'Email',
   'homeSensing.myName.title':                'Your name',
-  'homeSensing.myName.desc':                 'What the home calls you. This is the name you pick when an automation runs for you — "when {name} gets home".',
+  'homeSensing.myName.desc':                 'What the home calls you — the name you pick when an automation should run for you. Changing it updates your automations too.',
   'homeSensing.myName.placeholder':          'Youval',
   'homeSensing.myName.saved':                'Name updated',
   'homeSensing.myName.savedWithAutomations': 'Name updated — {n} automation(s) now use it',
