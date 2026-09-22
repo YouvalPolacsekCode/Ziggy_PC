@@ -23,3 +23,15 @@ export function AndConnector() {
     </div>
   )
 }
+
+/** The same rule, when the list is "any of these" rather than "all of these". */
+export function OrConnector() {
+  const t = useT()
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }} aria-hidden="true">
+      <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+      <span className="z-chip" style={{ letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-mute)' }}>{t('automations.cond.or')}</span>
+      <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+    </div>
+  )
+}

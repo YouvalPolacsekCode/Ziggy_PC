@@ -102,6 +102,12 @@ _TRIGGERS: list[dict[str, Any]] = [
                        "has nothing to bind to in any Ziggy home. The wizard stopped offering it on "
                        "2026-09-22. Use the Ziggy-native person_arrives / person_leaves / "
                        "all_persons_left triggers, or the welcome_home / leave_home recipes.",
+        # Declined so the agent stops offering a trigger that cannot bind to
+        # anything here. The converter stays (legacy rules still load and are
+        # normalised into the native shape when opened), but nothing new
+        # should be created in this shape.
+        "policy_declined": True,
+        "ziggy_note":  "Converter retained for legacy rules only; no Ziggy home has person.* entities.",
         "shape":       {"entity_id": "person.X", "zone": "zone.home", "event": "enter|leave"},
         "example":     "When person.youval enters zone.home",
         "decline_message_en": "I can't currently set up automations tied to people arriving or leaving home.",

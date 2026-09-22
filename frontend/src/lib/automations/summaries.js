@@ -47,6 +47,14 @@ export function triggerSummary(trigger) {
         : 'automations.summary.personArrives', { who })
     }
     case 'all_persons_left': return tStatic('automations.summary.allPersonsLeft')
+    case 'zone_entered':
+    case 'zone_left': {
+      const anyone = !trigger.person || trigger.person === '*'
+      const who = anyone ? tStatic('automations.presence.anyone') : trigger.person
+      return tStatic(trigger.type === 'zone_left'
+        ? 'automations.summary.zonePlaceLeft'
+        : 'automations.summary.zonePlaceEntered', { who, place: trigger.zone || '' })
+    }
     // Legacy HA zone trigger — no longer creatable (it required person.*
     // entities Ziggy never makes), but old saved automations still render.
     case 'zone': {

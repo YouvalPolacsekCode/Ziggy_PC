@@ -7,15 +7,15 @@ import { Input, Textarea } from '../../ui/Input'
 import { Select } from '../../ui/Select'
 import { useT } from '../../../lib/i18n'
 import { getAllRooms } from '../../../lib/api'
-import { getRunModes } from '../../../lib/automations/types'
+import { getRunModes, normaliseTrigger } from '../../../lib/automations/types'
 import { safeUuid } from '../../../lib/uuid'
 import TriggerEditor from './TriggerEditor'
 import ConditionRow from './ConditionRow'
-import { AndConnector } from './Atoms'
+import { AndConnector, OrConnector, FieldHint } from './Atoms'
 import { DraggableActionRow } from './ActionRow'
 import ReviewPanel from './ReviewPanel'
 import { StepFrame } from '../bundles/engine/StepFrame'
-import { saveBlocker } from '../../../lib/automations/completeness'
+import { saveBlocker, triggerBlocker, incompleteConditions } from '../../../lib/automations/completeness'
 
 // ── AutomationWizard ──────────────────────────────────────────────────────────
 // The free-form builder, rendered through the SAME StepFrame shell as every
@@ -33,9 +33,19 @@ function AutomationWizard({ initial, onSave, onClose }) {
   const [description,      setDescription]    = useState(initial?.description || '')
   const [selectedRooms,    setSelectedRooms]  = useState(initial?.rooms || [])
   const [availableRooms,   setAvailableRooms] = useState([])
-  const [trigger,          setTrigger]        = useState(initial?.trigger || { type: 'time', time: '' })
+  // Normalised on load — see normaliseTrigger. A legacy shape must not be
+  // shown as one thing and saved back as another.
+  const [trigger,          setTrigger]        = useState(() => normaliseTrigger(initial?.trigger) || { type: 'time', time: '' })
   const [actions,          setActions]        = useState(() => (initial?.actions || []).map(a => ({ ...a, _key: a._key || safeUuid() })))
-  const [conditions,       setConditions]     = useState(() => (initial?.conditions || []).map(c => ({ ...c, _key: c._key || safeUuid() })))
+  // A saved "any of these" is ONE `or` group holding the list — unwrap it so
+  // the editor shows the same rows the user built, with the toggle set.
+  const _savedConds = initial?.conditions || []
+  const _savedIsAny = _savedConds.length === 1
+    && ['or', 'or_group'].includes(_savedConds[0]?.type)
+    && Array.isArray(_savedConds[0]?.conditions)
+  const [conditions,       setConditions]     = useState(() =>
+    (_savedIsAny ? _savedConds[0].conditions : _savedConds).map(c => ({ ...c, _key: c._key || safeUuid() })))
+  const [conditionMatch,   setConditionMatch] = useState(_savedIsAny ? 'any' : 'all')
   const [collapsedActions, setCollapsedActions] = useState(new Set())
   const [mode,             setMode]           = useState(initial?.mode || 'single')
   const [saving,           setSaving]         = useState(false)
@@ -53,20 +63,34 @@ function AutomationWizard({ initial, onSave, onClose }) {
   const updateAction    = (i, val) => setActions(a => a.map((x, j) => j === i ? { ...val, _key: x._key } : x))
   const removeAction    = key => { setActions(a => a.filter(x => x._key !== key)); setCollapsedActions(prev => { const next = new Set(prev); next.delete(key); return next }) }
   const toggleCollapse  = key => setCollapsedActions(prev => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next })
-  const canNext = () => step === 0 ? name.trim().length > 0 : !!(trigger.type || 'time')
+  // Each step gates on its OWN content. This used to be
+  // `!!(trigger.type || 'time')` — true for every input ever — so a
+  // half-filled trigger walked straight through to a save that could never
+  // fire. See lib/automations/completeness.js.
+  const canNext = () => {
+    if (step === 0) return name.trim().length > 0
+    if (step === 1) return !triggerBlocker(trigger)
+    if (step === 2) return incompleteConditions(conditions).length === 0
+    return true
+  }
 
   // What still stands between this and a working automation. An automation
   // with no usable action would save, fire, and do nothing forever — so the
   // last step refuses rather than letting it through with a faint note.
-  const blocker = saveBlocker({ name, actions })
+  const blocker = saveBlocker({ name, actions, trigger, conditions })
 
   const handleSave = async () => {
     setSaving(true)
     // Keep entity-state conditions that have an entity AND time-window conditions
     // that have at least one bound. Anything else is half-filled noise.
-    const cleanConditions = conditions
-      .map(({ _key, ...rest }) => rest)
-      .filter(c => (c.type === 'time' ? (c.after || c.before) : !!c.entity_id))
+    // `saveBlocker` refuses a half-filled condition, so nothing is silently
+    // discarded here any more — this strips the React keys only.
+    const bareConditions = conditions.map(({ _key, ...rest }) => rest)
+    // "Any of these" is one `or` group wrapping the list; "all" stays flat,
+    // which both evaluators already read as AND.
+    const cleanConditions = (conditionMatch === 'any' && bareConditions.length > 1)
+      ? [{ type: 'or', conditions: bareConditions }]
+      : bareConditions
     const cleanActions = actions.map(({ _key, ...rest }) => rest)
     // The "occupancy" trigger is a UI convenience — resolve it to the state
     // trigger the backend understands (a room's presence sensor going on/off).
@@ -138,15 +162,44 @@ function AutomationWizard({ initial, onSave, onClose }) {
               )}
             </div>
           )}
-          {step === 1 && <TriggerEditor trigger={trigger} onChange={setTrigger} />}
+          {step === 1 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <TriggerEditor trigger={trigger} onChange={setTrigger} />
+              {/* Say WHY Next is greyed out, here, where the missing field is.
+                  A disabled button with no reason is its own small bug. */}
+              {triggerBlocker(trigger) && (
+                <FieldHint>{t(`automations.wizard.blocked.${triggerBlocker(trigger)}`)}</FieldHint>
+              )}
+            </div>
+          )}
           {step === 2 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <p className="z-subhead" style={{ margin: 0 }}>
                 {t('automations.wizard.conditionsHint')}
               </p>
+              {incompleteConditions(conditions).length > 0 && (
+                <FieldHint>{t('automations.wizard.blocked.conditions')}</FieldHint>
+              )}
+              {/* All-vs-any. A flat list is already AND, so ANY is the only
+                  thing the wizard couldn't express — it wraps the same list
+                  in one `or` group on save. Deliberately NOT a nested
+                  boolean tree: this is a home app, and two radio choices
+                  cover the real sentences ("if the door is open AND it's
+                  dark" / "if either door is open"). */}
+              {conditions.length > 1 && (
+                <Select
+                  label={t('automations.cond.matchLabel')}
+                  options={[
+                    { value: 'all', label: t('automations.cond.matchAll') },
+                    { value: 'any', label: t('automations.cond.matchAny') },
+                  ]}
+                  value={conditionMatch}
+                  onChange={e => setConditionMatch(e.target.value)}
+                />
+              )}
               {conditions.map((cond, i) => (
                 <div key={cond._key} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {i > 0 && <AndConnector />}
+                  {i > 0 && (conditionMatch === 'any' ? <OrConnector /> : <AndConnector />)}
                   <ConditionRow
                     condition={cond}
                     onChange={v => setConditions(cs => cs.map((c, j) => j === i ? { ...v, _key: c._key } : c))}

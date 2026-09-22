@@ -21,13 +21,22 @@ def test_no_drift_in_any_direction():
 
 def test_trigger_support_is_computed_from_the_converter():
     t = _by_id("triggers")
-    for tid in ("state", "numeric_state", "time", "sunrise", "sunset", "zone", "time_pattern", "controller"):
+    for tid in ("state", "numeric_state", "time", "sunrise", "sunset", "time_pattern", "controller"):
         assert t[tid]["ziggy_supported"] is True, tid
     for tid in ("template", "calendar", "tag", "device", "event"):
         assert t[tid]["ziggy_supported"] is False, tid
     # webhook: converter exists, declined by POLICY (security review) — allowed drift
     assert t["webhook"]["ziggy_supported"] is False
     assert t["webhook"].get("policy_declined") is True
+    # zone: same shape, different reason. The converter still exists so legacy
+    # rules keep loading, but the trigger needs a person.* / device_tracker.*
+    # entity and Ziggy never creates one — presence publishes a single
+    # household roll-up (services/presence_mqtt.py). It could not bind to
+    # anything in any Ziggy home, so it was withdrawn from the wizard and the
+    # agent on 2026-09-22 in favour of the native person_arrives /
+    # person_leaves / all_persons_left triggers.
+    assert t["zone"]["ziggy_supported"] is False
+    assert t["zone"].get("policy_declined") is True
 
 
 def test_condition_and_action_support():
@@ -47,14 +56,19 @@ def test_ziggy_native_triggers_listed():
 
 def test_gaps_only_list_true_gaps():
     ids = {(g["kind"], g["id"]) for g in C.get_gaps()}
-    assert ("trigger", "zone") not in ids and ("condition", "sun") not in ids
+    assert ("condition", "sun") not in ids
     assert ("trigger", "calendar") in ids and ("trigger", "webhook") in ids
+    # zone joined the declined list on 2026-09-22 — see
+    # test_trigger_support_is_computed_from_the_converter for why.
+    assert ("trigger", "zone") in ids
 
 
 def test_supported_only_keeps_partial_and_true():
     sup = C.get_supported_only()
     ids = {t["id"] for t in sup["ha_capabilities"]["triggers"]}
-    assert "zone" in ids and "controller" in ids and "calendar" not in ids
+    assert "controller" in ids and "calendar" not in ids
+    # Withdrawn, so the agent stops offering it (as with webhook).
+    assert "zone" not in ids
 
 
 def test_sun_condition_both_evaluators(monkeypatch):

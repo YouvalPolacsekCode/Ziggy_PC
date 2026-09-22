@@ -10,6 +10,7 @@ import { useFeature } from '../../../stores/featuresStore'
 import { CONTROLLABLE_DOMAINS } from '../../../lib/domainRegistry'
 import { getActionTypes, getModeOptions } from '../../../lib/automations/types'
 import { actionSummary } from '../../../lib/automations/summaries'
+import { FieldHint } from './Atoms'
 import { cardIconBtn } from '../../../lib/automations/styles'
 import IRDeviceSelect from '../../IRDeviceSelect'
 import MediaPlayActionEditor from '../../media/MediaPlayActionEditor'
@@ -153,6 +154,51 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
       {action.type === 'device_command' && <DeviceCommandEditor value={action} onChange={patch => onChange({ ...action, ...patch })} />}
       {action.type === 'fake_occupancy_start' && <FakeOccupancyEditor action={action} onChange={patch => onChange(patch)} />}
       {action.type === 'media_play' && mediaMusic && <MediaPlayActionEditor action={action} onChange={onChange} />}
+
+      {/* Say something out loud. The executor has had this since the routine
+          engine landed; nothing in the wizard offered it. */}
+      {action.type === 'speak' && (
+        <Input
+          placeholder={t('automations.action.speakPh')}
+          value={action.text || ''}
+          onChange={e => onChange({ ...action, text: e.target.value })}
+          dir="auto"
+        />
+      )}
+
+      {/* Everything off. No target to choose — that IS the action. */}
+      {action.type === 'turn_off_everything' && (
+        <FieldHint>{t('automations.action.turnOffEverythingHint')}</FieldHint>
+      )}
+
+      {/* Pause the rest of the steps until a device reaches a state, or the
+          timeout runs out. Makes "open the blind, wait until it's open, then
+          turn on the lamp" expressible. */}
+      {action.type === 'wait_for_state' && (
+        <>
+          <EntitySelect
+            label={t('automations.action.waitEntityLabel')}
+            value={action.entity_id || ''}
+            onChange={v => onChange({ ...action, entity_id: v })}
+            placeholder={t('automations.action.waitEntityPh')}
+          />
+          <Input
+            label={t('automations.action.waitStateLabel')}
+            placeholder="on"
+            value={action.state ?? 'on'}
+            onChange={e => onChange({ ...action, state: e.target.value })}
+            dir="ltr"
+          />
+          <Input
+            label={t('automations.action.waitTimeoutLabel')}
+            type="number"
+            placeholder="600"
+            value={action.timeout_seconds ?? ''}
+            onChange={e => onChange({ ...action, timeout_seconds: parseInt(e.target.value) || undefined })}
+          />
+          <FieldHint>{t('automations.action.waitHint')}</FieldHint>
+        </>
+      )}
     </div>
   )
 }

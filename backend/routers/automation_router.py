@@ -878,6 +878,13 @@ async def create_automation_endpoint(body: AutomationBody):
         # ha_automations.has_executable_actions).
         if result.get("reason") == "no_actions":
             raise HTTPException(status_code=422, detail=result.get("error", "Add at least one action"))
+        # A trigger that can never fire is the mirror of no_actions, and just
+        # as user-fixable (ha_automations.invalid_trigger_reason).
+        if result.get("reason") == "invalid_trigger":
+            raise HTTPException(status_code=422, detail=result.get("error", "This trigger could never fire"))
+        # A duplicate name isn't an outage either — the user picks another.
+        if result.get("reason") == "duplicate_name":
+            raise HTTPException(status_code=409, detail=result.get("error", "That name is taken"))
         raise HTTPException(status_code=502, detail=result.get("error", "HA error"))
     auto_id = result["id"]
     _bus.emit("automation", _BASIC,

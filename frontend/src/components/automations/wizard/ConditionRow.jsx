@@ -61,6 +61,10 @@ function ConditionRow({ condition, onChange, onRemove }) {
           const next = e.target.value
           if (next === 'time') onChange({ type: 'time', after: '21:00', before: '07:00' })
           else if (next === 'mode') onChange({ type: 'mode', mode: 'sleep', is: false })
+          // Defaults that are already valid, so choosing the type never
+          // parks the wizard on an incomplete condition.
+          else if (next === 'sun') onChange({ type: 'sun', after: 'sunset' })
+          else if (next === 'presence') onChange({ type: 'presence', value: 'anyone_home' })
           else onChange({ type: 'entity', entity_id: '', operator: 'is', value: 'on' })
         }}
       />
@@ -87,6 +91,48 @@ function ConditionRow({ condition, onChange, onRemove }) {
           value={condition.is === false ? 'off' : 'on'}
           onChange={e => onChange({ ...condition, is: e.target.value === 'on' })}
         />
+      </>
+    )
+  }
+
+  // ── Daylight ──────────────────────────────────────────────────────────────
+  // Both evaluators already spoke `sun` (Ziggy reads HA's own sun entity, the
+  // converter emits a native sun condition) — only the UI was missing, so
+  // "…but only after dark" was unbuildable here while Ziggy would happily
+  // build it from chat. Collapsed to two plain choices: the four
+  // after/before × sunrise/sunset permutations only express dark or light.
+  if (condType === 'sun') {
+    return sharedWrapper(
+      <Select
+        label={t('automations.cond.sunLabel')}
+        options={[
+          { value: 'dark',  label: t('automations.cond.sunDark') },
+          { value: 'light', label: t('automations.cond.sunLight') },
+        ]}
+        value={(String(condition.after || '').toLowerCase() === 'sunrise'
+             || String(condition.before || '').toLowerCase() === 'sunset') ? 'light' : 'dark'}
+        onChange={e => onChange(e.target.value === 'light'
+          ? { type: 'sun', after: 'sunrise', before: 'sunset' }
+          : { type: 'sun', after: 'sunset' })}
+      />
+    )
+  }
+
+  // ── Who's home ────────────────────────────────────────────────────────────
+  // Ziggy's own presence engine, the same one behind the arrive/leave trigger.
+  if (condType === 'presence') {
+    return sharedWrapper(
+      <>
+        <Select
+          label={t('automations.cond.presenceLabel')}
+          options={[
+            { value: 'anyone_home', label: t('automations.cond.presenceSomeoneHome') },
+            { value: 'all_away',    label: t('automations.cond.presenceEveryoneOut') },
+          ]}
+          value={condition.value === 'all_away' ? 'all_away' : 'anyone_home'}
+          onChange={e => onChange({ ...condition, type: 'presence', value: e.target.value })}
+        />
+        <FieldHint>{t('automations.cond.presenceHint')}</FieldHint>
       </>
     )
   }

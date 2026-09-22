@@ -21,7 +21,13 @@ export function getTriggerTypes() {
     { value: 'presence',     label: tStatic('automations.triggerPresence') },
     { value: 'sunrise',      label: tStatic('automations.triggerSunrise') },
     { value: 'sunset',       label: tStatic('automations.triggerSunset') },
-    { value: 'webhook',      label: tStatic('automations.triggerWebhook') },
+    // `webhook` is deliberately absent. services/automation_catalog.py has
+    // carried `policy_declined: True` on it — "declined by POLICY pending a
+    // security review of inbound webhooks" — while this list shipped it to
+    // every customer, so the chat agent refused to create one and the wizard
+    // handed one out. That review has not happened. Until it does, the
+    // narrower surface is the honest one; the converter and every saved rule
+    // still work, so re-adding this line is all it takes to bring it back.
     // App-driven trigger — automation only runs when the user taps Run.
     // Used by Fake Occupancy and any other "start when I say so" automation.
     { value: 'manual',       label: tStatic('automations.triggerManual') },
@@ -71,6 +77,11 @@ export function getActionTypes(opts = {}) {
     // window/rooms/days/TV controls; the backend hands off to
     // services.fake_occupancy_scheduler once the user taps Run.
     { value: 'fake_occupancy_start', label: tStatic('automations.actionFakeOccupancy') },
+    // Executor has run all three for a long time; only the wizard was missing
+    // them (see ActionRow).
+    { value: 'speak',                label: tStatic('automations.actionSpeak') },
+    { value: 'wait_for_state',       label: tStatic('automations.actionWaitForState') },
+    { value: 'turn_off_everything',  label: tStatic('automations.actionTurnOffEverything') },
     // Music playback (Spotify / YT Music). The ActionRow's type SELECT
     // hides this option when the media_music flag is off (opts.mediaMusic).
     // It's still in the lookup table so existing media_play steps render a
@@ -115,6 +126,36 @@ export const getSendIntentGroups = (t) => [
 
 export const SENSOR_DOMAINS  = new Set(['sensor', 'binary_sensor'])
 export const TRACKER_DOMAINS = new Set(['person', 'device_tracker'])
+
+/**
+ * Bring a saved trigger into the shape the editor writes.
+ *
+ * Without this, opening an automation saved under an older shape shows one
+ * thing and stores another: a legacy HA `zone` trigger re-presents in the
+ * presence editor (it is the closest honest UI), but if the user never
+ * touches the trigger, `onChange` never fires and the old `zone` shape is
+ * written straight back — UI and storage permanently disagreeing.
+ *
+ * Normalising on LOAD is the mirror of resolving `occupancy` on SAVE, and it
+ * means what you see is what gets stored even if you only edited the name.
+ */
+export function normaliseTrigger(trigger) {
+  const t = trigger || {}
+  if (t.type === 'zone') {
+    // person.youval entering zone.home is "Youval arrives home". The person
+    // entity is dropped: Ziggy's engine matches on the household NAME, and
+    // '*' (anyone) is the honest reading of an entity we can't resolve.
+    const leaving = String(t.event || 'enter') === 'leave'
+    const isHome = !t.zone || String(t.zone) === 'zone.home'
+    if (isHome) return { type: leaving ? 'person_leaves' : 'person_arrives', person: '*' }
+    return {
+      type: leaving ? 'zone_left' : 'zone_entered',
+      zone: String(t.zone).replace(/^zone\./, ''),
+      person: '*',
+    }
+  }
+  return t
+}
 
 export function getBinarySensorTriggerStates() {
   return {
@@ -164,6 +205,10 @@ export function getConditionTypes() {
     { value: 'time',   label: tStatic('automations.cond.timeType') },
     // "Only if the house is (not) in a mode" — the fixed home modes.
     { value: 'mode',   label: tStatic('automations.cond.modeType') },
+    // Both of these were supported by BOTH evaluators and by the chat agent
+    // long before the wizard offered them (see ConditionRow).
+    { value: 'sun',      label: tStatic('automations.cond.sunType') },
+    { value: 'presence', label: tStatic('automations.cond.presenceType') },
   ]
 }
 

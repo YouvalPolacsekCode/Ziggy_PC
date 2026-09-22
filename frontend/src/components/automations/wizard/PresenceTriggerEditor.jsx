@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Select } from '../../ui/Select'
 import { useT } from '../../../lib/i18n'
-import { getHousehold } from '../../../lib/api'
+import { getHousehold, listPresenceZones } from '../../../lib/api'
 import { FieldHint } from './Atoms'
 
 // ── PresenceTriggerEditor ─────────────────────────────────────────────────────
@@ -28,6 +28,7 @@ import { FieldHint } from './Atoms'
 function PresenceTriggerEditor({ trigger, onChange }) {
   const t = useT()
   const [household, setHousehold] = useState([])
+  const [zones, setZones] = useState([])
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
@@ -35,6 +36,11 @@ function PresenceTriggerEditor({ trigger, onChange }) {
     getHousehold()
       .then(r => { if (alive) { setHousehold(r?.household || []); setLoaded(true) } })
       .catch(() => { if (alive) setLoaded(true) })
+    // Named places ("Near Home"), for the arriving-at / leaving-a-place
+    // options. Only offered when the home actually has one.
+    listPresenceZones()
+      .then(r => { if (alive) setZones(r?.zones || []) })
+      .catch(() => {})
     return () => { alive = false }
   }, [])
 
@@ -44,13 +50,22 @@ function PresenceTriggerEditor({ trigger, onChange }) {
   // "when I leave", not a different kind of trigger.
   const event = trigger.type === 'all_persons_left' ? 'all_left'
     : trigger.type === 'person_leaves' ? 'leaves'
+    : trigger.type === 'zone_entered' ? 'zone_in'
+    : trigger.type === 'zone_left' ? 'zone_out'
     : 'arrives'
 
+  // Named places are a separate geofence from home ("Near Home" is the wide
+  // approach ring Pre-cool uses). Only worth offering once one exists.
   const eventOptions = [
     { value: 'arrives',  label: t('automations.presence.arrives') },
     { value: 'leaves',   label: t('automations.presence.leaves') },
     { value: 'all_left', label: t('automations.presence.allLeft') },
+    ...(zones.length > 0 ? [
+      { value: 'zone_in',  label: t('automations.presence.zoneIn') },
+      { value: 'zone_out', label: t('automations.presence.zoneOut') },
+    ] : []),
   ]
+  const isZoneEvent = event === 'zone_in' || event === 'zone_out'
 
   const personOptions = [
     { value: '*', label: t('automations.presence.anyone') },
@@ -63,6 +78,11 @@ function PresenceTriggerEditor({ trigger, onChange }) {
 
   const setEvent = (next) => {
     if (next === 'all_left') onChange({ type: 'all_persons_left' })
+    else if (next === 'zone_in' || next === 'zone_out') onChange({
+      type:   next === 'zone_in' ? 'zone_entered' : 'zone_left',
+      zone:   trigger.zone || zones[0]?.name || '',
+      person: trigger.person || '*',
+    })
     else onChange({
       type:   next === 'leaves' ? 'person_leaves' : 'person_arrives',
       person: trigger.person || '*',
@@ -81,6 +101,15 @@ function PresenceTriggerEditor({ trigger, onChange }) {
         value={event}
         onChange={e => setEvent(e.target.value)}
       />
+
+      {isZoneEvent && (
+        <Select
+          label={t('automations.presence.placeLabel')}
+          options={zones.map(z => ({ value: z.name, label: z.name }))}
+          value={trigger.zone || zones[0]?.name || ''}
+          onChange={e => onChange({ ...trigger, zone: e.target.value })}
+        />
+      )}
 
       {event !== 'all_left' && (
         <Select

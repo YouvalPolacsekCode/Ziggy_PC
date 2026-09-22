@@ -86,6 +86,82 @@ def needs_ha(data: dict) -> bool:
     return trigger_type in ("state", "numeric_state", "sunrise", "sunset", "webhook", "zone", "time_pattern")
 
 
+def _duplicate_name_of(name: Optional[str], auto_id: Optional[str]) -> Optional[str]:
+    """The existing automation's name when `name` collides with it, else None.
+
+    Case- and whitespace-insensitive, and it ignores the rule being edited so
+    re-saving one without renaming is not a collision.
+    """
+    wanted = " ".join(str(name or "").split()).lower()
+    if not wanted:
+        return None
+    try:
+        from core.automation_file import list_automations
+        for existing in list_automations():
+            if auto_id and existing.get("id") == auto_id:
+                continue
+            other = existing.get("name") or ""
+            if " ".join(str(other).split()).lower() == wanted:
+                return other
+    except Exception:
+        # Never block a save because the duplicate check itself failed.
+        return None
+    return None
+
+
+def invalid_trigger_reason(data: dict) -> Optional[str]:
+    """Why this automation's trigger could never fire, or None when it's fine.
+
+    The mirror of `has_executable_actions`, and it exists for the same reason:
+    a rule that stores cleanly, lists cleanly and never fires is the worst
+    failure this system has. The actions side got its guard after the 2026-09-05
+    balcony incident; the trigger side had none until 2026-09-22, and the
+    converter below turned half-filled input into config that cannot match:
+
+        time       with no time   -> {"at": ":00"}            malformed
+        controller with no id     -> []                       NO triggers at all
+        state      with no entity -> {"entity_id": ""}        matches nothing
+        webhook    with no id     -> {"webhook_id": ""}
+
+    Checked here as well as in the wizard so no caller — app, agent, script or
+    a restored backup — can introduce one.
+
+    Blueprint-sourced bodies carry their own HA triggers and are left alone.
+    """
+    if isinstance(data.get("ha_native_body"), dict) and data["ha_native_body"]:
+        return None
+    if data.get("paired") and data.get("stages"):
+        for stage in (data.get("stages") or []):
+            reason = invalid_trigger_reason(stage or {})
+            if reason:
+                return reason
+        return None
+
+    t = data.get("trigger") or {}
+    kind = t.get("type", "time")
+    fill = lambda v: bool(str(v if v is not None else "").strip())  # noqa: E731
+
+    if kind in ("state", "numeric_state", "occupancy"):
+        if not fill(t.get("entity_id")):
+            return "This automation watches no device, so nothing can set it off. Choose one."
+    elif kind == "time":
+        if not fill(t.get("time")):
+            return "This automation has no time set, so it would never run. Set a time."
+    elif kind == "time_pattern":
+        if not any(fill(t.get(k)) for k in ("seconds", "minutes", "hours")):
+            return "This automation has no repeat interval, so it would never run."
+    elif kind == "controller":
+        if not (fill(t.get("controller_id")) and fill(t.get("action"))):
+            return "This automation has no remote or button set, so nothing can set it off."
+    elif kind == "webhook":
+        if not fill(t.get("webhook_id")):
+            return "This automation's web request has no id, so nothing could call it."
+    elif kind == "zone":
+        if not fill(t.get("entity_id")):
+            return "This automation tracks no one, so nothing can set it off."
+    return None
+
+
 def has_executable_actions(data: dict) -> bool:
     """True when this automation will actually DO something when it fires.
 
@@ -186,6 +262,26 @@ def presence_entity_id() -> Optional[str]:
 
 
 def _condition_to_ha(c: dict) -> Optional[dict]:
+    # ── Boolean groups ─────────────────────────────────────────────────────
+    # HA speaks `{"condition": "or"|"and", "conditions": [...]}` natively, and
+    # Ziggy's executor has always evaluated these — but this converter didn't,
+    # so an OR on an HA-backed automation compiled to None and was dropped
+    # from the list. HA then fired with the OR simply absent, which for an OR
+    # means "no restriction at all" — the automation ran when it shouldn't.
+    # The catalog advertised or_group/and_group as supported the whole time.
+    #
+    # A group whose children ALL fail to convert becomes None rather than an
+    # empty group: `{"condition": "or", "conditions": []}` is false in HA and
+    # would wedge the automation off forever, which is the same class of
+    # silent failure in the opposite direction.
+    if c.get("type") in ("or", "and", "or_group", "and_group"):
+        kind = "or" if str(c.get("type")).startswith("or") else "and"
+        children = [_condition_to_ha(child) for child in (c.get("conditions") or [])]
+        children = [child for child in children if child is not None]
+        if not children:
+            return None
+        return {"condition": kind, "conditions": children}
+
     # ── Presence — Ziggy's own engine, mirrored into HA ────────────────────
     # HA cannot see Ziggy's presence engine, so this condition used to compile
     # to nothing: HA fired the automation on its own weaker view and Ziggy
@@ -731,6 +827,40 @@ def _validate_trigger_entities(ha_triggers: list) -> Optional[dict]:
     return None
 
 
+def invalid_action_entity(data: dict) -> Optional[str]:
+    """An action pointing at an entity HA doesn't have, or None.
+
+    `_validate_trigger_entities` has caught this on the TRIGGER side since the
+    empty-presence-sensor bug. The action side had no create-time check at all:
+    `services.automation_integrity.missing_entities` notices afterwards and
+    flags the card as broken, which is the right safety net but a poor first
+    experience — the user finds out their new rule is broken by reading a
+    warning on it, not while they are still holding the picker.
+
+    Only enforced when HA gave us a snapshot; a brief outage must never block
+    a legitimate save.
+    """
+    known = _known_entity_ids()
+    if not known:
+        return None
+    for step in (data.get("actions") or []):
+        if not isinstance(step, dict):
+            continue
+        # IR / intent / speak steps carry no HA entity, and capability steps
+        # are routed by Ziggy rather than named in HA.
+        if step.get("type") in ("ir_command", "send_intent", "ziggy_intent", "speak",
+                                "notify", "message", "delay", "turn_off_all_lights",
+                                "turn_off_everything", "set_mode", "fake_occupancy_start"):
+            continue
+        ent = step.get("entity_id")
+        ids = [ent] if isinstance(ent, str) else list(ent or [])
+        for e in [x for x in ids if x]:
+            if e not in known:
+                return (f"One of the actions uses {e}, which doesn’t exist any more. "
+                        f"Pick a different device for that step.")
+    return None
+
+
 def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
     """
     Save an automation.  Routes to HA or Ziggy-only depending on needs_ha().
@@ -748,6 +878,24 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
         return {"ok": False, "reason": "no_actions",
                 "error": "This automation has no actions, so it would never do "
                          "anything when it runs. Add at least one action."}
+
+    # Same contract on the trigger side — see invalid_trigger_reason.
+    _bad_trigger = invalid_trigger_reason(data)
+    if _bad_trigger:
+        return {"ok": False, "reason": "invalid_trigger", "error": _bad_trigger}
+
+    # Two rules with the same name make every later question ambiguous — which
+    # one ran, which one to edit, which one the chat agent meant. Names are the
+    # handle users have; ids are ours.
+    _dup = _duplicate_name_of(data.get("name"), auto_id)
+    if _dup:
+        return {"ok": False, "reason": "duplicate_name",
+                "error": f"You already have an automation called “{_dup}”. Pick another name."}
+
+    # Actions pointing at devices that no longer exist — see invalid_action_entity.
+    _bad_action = invalid_action_entity(data)
+    if _bad_action:
+        return {"ok": False, "reason": "trigger_entity_missing", "error": _bad_action}
 
     if data.get("paired") and data.get("stages"):
         return _save_paired_automation(data, auto_id)
