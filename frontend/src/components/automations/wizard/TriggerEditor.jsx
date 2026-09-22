@@ -36,6 +36,12 @@ function TriggerEditor({ trigger, onChange }) {
   // trigger on a presence/occupancy sensor. Detect that shape and re-present
   // it as the friendly "occupancy" trigger so editing shows the same UI it was
   // built with (rather than a bare "device state" trigger).
+  // `ui: 'occupancy'` is stamped on save, so reopening is deterministic. The
+  // device_class sniff below stays as the fallback for rules saved before the
+  // stamp existed — and it is only a guess: if the sensor is deleted or
+  // reclassified, an occupancy rule silently re-presents as a bare "device
+  // state" trigger. The stamp is what makes the round-trip exact.
+  const isStampedOccupancy = trigger.ui === 'occupancy'
   const isPresenceState = effectiveType === 'state'
     && triggerEntity?.domain === 'binary_sensor'
     && PRESENCE_CLASSES.includes(triggerEntity?.device_class)
@@ -45,7 +51,7 @@ function TriggerEditor({ trigger, onChange }) {
   // picker. Saving converts it to the native shape.
   const isPresenceTrigger = ['person_arrives', 'person_leaves', 'all_persons_left', 'zone'].includes(effectiveType)
   const uiType = (effectiveType === 'numeric_state') ? 'state'
-    : (effectiveType === 'occupancy' || isPresenceState) ? 'occupancy'
+    : (effectiveType === 'occupancy' || isStampedOccupancy || isPresenceState) ? 'occupancy'
     : isPresenceTrigger ? 'presence'
     : effectiveType
   const isTracker     = triggerDomain === 'person' || triggerDomain === 'device_tracker'

@@ -148,3 +148,20 @@ describe('trigger round-trip', () => {
     expect(triggerBlocker(out)).toBeNull()
   })
 })
+
+describe('occupancy round-trip', () => {
+  // The wizard's occupancy trigger resolves to a plain `state` trigger on a
+  // room's presence sensor. Reopening it used to be inferred from the
+  // sensor's device_class — a guess that is wrong the moment the sensor is
+  // deleted or reclassified, silently re-presenting the rule as a bare
+  // "device state" trigger. `ui: 'occupancy'` makes it exact.
+  it('carries a ui stamp that survives normalisation', () => {
+    const saved = { type: 'state', ui: 'occupancy', entity_id: 'binary_sensor.office_occupied', state: 'on' }
+    expect(normaliseTrigger(saved)).toEqual(saved)
+    expect(triggerBlocker(saved)).toBeNull()
+  })
+
+  it('is still blocked when it names no sensor', () => {
+    expect(triggerBlocker({ type: 'occupancy', entity_id: '' })).toBe('triggerRoom')
+  })
+})

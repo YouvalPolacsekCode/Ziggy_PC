@@ -154,3 +154,32 @@ def test_groups_nest():
 def test_native_presence_triggers_never_go_to_home_assistant():
     for t in ("person_arrives", "person_leaves", "all_persons_left", "zone_entered", "zone_left"):
         assert needs_ha({"trigger": {"type": t}}) is False, t
+
+
+# ── Defence in depth / round-trip breadcrumbs ───────────────────────────────
+
+def test_converter_complains_about_an_incomplete_trigger(caplog):
+    """Nothing should reach the converter half-filled — but if it does, say so.
+
+    A restored backup or a future caller could bypass save_automation. Silence
+    here is what made the original bug so hard to see: the config was written,
+    stored and reported fine, and simply never matched.
+    """
+    from services.ha_automations import _trigger_to_ha
+    import logging
+    with caplog.at_level(logging.ERROR):
+        _trigger_to_ha({"type": "time", "time": ""})
+    assert any("incomplete trigger" in r.getMessage() for r in caplog.records), \
+        "converting an impossible trigger passed silently"
+
+
+def test_occupancy_ui_stamp_survives_the_trigger_converter():
+    """The wizard stamps `ui: 'occupancy'` so reopening is deterministic.
+
+    It must not confuse the HA converter, which should ignore it entirely.
+    """
+    from services.ha_automations import _trigger_to_ha, invalid_trigger_reason
+    t = {"type": "state", "ui": "occupancy", "entity_id": "binary_sensor.office_occupied", "state": "on"}
+    assert invalid_trigger_reason({"trigger": t}) is None
+    out = _trigger_to_ha(t)
+    assert out == [{"platform": "state", "entity_id": "binary_sensor.office_occupied", "to": "on"}], out

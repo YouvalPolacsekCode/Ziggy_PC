@@ -96,7 +96,12 @@ function AutomationWizard({ initial, onSave, onClose }) {
     // trigger the backend understands (a room's presence sensor going on/off).
     let outTrigger = trigger
     if (trigger?.type === 'occupancy') {
-      outTrigger = { type: 'state', entity_id: trigger.entity_id || '', state: trigger.state === 'off' ? 'off' : 'on' }
+      // `ui` is carried through so reopening this rule shows the occupancy
+      // editor it was built with, rather than inferring it from the sensor's
+      // device_class — which is wrong the moment the sensor is deleted or
+      // reclassified. The backend ignores the field; it is a UI breadcrumb.
+      outTrigger = { type: 'state', ui: 'occupancy', entity_id: trigger.entity_id || '', state: trigger.state === 'off' ? 'off' : 'on' }
+      if (trigger.room) outTrigger.room = trigger.room
       if (trigger.for_minutes) outTrigger.for_minutes = trigger.for_minutes
     }
     await onSave({ name, description, trigger: outTrigger, conditions: cleanConditions, actions: cleanActions, rooms: selectedRooms, mode })

@@ -373,6 +373,17 @@ def _condition_to_ha(c: dict) -> Optional[dict]:
 
 def _trigger_to_ha(t: dict) -> list:
     kind = t.get("type", "time")
+    # Defence in depth. `save_automation` refuses an incomplete trigger before
+    # reaching here (invalid_trigger_reason), so anything that trips this got
+    # in by another door — a restored backup, a script, a future caller. It
+    # used to pass silently and produce config that can never match, which is
+    # the hardest kind of bug to find because every surface reports success.
+    # Logged rather than raised: a loud breadcrumb is worth more than a crash
+    # on a path that also has to keep loading whatever is already on disk.
+    _incomplete = invalid_trigger_reason({"trigger": t})
+    if _incomplete:
+        log_error(f"[HA] converting an incomplete trigger {t!r} — {_incomplete} "
+                  f"(this should have been refused at save time)")
     if kind == "time":
         return [{"platform": "time", "at": f"{t.get('time', '08:00')}:00"}]
     if kind == "state":
