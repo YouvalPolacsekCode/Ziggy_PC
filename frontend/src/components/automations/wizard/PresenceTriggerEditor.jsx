@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Select } from '../../ui/Select'
 import { useT } from '../../../lib/i18n'
 import { getHousehold, listPresenceZones } from '../../../lib/api'
+import { PRESENCE_EVENT_TYPES, presenceEventFor } from '../../../lib/automations/types'
 import { FieldHint } from './Atoms'
 
 // ── PresenceTriggerEditor ─────────────────────────────────────────────────────
@@ -48,11 +49,7 @@ function PresenceTriggerEditor({ trigger, onChange }) {
   // definition. Presented as a third option in the same dropdown as
   // arrives/leaves because "when everyone's out" is the same thought as
   // "when I leave", not a different kind of trigger.
-  const event = trigger.type === 'all_persons_left' ? 'all_left'
-    : trigger.type === 'person_leaves' ? 'leaves'
-    : trigger.type === 'zone_entered' ? 'zone_in'
-    : trigger.type === 'zone_left' ? 'zone_out'
-    : 'arrives'
+  const event = presenceEventFor(trigger.type)
 
   // Named places are a separate geofence from home ("Near Home" is the wide
   // approach ring Pre-cool uses). Only worth offering once one exists.
@@ -76,17 +73,18 @@ function PresenceTriggerEditor({ trigger, onChange }) {
     })),
   ]
 
+  // Types come from PRESENCE_EVENT_TYPES, which PRESENCE_TRIGGER_TYPES is
+  // derived from — so a type written here is always one TriggerEditor
+  // recognises. When those were two hand-kept lists, picking "arrives at a
+  // place" wrote a type the editor didn't claim and the dropdown jumped back
+  // to its first option mid-edit.
   const setEvent = (next) => {
-    if (next === 'all_left') onChange({ type: 'all_persons_left' })
-    else if (next === 'zone_in' || next === 'zone_out') onChange({
-      type:   next === 'zone_in' ? 'zone_entered' : 'zone_left',
-      zone:   trigger.zone || zones[0]?.name || '',
-      person: trigger.person || '*',
-    })
-    else onChange({
-      type:   next === 'leaves' ? 'person_leaves' : 'person_arrives',
-      person: trigger.person || '*',
-    })
+    const type = PRESENCE_EVENT_TYPES[next] || PRESENCE_EVENT_TYPES.arrives
+    if (type === 'all_persons_left') return onChange({ type })
+    if (type === 'zone_entered' || type === 'zone_left') {
+      return onChange({ type, zone: trigger.zone || zones[0]?.name || '', person: trigger.person || '*' })
+    }
+    onChange({ type, person: trigger.person || '*' })
   }
 
   const selected = household.find(m => m.name === trigger.person)

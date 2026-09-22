@@ -8,7 +8,7 @@ import { useDeviceStore } from '../../../stores/deviceStore'
 import {
   getTriggerTypes, getTrackerTriggerStates,
   getBinarySensorTriggerStates, getDefaultBinaryTrigger,
-  getTimePatternUnits,
+  getTimePatternUnits, PRESENCE_TRIGGER_TYPES,
 } from '../../../lib/automations/types'
 import PresenceTriggerEditor from './PresenceTriggerEditor'
 import OccupancySensorForm from '../OccupancySensorForm'
@@ -49,7 +49,7 @@ function TriggerEditor({ trigger, onChange }) {
   // HA `zone` automation saved before this change re-presents as it too, so
   // opening an old one shows a working editor rather than a dead entity
   // picker. Saving converts it to the native shape.
-  const isPresenceTrigger = ['person_arrives', 'person_leaves', 'all_persons_left', 'zone'].includes(effectiveType)
+  const isPresenceTrigger = PRESENCE_TRIGGER_TYPES.includes(effectiveType)
   const uiType = (effectiveType === 'numeric_state') ? 'state'
     : (effectiveType === 'occupancy' || isStampedOccupancy || isPresenceState) ? 'occupancy'
     : isPresenceTrigger ? 'presence'

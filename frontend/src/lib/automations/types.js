@@ -128,6 +128,43 @@ export const SENSOR_DOMAINS  = new Set(['sensor', 'binary_sensor'])
 export const TRACKER_DOMAINS = new Set(['person', 'device_tracker'])
 
 /**
+ * Every trigger type the "When someone arrives or leaves" editor can produce.
+ *
+ * ONE list, because there were two: PresenceTriggerEditor could emit
+ * `zone_entered` / `zone_left` while TriggerEditor's `isPresenceTrigger`
+ * still listed only the three person_* shapes. Choosing "Someone arrives at
+ * a place" therefore set a type the editor did not claim — `uiType` fell
+ * through to an unknown value, the presence editor unmounted, and the type
+ * dropdown snapped back to its first option in front of the user.
+ *
+ * Anything added here is offered by that editor and recognised on reload.
+ * `zone` is the legacy HA shape: recognised so old rules open in this editor,
+ * never produced (normaliseTrigger converts it on load).
+ */
+// The editor's dropdown value -> the trigger type it writes. One map, so the
+// two can't drift: PRESENCE_TRIGGER_TYPES is DERIVED from it below rather
+// than typed out a second time.
+export const PRESENCE_EVENT_TYPES = {
+  arrives:  'person_arrives',
+  leaves:   'person_leaves',
+  all_left: 'all_persons_left',
+  zone_in:  'zone_entered',
+  zone_out: 'zone_left',
+}
+
+export const PRESENCE_TRIGGER_TYPES = [
+  ...Object.values(PRESENCE_EVENT_TYPES),
+  // Legacy HA shape: recognised so old rules open in this editor, never
+  // produced (normaliseTrigger converts it on load).
+  'zone',
+]
+
+/** The dropdown value for a saved trigger — the inverse of the map above. */
+export function presenceEventFor(type) {
+  return Object.keys(PRESENCE_EVENT_TYPES).find(k => PRESENCE_EVENT_TYPES[k] === type) || 'arrives'
+}
+
+/**
  * Bring a saved trigger into the shape the editor writes.
  *
  * Without this, opening an automation saved under an older shape shows one

@@ -7,7 +7,8 @@
 // a word.
 import { describe, it, expect } from 'vitest'
 import { saveBlocker, triggerBlocker, isEffectiveAction, incompleteConditions } from '../automations/completeness'
-import { normaliseTrigger } from '../automations/types'
+import { normaliseTrigger, PRESENCE_TRIGGER_TYPES, PRESENCE_EVENT_TYPES, presenceEventFor } from '../automations/types'
+import { readFileSync } from 'node:fs'
 
 const act = [{ type: 'call_service', entity_id: 'light.a', service: 'light.turn_on' }]
 
@@ -163,5 +164,45 @@ describe('occupancy round-trip', () => {
 
   it('is still blocked when it names no sensor', () => {
     expect(triggerBlocker({ type: 'occupancy', entity_id: '' })).toBe('triggerRoom')
+  })
+})
+
+describe('presence editor \u2194 TriggerEditor agreement', () => {
+  // The bug this exists for: PresenceTriggerEditor could emit `zone_entered`
+  // and `zone_left`, but TriggerEditor's `isPresenceTrigger` listed only the
+  // three person_* shapes. Picking "Someone arrives at a place" set a type
+  // the editor did not claim, so `uiType` fell through, the presence editor
+  // unmounted, and the trigger dropdown snapped back to its first option —
+  // in front of the user, mid-edit. Two hand-kept lists, one of them stale.
+  it('every type the editor can write is a recognised presence trigger', () => {
+    const emitted = Object.values(PRESENCE_EVENT_TYPES)
+    expect(emitted).toContain('zone_entered')   // "arrives at a place"
+    expect(emitted).toContain('zone_left')      // "leaves a place"
+    for (const t of emitted) {
+      expect(PRESENCE_TRIGGER_TYPES, `editor can write '${t}'`).toContain(t)
+    }
+  })
+
+  it('round-trips every dropdown choice back to itself', () => {
+    for (const [event, type] of Object.entries(PRESENCE_EVENT_TYPES)) {
+      expect(presenceEventFor(type), `${type} should read back as '${event}'`).toBe(event)
+    }
+  })
+
+  it('reads the legacy and unknown shapes as "arrives" rather than blank', () => {
+    expect(presenceEventFor('zone')).toBe('arrives')
+    expect(presenceEventFor(undefined)).toBe('arrives')
+  })
+
+  it('TriggerEditor uses the shared list rather than its own copy', () => {
+    const src = readFileSync('src/components/automations/wizard/TriggerEditor.jsx', 'utf-8')
+    expect(src).toContain('PRESENCE_TRIGGER_TYPES.includes(effectiveType)')
+  })
+
+  it('each presence type maps to the presence editor, not a dead uiType', () => {
+    const uiTypeFor = (type) => PRESENCE_TRIGGER_TYPES.includes(type) ? 'presence' : type
+    for (const t of [...Object.values(PRESENCE_EVENT_TYPES), 'zone']) {
+      expect(uiTypeFor(t)).toBe('presence')
+    }
   })
 })
