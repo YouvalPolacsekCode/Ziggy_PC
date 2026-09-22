@@ -183,3 +183,21 @@ def test_occupancy_ui_stamp_survives_the_trigger_converter():
     assert invalid_trigger_reason({"trigger": t}) is None
     out = _trigger_to_ha(t)
     assert out == [{"platform": "state", "entity_id": "binary_sensor.office_occupied", "to": "on"}], out
+
+
+def test_saved_trigger_is_stored_verbatim_not_rebuilt_from_home_assistant():
+    """The UI breadcrumb only works if Ziggy keeps its OWN copy of the trigger.
+
+    `list_automations` reads `meta["trigger"]` — the dict handed to
+    `save_automation`, stored verbatim. Home Assistant has never heard of
+    `ui`, so if this ever started rebuilding the trigger from HA config
+    instead, occupancy rules would quietly go back to being guessed from the
+    sensor's device_class, which is the bug the stamp exists to kill.
+    """
+    import inspect
+    from services import ha_automations as H
+    src = inspect.getsource(H.list_automations)
+    assert 'meta.get("trigger"' in src, (
+        "list_automations no longer reads Ziggy's stored trigger; anything HA "
+        "cannot express (the occupancy `ui` stamp) is lost on reload."
+    )
