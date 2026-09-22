@@ -908,6 +908,9 @@ export const getPresencePersons       = ()             => get('/presence/persons
 // Everyone in the home — accounts joined to presence. Use this for any people
 // picker: /presence/persons only knows phones that have already checked in.
 export const getHousehold             = ()             => get('/presence/household')
+// Renames the account, their presence record and any automation that named
+// them — all three, because triggers match on the name.
+export const renameHouseholdMember    = (username, name) => patch(`/presence/household/${encodeURIComponent(username)}/name`, { name })
 export const createPresencePerson     = (name)         => post('/presence/persons', { name })
 export const deletePresencePerson     = (id)           => del(`/presence/persons/${id}`)
 export const overridePresenceState    = (id, state)    => patch(`/presence/persons/${id}/state`, { state })

@@ -45,6 +45,7 @@ import {
   getPresenceZone, savePresenceZone, getPresenceDebug,
   pingMePresence, getMyPresencePerson, setMyPresenceLanHost,
   listPresenceZones, createPresenceZone, updatePresenceZone, deletePresenceZone,
+  getHousehold, renameHouseholdMember,
 } from '../lib/api'
 import { isNative } from '../lib/native'
 import { MemoryPanel } from './Memory'
@@ -464,6 +465,10 @@ function PresenceSection() {
   const [trackMe,        setTrackMe]        = useState(() => localStorage.getItem(TRACK_ME_KEY) === '1')
   const [trackMeStatus,  setTrackMeStatus]  = useState('idle')
   const [trackMePerson,  setTrackMePerson]  = useState(null)
+  // Your household name (see the card at the top of this section).
+  const [myName,       setMyName]       = useState('')
+  const [myNameSaving, setMyNameSaving] = useState(false)
+  const [myUsername,   setMyUsername]   = useState(null)
   const watchIdRef = useRef(null)
   const lastPingRef = useRef(0)
 
@@ -536,8 +541,40 @@ function PresenceSection() {
       const me = await getMyPresencePerson()
       setLanHost(me?.person?.lan_host || '')
       setLanSuggestion(me?.person?.lan_host_suggested || '')
+      if (me?.person?.name) setMyName(me.person.name)
+      if (me?.person?.linked_user) setMyUsername(me.person.linked_user)
+    } catch {}
+    // The name field must work even for someone whose phone has never
+    // reported (no person record yet, so /my-person 404s) — the household
+    // list always has them, flagged as their own row by username.
+    try {
+      const auth = await getAuthStatus()
+      const uname = auth?.username || auth?.user?.username || null
+      if (uname) {
+        setMyUsername(prev => prev || uname)
+        const hh = await getHousehold()
+        const mine = (hh?.household || []).find(m => (m.username || '').toLowerCase() === uname.toLowerCase())
+        if (mine?.name) setMyName(prev => prev || mine.name)
+      }
     } catch {}
     finally { setLoading(false) }
+  }
+
+  const saveMyName = async () => {
+    const name = myName.trim()
+    if (!name || !myUsername) return
+    setMyNameSaving(true)
+    try {
+      const res = await renameHouseholdMember(myUsername, name)
+      addToast(
+        res?.automations_updated
+          ? t('homeSensing.myName.savedWithAutomations', { n: res.automations_updated })
+          : t('homeSensing.myName.saved'),
+        'success',
+      )
+    } catch (e) {
+      addToast(e.message || t('homeSensing.myName.saveFailed'), 'error')
+    } finally { setMyNameSaving(false) }
   }
 
   const saveLanHost = async (value) => {
@@ -641,6 +678,37 @@ function PresenceSection() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+      {/* Your name — what the household calls you, and the label automations
+          pick from ("when Youval gets home"). Accounts created before invites
+          captured a name derive one from the email, which is how you end up
+          called "Silentyouval"; this is where you fix that. Renaming moves
+          the presence record and any automation naming you along with it. */}
+      <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
+        <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div>
+            <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.myName.title')}</p>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, lineHeight: 1.5 }} dir="auto">
+              {t('homeSensing.myName.desc')}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Input
+                value={myName}
+                onChange={e => setMyName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') saveMyName() }}
+                placeholder={t('homeSensing.myName.placeholder')}
+                aria-label={t('homeSensing.myName.title')}
+                dir="auto"
+              />
+            </div>
+            <button onClick={saveMyName} disabled={myNameSaving || !myName.trim()} className="z-btn-secondary">
+              {myNameSaving ? t('common.saving') : t('common.save')}
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Track my location card */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>

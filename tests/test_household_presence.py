@@ -129,6 +129,77 @@ def test_household_lists_invited_members_before_their_phone_reports(presence, mo
     assert out["household"][0]["name"] == "Youval"
 
 
+def test_rename_moves_the_person_and_the_automations_with_it(presence, monkeypatch, tmp_path):
+    """Triggers match on the NAME, so a rename has to carry them along.
+
+    Renaming only the account would leave "when Youval gets home" naming a
+    person who no longer answers to it — the automation would sit there
+    looking correct and never fire again.
+    """
+    import asyncio
+    import core.automation_file as af
+    pr, pe, _ = presence
+
+    pr._resolve_or_create_my_person({"username": "y@example.com", "display_name": "Silentyouval"})
+
+    autos = tmp_path / "automations.json"
+    autos.write_text("[]")
+    monkeypatch.setattr(af, "AUTOMATION_FILE", str(autos))
+
+    af.create_automation({
+        "id": "hall", "name": "Hall light",
+        "trigger": {"type": "person_arrives", "person": "Silentyouval"},
+        "actions": [{"type": "turn_off_all_lights"}],
+    })
+    af.create_automation({
+        "id": "other", "name": "Someone else",
+        "trigger": {"type": "person_arrives", "person": "Rachel"},
+        "actions": [{"type": "turn_off_all_lights"}],
+    })
+
+    renamed = {}
+    monkeypatch.setattr("services.auth_db.get_user_by_username",
+                        lambda u: {"username": u, "display_name": "Silentyouval", "role": "super_admin"})
+    monkeypatch.setattr("services.auth_db.update_display_name",
+                        lambda u, n: renamed.setdefault(u, n) or True)
+
+    out = asyncio.run(pr.rename_household_member(
+        "y@example.com",
+        pr.RenameMemberBody(name="Youval"),
+        current={"username": "y@example.com", "role": "super_admin"},
+    ))
+
+    assert out["ok"] is True and out["name"] == "Youval"
+    assert renamed["y@example.com"] == "Youval"
+    # The presence record moved...
+    assert pe.list_persons()[0]["name"] == "Youval"
+    # ...and so did the automation that named them — but not anyone else's.
+    by_id = {a["id"]: a for a in af.list_automations()}
+    assert by_id["hall"]["trigger"]["person"] == "Youval"
+    assert by_id["other"]["trigger"]["person"] == "Rachel"
+    assert out["automations_updated"] == 1
+
+
+def test_rename_rejects_a_name_someone_else_already_has(presence, monkeypatch):
+    import asyncio
+    pr, pe, _ = presence
+    pr._resolve_or_create_my_person({"username": "y@example.com", "display_name": "Youval"})
+    pr._resolve_or_create_my_person({"username": "r@example.com", "display_name": "Rachel"})
+
+    monkeypatch.setattr("services.auth_db.get_user_by_username",
+                        lambda u: {"username": u, "display_name": "Youval", "role": "user"})
+
+    with pytest.raises(Exception) as exc:
+        asyncio.run(pr.rename_household_member(
+            "y@example.com",
+            pr.RenameMemberBody(name="Rachel"),
+            current={"username": "y@example.com", "role": "super_admin"},
+        ))
+    assert "409" in str(exc.value) or "already has that name" in str(exc.value)
+    # Nothing moved.
+    assert {p["name"] for p in pe.list_persons()} == {"Youval", "Rachel"}
+
+
 def test_native_presence_triggers_stay_out_of_home_assistant():
     """person_arrives/leaves/all_persons_left run on Ziggy's engine.
 

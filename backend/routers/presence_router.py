@@ -399,6 +399,87 @@ async def list_household(_user=Depends(get_current_user)):
     return {"household": members}
 
 
+class RenameMemberBody(BaseModel):
+    name: str
+
+
+@router.patch("/api/presence/household/{username}/name")
+async def rename_household_member(
+    username: str,
+    body: RenameMemberBody,
+    current=Depends(get_current_user),
+):
+    """Rename a household member everywhere their name is written down.
+
+    Automation triggers match on the person's NAME (see
+    services/presence_side_effects._fire_automations), so a rename that only
+    touched the account would leave "when Youval gets home" pointing at a
+    person who no longer answers to that. Three writes, one call:
+
+      1. the account's display_name (the household's name for them)
+      2. the linked presence person (what the engine reports on a transition)
+      3. any automation trigger whose `person` was the old name
+
+    A rename is allowed on yourself, or by a super_admin on anyone.
+    """
+    new_name = (body.name or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Enter a name.")
+    if len(new_name) > 60:
+        raise HTTPException(status_code=400, detail="That name is too long.")
+
+    is_self = (current.get("username") or "").lower() == username.lower()
+    if not is_self and (current.get("role") != "super_admin"):
+        raise HTTPException(status_code=403, detail="Only an owner can rename someone else.")
+
+    target = auth_db.get_user_by_username(username)
+    if not target:
+        raise HTTPException(status_code=404, detail="No such household member.")
+
+    old_name = None
+    with _person_create_lock:
+        persons = _load()
+        # Reject a collision BEFORE writing anything.
+        person = _match_person(persons, username)
+        for p in persons:
+            if p is not person and (p.get("name") or "").lower() == new_name.lower():
+                raise HTTPException(status_code=409, detail="Someone here already has that name.")
+
+        auth_db.update_display_name(username, new_name)
+
+        if person is not None:
+            old_name = person.get("name")
+            if old_name != new_name:
+                for p in persons:
+                    if p["id"] == person["id"]:
+                        p["name"] = new_name
+                        break
+                _save(persons)
+
+    renamed_automations = 0
+    if old_name and old_name != new_name:
+        try:
+            from core.automation_file import list_automations, update_automation
+            for auto in list_automations():
+                trig = auto.get("trigger") or {}
+                if trig.get("type") not in ("person_arrives", "person_leaves", "zone_entered", "zone_left"):
+                    continue
+                if (trig.get("person") or "").lower() != old_name.lower():
+                    continue
+                update_automation(auto["id"], {"trigger": {**trig, "person": new_name}})
+                renamed_automations += 1
+        except Exception as exc:
+            # The rename itself already landed; a failure here means some
+            # automations still name the old person. Loud, not silent.
+            log_error(f"[Presence] rename: automation rewrite failed: {exc}")
+
+    log_info(
+        f"[Presence] Renamed {username}: '{old_name or '(no person yet)'}' -> '{new_name}' "
+        f"({renamed_automations} automation(s) updated)"
+    )
+    return {"ok": True, "name": new_name, "automations_updated": renamed_automations}
+
+
 @router.get("/api/presence/debug")
 async def debug_state(_=Depends(require_role("admin"))):
     """Full debug snapshot — current persons, recent decisions, tunables."""
