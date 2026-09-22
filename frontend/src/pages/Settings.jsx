@@ -906,6 +906,7 @@ function UsersAndAccessSection({ currentUsername }) {
   const [users,        setUsers]        = useState([])
   const [invites,      setInvites]      = useState([])
   const [inviteEmail,  setInviteEmail]  = useState('')
+  const [inviteName,   setInviteName]   = useState('')
   const [inviteRole,   setInviteRole]   = useState('user')
   const [inviteLink,   setInviteLink]   = useState(null)
   const [inviteSaving, setInviteSaving] = useState(false)
@@ -938,7 +939,7 @@ function UsersAndAccessSection({ currentUsername }) {
     setInviteSaving(true)
     setInviteLink(null)
     try {
-      const res = await createInvite({ type: 'user', email: inviteEmail.trim() || undefined, role: inviteRole, public_url: window.location.origin })
+      const res = await createInvite({ type: 'user', email: inviteEmail.trim() || undefined, name: inviteName.trim() || undefined, role: inviteRole, public_url: window.location.origin })
       const url = `${window.location.origin}${res.invite_url}`
       setInviteLink(url)
       navigator.clipboard.writeText(url).catch(() => {})
@@ -1024,6 +1025,19 @@ function UsersAndAccessSection({ currentUsername }) {
             </div>
           ) : (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {/* Name first: it's what the household calls them, and it
+                  becomes their presence name — the label you pick from when
+                  writing "when Rachel gets home". Without it people show up
+                  as the local part of their email. */}
+              <div style={{ flex: 1, minWidth: 120 }}>
+                <Input
+                  placeholder={t('members.namePh')}
+                  aria-label={t('members.namePh')}
+                  value={inviteName}
+                  onChange={e => setInviteName(e.target.value)}
+                  dir="auto"
+                />
+              </div>
               <div style={{ flex: 2, minWidth: 180 }}>
                 <Input
                   type="email"

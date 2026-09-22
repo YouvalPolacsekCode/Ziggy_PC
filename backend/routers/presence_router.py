@@ -17,6 +17,7 @@ import asyncio
 import ipaddress
 import json
 import secrets
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +29,7 @@ from pydantic import BaseModel
 
 from backend.routers.auth_deps import get_current_user, require_role
 from core.logger_module import log_info, log_error
+from services import auth_db
 from core.settings_loader import settings, save_settings
 from services import lan_presence, presence_engine
 from services.presence_engine import Decision
@@ -336,6 +338,67 @@ async def list_persons(_user=Depends(get_current_user)):
     return {"persons": presence_engine.list_persons()}
 
 
+@router.get("/api/presence/household")
+async def list_household(_user=Depends(get_current_user)):
+    """Everyone in the home, whether or not their phone has ever reported.
+
+    The one list any people-picker should use. A presence record only exists
+    after a phone checks in, so a list built from presence alone can't offer
+    the partner you invited an hour ago — you could not write "when Rachel
+    gets home" until Rachel had already installed the app, which is backwards.
+
+    So the household is the ACCOUNTS, joined to presence where it exists:
+
+      name        what to call them (invite name; email local part for
+                  pre-existing accounts) — this is also the string an
+                  automation trigger stores and matches on
+      username    the login email, the stable identity behind the name
+      tracked     their phone has reported at least once
+      state       home / not_home / unknown — None when untracked
+
+    `tracked: false` is not an error, it is "we're ready when they are": the
+    automation saves and simply cannot fire until their phone checks in. The
+    UI says so rather than failing the save.
+    """
+    persons = presence_engine.list_persons()
+    by_user = {}
+    for p in persons:
+        key = (p.get("linked_user") or "").lower()
+        if key:
+            by_user.setdefault(key, p)
+
+    members: list[dict] = []
+    seen_person_ids: set[str] = set()
+    for u in auth_db.list_users():
+        person = by_user.get((u.get("username") or "").lower())
+        if person:
+            seen_person_ids.add(person["id"])
+        members.append({
+            "name":     (person or {}).get("name") or auth_db.display_name_for(u),
+            "username": u.get("username"),
+            "role":     u.get("role"),
+            "tracked":  bool(person and person.get("last_seen")),
+            "state":    (person or {}).get("state") if person else None,
+        })
+
+    # Presence records with no account behind them — someone added through the
+    # invite-link flow, which mints a person without creating a login. They are
+    # real trackable people, so they belong in the picker too.
+    for p in persons:
+        if p["id"] in seen_person_ids:
+            continue
+        members.append({
+            "name":     p.get("name"),
+            "username": p.get("linked_user"),
+            "role":     None,
+            "tracked":  bool(p.get("last_seen")),
+            "state":    p.get("state"),
+        })
+
+    members.sort(key=lambda m: (not m["tracked"], (m["name"] or "").lower()))
+    return {"household": members}
+
+
 @router.get("/api/presence/debug")
 async def debug_state(_=Depends(require_role("admin"))):
     """Full debug snapshot — current persons, recent decisions, tunables."""
@@ -539,6 +602,38 @@ async def delete_zone(zone_id: str, _=Depends(require_role("admin"))):
 
 # ── authenticated self-tracking (logged-in Ziggy user, no invite needed) ────
 
+# One writer at a time through the resolve-or-create path.
+#
+# Four endpoints call this (/me/ping, /me/lan-host, /me/lan-host/auto) and the
+# app fires several of them within the same second on launch. Without this
+# lock, two requests for the SAME user both missed, both created, and the
+# collision-avoidance loop below politely renamed the second to "<Name> 2" —
+# a permanent ghost person, linked to the same account, that never reports.
+# (Seen in a real home on 2026-09-22.) The lock is process-wide and the
+# critical section is a file read + write, so contention is microseconds.
+_person_create_lock = threading.Lock()
+
+
+def _match_person(persons: list[dict], username: str) -> Optional[dict]:
+    """linked_user exact match, else name-is-substring-of-username.
+
+    Same rule as presence_engine.find_person_by_username, but against a list
+    the caller already holds — so the check and the create that follows see
+    ONE snapshot of the file instead of two separate reads with a window in
+    between. That window is what produced the duplicate.
+    """
+    if not username:
+        return None
+    u = username.lower()
+    for p in persons:
+        if (p.get("linked_user") or "").lower() == u:
+            return p
+    for p in persons:
+        if p["name"].lower() in u:
+            return p
+    return None
+
+
 def _resolve_or_create_my_person(user: dict) -> dict:
     """Return the person record for the authenticated user, creating one on
     first use so the in-app "Track me" flow has zero setup.
@@ -549,30 +644,38 @@ def _resolve_or_create_my_person(user: dict) -> dict:
          "youvalpolacsek@gmail.com") — and we PERSIST linked_user on first
          match so the person can't later be "stolen" by another user whose
          name happens to be a substring of theirs.
-      3. otherwise create a new person whose name is the username's local
-         part (capitalised), with linked_user set to the username.
+      3. otherwise create a new person named after the account's display name
+         (the household name captured on the invite), with linked_user set.
+
+    Everything below runs under `_person_create_lock` against a single load.
     """
     username = user.get("username", "") or ""
-    person = presence_engine.find_person_by_username(username)
-    if person is not None:
-        # Lock the association so the next user with a similar name doesn't
-        # match the same person.
-        if not (person.get("linked_user") or "").strip():
-            persons = _load()
-            for p in persons:
-                if p["id"] == person["id"]:
-                    p["linked_user"] = username
-                    break
-            _save(persons)
-            log_info(f"[Presence] Linked person '{person['name']}' to user {username}")
-            person["linked_user"] = username
-        return person
+    with _person_create_lock:
+        persons = _load()
+        person = _match_person(persons, username)
+        if person is not None:
+            # Lock the association so the next user with a similar name doesn't
+            # match the same person.
+            if not (person.get("linked_user") or "").strip():
+                for p in persons:
+                    if p["id"] == person["id"]:
+                        p["linked_user"] = username
+                        break
+                _save(persons)
+                log_info(f"[Presence] Linked person '{person['name']}' to user {username}")
+                person["linked_user"] = username
+            return person
+        return _create_person_for(persons, user, username)
 
-    # Auto-create.
-    persons = _load()
-    local = username.split("@", 1)[0] if "@" in username else username
-    name  = local[:1].upper() + local[1:] if local else "Me"
-    # Avoid name collisions.
+
+def _create_person_for(persons: list[dict], user: dict, username: str) -> dict:
+    """Append a new person for `user`. Caller holds the lock and the snapshot."""
+    # The household's name for this person, not the email's local part — an
+    # invited member is "Rachel", not "rachel.cohen". Falls back to the old
+    # derivation for accounts created before display_name existed.
+    name = auth_db.display_name_for(user)
+    # Avoid name collisions. With the lock held this can only fire for two
+    # genuinely different people who share a first name.
     base, i = name, 1
     while any(p["name"].lower() == name.lower() for p in persons):
         i += 1

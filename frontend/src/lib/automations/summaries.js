@@ -36,6 +36,19 @@ export function triggerSummary(trigger) {
       if (trigger.below !== undefined && trigger.below !== '') return tStatic('automations.summary.dropsBelow', { entity: ent, value: trigger.below })
       return tStatic('automations.summary.crossesThreshold', { entity: ent })
     }
+    // Ziggy-native presence. `person` is a NAME (or "*" for anyone) — the
+    // same string services/presence_side_effects.py matches on.
+    case 'person_arrives':
+    case 'person_leaves': {
+      const anyone = !trigger.person || trigger.person === '*'
+      const who = anyone ? tStatic('automations.presence.anyone') : trigger.person
+      return tStatic(trigger.type === 'person_leaves'
+        ? 'automations.summary.personLeaves'
+        : 'automations.summary.personArrives', { who })
+    }
+    case 'all_persons_left': return tStatic('automations.summary.allPersonsLeft')
+    // Legacy HA zone trigger — no longer creatable (it required person.*
+    // entities Ziggy never makes), but old saved automations still render.
     case 'zone': {
       const who  = friendlyEntityName(trigger.entity_id) || 'person'
       const zone = (trigger.zone || 'zone.home').replace('zone.', '')

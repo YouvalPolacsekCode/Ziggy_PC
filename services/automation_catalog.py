@@ -97,8 +97,11 @@ _TRIGGERS: list[dict[str, Any]] = [
     {
         "id":          "zone",
         "description": "Fire when a tracked person enters or leaves a geographic zone (HA person entity). "
-                       "PREFER the Ziggy-native arrival/departure recipes (welcome_home / leave_home) — "
-                       "they run on Ziggy's own presence engine with the whole-house-quiet guard.",
+                       "DO NOT USE — Ziggy never creates person.* / device_tracker.* entities (presence "
+                       "publishes one household roll-up; see services/presence_mqtt.py), so this trigger "
+                       "has nothing to bind to in any Ziggy home. The wizard stopped offering it on "
+                       "2026-09-22. Use the Ziggy-native person_arrives / person_leaves / "
+                       "all_persons_left triggers, or the welcome_home / leave_home recipes.",
         "shape":       {"entity_id": "person.X", "zone": "zone.home", "event": "enter|leave"},
         "example":     "When person.youval enters zone.home",
         "decline_message_en": "I can't currently set up automations tied to people arriving or leaving home.",

@@ -18,7 +18,7 @@ export function getTriggerTypes() {
     { value: 'controller',   label: tStatic('automations.triggerController') },
     // Periodic trigger — "every N minutes / hours". Backend: time_pattern.
     { value: 'time_pattern', label: tStatic('automations.triggerTimePattern') },
-    { value: 'zone',         label: tStatic('automations.triggerZone') },
+    { value: 'presence',     label: tStatic('automations.triggerPresence') },
     { value: 'sunrise',      label: tStatic('automations.triggerSunrise') },
     { value: 'sunset',       label: tStatic('automations.triggerSunset') },
     { value: 'webhook',      label: tStatic('automations.triggerWebhook') },

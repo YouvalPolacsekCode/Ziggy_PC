@@ -73,11 +73,18 @@ class CreateInviteBody(BaseModel):
     type: str = "user"          # "user" | "home"
     note: Optional[str] = None  # optional display label for home invites
     public_url: Optional[str] = None  # frontend passes window.location.origin
+    # What the household calls them — "Rachel", not "rachel.cohen@gmail.com".
+    # Carried onto the account at accept time and used verbatim as their
+    # presence name, which is what automation triggers match on.
+    name: Optional[str] = None
 
 
 class AcceptInviteBody(BaseModel):
     email: str
     password: str
+    # The invitee may correct the name the inviter typed. Falls back to the
+    # invite's name, then to the email's local part.
+    name: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +128,7 @@ async def create_invite(body: CreateInviteBody, current: dict = Depends(require_
         "token":       secrets.token_urlsafe(32),
         "type":        body.type,
         "email":       (body.email or "").strip().lower() or None,
+        "name":        (body.name or "").strip() or None,
         "role":        body.role,
         "home_id":     home["id"],
         "home_name":   body.note or home["name"],
@@ -219,6 +227,8 @@ async def get_invite(token: str):
     return {
         "type":       inv["type"],
         "email":      inv["email"],
+        # Pre-fills the name field on the accept form; the invitee can correct it.
+        "name":       inv.get("name"),
         "role":       inv["role"],
         "home_name":  inv["home_name"],
         "invited_by": inv["invited_by"],
@@ -264,6 +274,8 @@ async def accept_invite(token: str, body: AcceptInviteBody):
         salt="",
         role=inv["role"],
         hash_algo="bcrypt",
+        # Invitee's own correction wins over what the inviter typed.
+        display_name=(body.name or "").strip() or inv.get("name"),
     )
     auth_db.add_session(user_id, tok)
 

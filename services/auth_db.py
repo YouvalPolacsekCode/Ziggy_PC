@@ -54,6 +54,19 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 """
 
+# Columns added after the first release. `init()` adds any that are missing —
+# ALTER TABLE ADD COLUMN is the one schema change SQLite does cheaply and
+# without a table rewrite, and an existing home must not lose its users.
+_ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    # (table, column, definition)
+    #
+    # display_name: what the household calls this person ("Rachel"), captured
+    # on the invite. Distinct from `username`, which is their email and is the
+    # login identity. Null for accounts created before this column existed —
+    # callers fall back to the username's local part.
+    ("users", "display_name", "TEXT"),
+]
+
 _init_lock = threading.Lock()
 _initialized = False
 
@@ -78,6 +91,10 @@ def init() -> None:
             return
         with _connect() as db:
             db.executescript(_SCHEMA)
+            for table, column, ddl in _ADDED_COLUMNS:
+                cols = {r["name"] for r in db.execute(f"PRAGMA table_info({table})")}
+                if column not in cols:
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
             db.commit()
         _initialized = True
 
@@ -124,9 +141,24 @@ def list_users() -> list[dict]:
     init()
     with _connect() as db:
         rows = db.execute(
-            "SELECT id, username, role, hash_algo, created_at FROM users ORDER BY id"
+            "SELECT id, username, display_name, role, hash_algo, created_at FROM users ORDER BY id"
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def display_name_for(user: dict) -> str:
+    """What to call this person on screen.
+
+    The invite captures a real name; accounts predating that column fall back
+    to the email's local part, capitalised — the same derivation presence used
+    before, so nobody's name changes underneath them on upgrade.
+    """
+    explicit = (user.get("display_name") or "").strip()
+    if explicit:
+        return explicit
+    username = (user.get("username") or "").strip()
+    local = username.split("@", 1)[0] if "@" in username else username
+    return (local[:1].upper() + local[1:]) if local else "Me"
 
 
 def has_any_user() -> bool:
@@ -146,16 +178,30 @@ def create_user(
     salt: str,
     role: str = "user",
     hash_algo: str = "hmac_sha256",
+    display_name: Optional[str] = None,
 ) -> int:
     init()
     with _connect() as db:
         cur = db.execute(
-            """INSERT INTO users (username, role, password_hash, salt, hash_algo, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (username.strip(), role, password_hash, salt, hash_algo, _now()),
+            """INSERT INTO users (username, display_name, role, password_hash, salt, hash_algo, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (username.strip(), (display_name or "").strip() or None,
+             role, password_hash, salt, hash_algo, _now()),
         )
         db.commit()
         return cur.lastrowid
+
+
+def update_display_name(username: str, display_name: str) -> bool:
+    """Rename a household member. Empty clears back to the derived fallback."""
+    init()
+    with _connect() as db:
+        cur = db.execute(
+            "UPDATE users SET display_name = ? WHERE username = ? COLLATE NOCASE",
+            ((display_name or "").strip() or None, username.strip()),
+        )
+        db.commit()
+        return cur.rowcount > 0
 
 
 def create_first_owner(

@@ -905,6 +905,9 @@ export const getMemory = () => get('/memory')
 
 // Presence — Ziggy-native person tracking
 export const getPresencePersons       = ()             => get('/presence/persons')
+// Everyone in the home — accounts joined to presence. Use this for any people
+// picker: /presence/persons only knows phones that have already checked in.
+export const getHousehold             = ()             => get('/presence/household')
 export const createPresencePerson     = (name)         => post('/presence/persons', { name })
 export const deletePresencePerson     = (id)           => del(`/presence/persons/${id}`)
 export const overridePresenceState    = (id, state)    => patch(`/presence/persons/${id}/state`, { state })

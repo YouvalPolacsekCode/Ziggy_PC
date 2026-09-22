@@ -10,7 +10,7 @@ import {
   getBinarySensorTriggerStates, getDefaultBinaryTrigger,
   getTimePatternUnits,
 } from '../../../lib/automations/types'
-import ZoneTriggerEditor from './ZoneTriggerEditor'
+import PresenceTriggerEditor from './PresenceTriggerEditor'
 import OccupancySensorForm from '../OccupancySensorForm'
 import { FieldHint } from './Atoms'
 import { chipStyle, fieldLabelStyle, noteBox, warnNoteBox } from '../../../lib/automations/styles'
@@ -39,8 +39,14 @@ function TriggerEditor({ trigger, onChange }) {
   const isPresenceState = effectiveType === 'state'
     && triggerEntity?.domain === 'binary_sensor'
     && PRESENCE_CLASSES.includes(triggerEntity?.device_class)
+  // The three Ziggy-native presence triggers share one editor, and a legacy
+  // HA `zone` automation saved before this change re-presents as it too, so
+  // opening an old one shows a working editor rather than a dead entity
+  // picker. Saving converts it to the native shape.
+  const isPresenceTrigger = ['person_arrives', 'person_leaves', 'all_persons_left', 'zone'].includes(effectiveType)
   const uiType = (effectiveType === 'numeric_state') ? 'state'
     : (effectiveType === 'occupancy' || isPresenceState) ? 'occupancy'
+    : isPresenceTrigger ? 'presence'
     : effectiveType
   const isTracker     = triggerDomain === 'person' || triggerDomain === 'device_tracker'
   const isNumericSensor = triggerDomain === 'sensor'
@@ -56,7 +62,10 @@ function TriggerEditor({ trigger, onChange }) {
   const handleTypeChange = e => {
     const next = e.target.value
     // Reset to clean defaults when switching type
-    if (next === 'zone')    onChange({ type: 'zone',    entity_id: '', zone: 'zone.home', event: 'enter' })
+    // Arrive/leave runs on Ziggy's own presence engine (person_arrives /
+    // person_leaves / all_persons_left), NOT HA's zone trigger — see
+    // PresenceTriggerEditor for why the HA one never worked here.
+    if (next === 'presence') onChange({ type: 'person_arrives', person: '*' })
     else if (next === 'state')   onChange({ type: 'state',   entity_id: '', state: 'on' })
     else if (next === 'time')    onChange({ type: 'time',    time: '' })
     else if (next === 'webhook') onChange({ type: 'webhook', webhook_id: '' })
@@ -259,8 +268,8 @@ function TriggerEditor({ trigger, onChange }) {
         </>
       )}
 
-      {uiType === 'zone' && (
-        <ZoneTriggerEditor trigger={trigger} onChange={onChange} />
+      {uiType === 'presence' && (
+        <PresenceTriggerEditor trigger={trigger} onChange={onChange} />
       )}
 
       {(uiType === 'sunrise' || uiType === 'sunset') && (

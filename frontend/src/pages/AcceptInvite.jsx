@@ -47,6 +47,7 @@ export default function AcceptInvite() {
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState(null)
   const [email,    setEmail]    = useState('')
+  const [name,     setName]     = useState('')
   const [password, setPassword] = useState('')
   const [confirm,  setConfirm]  = useState('')
   const [saving,   setSaving]   = useState(false)
@@ -62,7 +63,7 @@ export default function AcceptInvite() {
       : () => getInvite(token)
 
     fetchInvite()
-      .then(inv => { setInvite(inv); setEmail(inv.email || '') })
+      .then(inv => { setInvite(inv); setEmail(inv.email || ''); setName(inv.name || '') })
       .catch(e  => setError(e.message || t('invite.notFound')))
       .finally(() => setLoading(false))
   }, [token, relayBase])
@@ -129,7 +130,7 @@ export default function AcceptInvite() {
 
       } else {
         // Local invite — create account in this home and log in.
-        const res = await acceptInvite(token, { email: email.trim().toLowerCase(), password })
+        const res = await acceptInvite(token, { email: email.trim().toLowerCase(), password, name: name.trim() || undefined })
         setToken(res.token, res.role)
         setDone(true)
         setTimeout(() => navigate('/'), 1800)
@@ -276,6 +277,15 @@ export default function AcceptInvite() {
 
               {/* Fields */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 16 }}>
+                {/* Pre-filled from the invite; editable so they can correct
+                    what the inviter typed. Becomes their presence name. */}
+                <Input
+                  label={t('invite.name')}
+                  dir="auto"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder={t('invite.namePh')}
+                />
                 <Input
                   label={t('invite.email')}
                   type="email"
