@@ -96,7 +96,15 @@ def _duplicate_name_of(name: Optional[str], auto_id: Optional[str]) -> Optional[
     if not wanted:
         return None
     try:
-        from core.automation_file import list_automations
+        # The MERGED list — HA-backed rules plus Ziggy-only ones. The first
+        # version of this read core.automation_file directly, which holds only
+        # the Ziggy-only ones, so every HA-backed automation (most of them:
+        # anything with a state/time/sun trigger) was invisible to the check
+        # and duplicated happily. Caught on a live home: saving a second
+        # "Leave Home" returned 200 and created leave_home_2.
+        #
+        # This reads the WS state cache rather than a REST round-trip, so it
+        # costs nothing on the save path.
         for existing in list_automations():
             if auto_id and existing.get("id") == auto_id:
                 continue

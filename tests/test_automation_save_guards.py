@@ -90,7 +90,11 @@ def test_actions_guard_still_holds():
 # ── Duplicate names ─────────────────────────────────────────────────────────
 
 def test_duplicate_name_detection(monkeypatch):
-    monkeypatch.setattr("core.automation_file.list_automations",
+    # Patch the MERGED list, which is what the check reads. The first version
+    # of this test patched core.automation_file instead — it passed while the
+    # real check was blind to every HA-backed automation, and a live home
+    # cheerfully created a second "Leave Home". Patch what the code calls.
+    monkeypatch.setattr("services.ha_automations.list_automations",
                         lambda: [{"id": "a1", "name": "Good Night"}])
     assert _duplicate_name_of("Good Night", None) == "Good Night"
     assert _duplicate_name_of("  good   night ", None) == "Good Night"   # case + spacing
@@ -102,8 +106,21 @@ def test_duplicate_name_detection(monkeypatch):
 def test_duplicate_check_never_blocks_on_its_own_failure(monkeypatch):
     def boom():
         raise RuntimeError("store unavailable")
-    monkeypatch.setattr("core.automation_file.list_automations", boom)
+    monkeypatch.setattr("services.ha_automations.list_automations", boom)
     assert _duplicate_name_of("Anything", None) is None
+
+
+def test_duplicate_check_sees_ha_backed_automations(monkeypatch):
+    """The regression, named.
+
+    Most automations are HA-backed (any state/time/sun trigger). Reading the
+    Ziggy-only store made the check blind to all of them.
+    """
+    monkeypatch.setattr("services.ha_automations.list_automations",
+                        lambda: [{"id": "ziggy_leave_home", "name": "Leave Home",
+                                  "trigger": {"type": "state"}}])
+    assert _duplicate_name_of("Leave Home", None) == "Leave Home"
+    assert _duplicate_name_of("Leave Home", "ziggy_leave_home") is None
 
 
 # ── Boolean condition groups ────────────────────────────────────────────────
