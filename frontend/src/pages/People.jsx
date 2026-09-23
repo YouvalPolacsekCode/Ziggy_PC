@@ -18,7 +18,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   getPermissionsOverview, permissionsExplain, bindPermissionRole,
   bootstrapPermissions, getPermissionAudit, getPrincipalGrants,
-  issuePermissionGrant, revokePermissionGrant,
+  issuePermissionGrant, revokePermissionGrant, getUsers, updateUser,
+  removePermissionPrincipal,
 } from '../lib/api'
 import { Toggle } from '../components/ui/Toggle'
 import { Input } from '../components/ui/Input'
@@ -52,6 +53,14 @@ const CLASS_KEY = {
   fan: 'people.class.fan', sensor: 'people.class.sensor',
 }
 const presetLabel = (t, p) => (PRESET_KEY[p] ? t(PRESET_KEY[p]) : p)
+
+// One access level per person. A person with a login account used to carry
+// two roles — the login role (Super Admin/Admin/User/Guest) and the permission
+// preset (Owner/Admin/Adult/Teen/Kid/Guest) — set in two places. The preset is
+// the one people understand, so it is the only control; the login role is
+// derived from it. Mirrors services/permissions/compat.py LEGACY_TO_PRESET.
+const LOGIN_TO_PRESET = { relay_admin: 'owner', super_admin: 'owner', admin: 'admin', user: 'adult', guest: 'guest' }
+const PRESET_TO_LOGIN = { owner: 'super_admin', admin: 'admin', adult: 'user', teen: 'user', kid: 'user', guest: 'guest' }
 const actionLabel = (t, a) => (ACTION_KEY[a] ? t(ACTION_KEY[a]) : a)
 const obLabel     = (t, o) => (OB_KEY[o] ? t(OB_KEY[o]) : o)
 const classLabel  = (t, c) => (CLASS_KEY[c] ? t(CLASS_KEY[c]) : c)
@@ -129,6 +138,13 @@ function capsForClass(cls, allCaps) {
 export default function People() {
   const t = useT()
   const [ov, setOv] = useState(null)
+  // username (lower-cased) → login role. Super admins only; the endpoint 403s
+  // everyone else, and then people simply have no linked account here.
+  const [accounts, setAccounts] = useState({})
+  const [myUsername, setMyUsername] = useState('')
+  useEffect(() => {
+    import('../lib/api').then(({ getAuthStatus }) => getAuthStatus().then(a => setMyUsername(a?.username || '')).catch(() => {}))
+  }, [])
   const [err, setErr] = useState('')
   const [sel, setSel] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -136,12 +152,23 @@ export default function People() {
   const bump = () => setVersion(v => v + 1)
 
   const [forbidden, setForbidden] = useState(false)
-  const load = () => getPermissionsOverview()
-    .then(d => { setOv(d); if (!sel && d.people?.length) setSel(d.people[0].ref) })
+  const load = () => Promise.all([
+    getPermissionsOverview(),
+    getUsers().catch(() => []),
+  ])
+    .then(([d, users]) => {
+      setAccounts(Object.fromEntries((users || []).map(u => [String(u.username).toLowerCase(), u.role])))
+      setOv(d); if (!sel && d.people?.length) setSel(d.people[0].ref)
+    })
     .catch(e => {
       if (e?.status === 403) { setForbidden(true); return }
       setErr(e?.message || t('people.loadFailed'))
     })
+
+  // The account a person is linked to, if any (refs are `person:<username>`).
+  const loginOf = (p) => accounts[String(p?.name || '').toLowerCase()]
+  // Effective preset: an explicit binding wins; else derived from the login role.
+  const presetOf = (p) => p?.role || (loginOf(p) ? LOGIN_TO_PRESET[loginOf(p)] : null) || null
 
   useEffect(() => { load() }, []) // eslint-disable-line
 
@@ -157,8 +184,8 @@ export default function People() {
   const [pendingRole, setPendingRole] = useState(null)
   useEffect(() => {
     const p = ov?.people?.find(x => x.ref === sel)
-    setPendingRole(p?.role ?? null)
-  }, [sel, ov])
+    setPendingRole(presetOf(p))
+  }, [sel, ov, accounts]) // eslint-disable-line
 
   if (forbidden) return (
     <Shell>
@@ -172,16 +199,32 @@ export default function People() {
 
   const person = useMemo(() => ov?.people.find(p => p.ref === sel) || null, [ov, sel])
 
+  const isSelf = (p) => !!p && !!myUsername && String(p.name).toLowerCase() === myUsername.toLowerCase()
+
   async function saveRole() {
-    if (!person || !pendingRole || pendingRole === person.role) return
+    if (!person || !pendingRole || pendingRole === presetOf(person)) return
     setBusy(true)
     try {
       await bindPermissionRole({
         binding_id: `ui:${person.name}`, principal: person.ref,
         scope: 'space:home', role: pendingRole,
       })
-      await load()   // reload → person.role updates → effect clears the dirty state
+      // Linked login account: keep its role in step, so "Kid" also means the
+      // account can no longer reach admin screens.
+      const login = loginOf(person)
+      const want = PRESET_TO_LOGIN[pendingRole]
+      if (login && want && login !== want) await updateUser(person.name, { role: want })
+      await load()   // reload → role updates → effect clears the dirty state
     } catch (e) { setErr(e?.message || t('people.updateFailed')) }
+    finally { setBusy(false) }
+  }
+
+  async function removePerson() {
+    if (!person || loginOf(person)) return
+    if (!window.confirm(t('people.removeConfirm', { name: person.name }))) return
+    setBusy(true)
+    try { await removePermissionPrincipal(person.ref); setSel(null); await load() }
+    catch (e) { setErr(e?.message || t('people.removeFailed')) }
     finally { setBusy(false) }
   }
 
@@ -210,7 +253,7 @@ export default function People() {
 
   return (
     <Shell>
-      <LoginAccounts />
+      <LoginAccounts onChanged={load} />
       <div className="perm-grid">
         <div className="perm-col" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={card}>
@@ -218,7 +261,7 @@ export default function People() {
             <div style={{ padding: 12 }}>
               <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
                 {ov.people.map((p, i) => (
-                  <PersonCard key={p.ref} p={p} i={i} selected={p.ref === sel}
+                  <PersonCard key={p.ref} p={p} preset={presetOf(p)} i={i} selected={p.ref === sel}
                     onClick={() => setSel(p.ref)} />
                 ))}
               </div>
@@ -227,16 +270,18 @@ export default function People() {
 
           {person && (
             <div style={card}>
-              <Head title={t('people.accessOf', { name: person.name })} sub={person.role ? presetLabel(t, person.role) : t('people.noRole')} />
+              <Head title={t('people.accessOf', { name: person.name })} sub={presetOf(person) ? presetLabel(t, presetOf(person)) : t('people.noRole')} />
               <div style={{ padding: 12 }}>
                 <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('people.accessLevel')}</p>
-                <Segmented options={ov.presets} value={pendingRole} disabled={busy}
+                {/* The owner's own level is not editable here: demoting yourself
+                    locks you out of this very screen. */}
+                <Segmented options={ov.presets} value={pendingRole} disabled={busy || isSelf(person)}
                   onChange={setPendingRole} label={(o) => presetLabel(t, o)} />
-                {pendingRole && pendingRole !== person.role && (
+                {pendingRole && pendingRole !== presetOf(person) && (
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 12 }}>
                     <button onClick={saveRole} disabled={busy} className="z-btn-primary">
                       {busy ? t('common.saving') : t('common.save')}</button>
-                    <button onClick={() => setPendingRole(person.role)} disabled={busy}
+                    <button onClick={() => setPendingRole(presetOf(person))} disabled={busy}
                       style={ghostBtn}>{t('common.cancel')}</button>
                   </div>
                 )}
@@ -247,6 +292,14 @@ export default function People() {
                   {t('people.whatCanDo', { name: person.name })}
                 </p>
                 <CapabilityMatrix person={person} ov={ov} version={version} />
+                {/* Only a person with no login account can be removed here; an
+                    account is removed from Accounts & invites and cascades. */}
+                {!loginOf(person) && (
+                  <button onClick={removePerson} disabled={busy}
+                    style={{ ...ghostBtn, color: 'var(--err-text)', marginTop: 16, paddingInlineStart: 0 }}>
+                    {t('people.removePerson')}
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -254,7 +307,6 @@ export default function People() {
 
         <div className="perm-col perm-right" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {person && <Playground person={person} ov={ov} version={version} />}
-          <AuditStrip />
         </div>
       </div>
       <style>{`
@@ -285,7 +337,7 @@ export default function People() {
 // Login accounts (username, role, invites) used to be a separate page reached
 // through a side link. They are the same humans as the cards below, so they
 // live here — super admins only, because the backend 403s everyone else.
-function LoginAccounts() {
+function LoginAccounts({ onChanged }) {
   const t = useT()
   const role = useAuthStore(s => s.role)
   const [username, setUsername] = useState('')
@@ -296,7 +348,7 @@ function LoginAccounts() {
   return (
     <div style={{ marginBottom: 16 }}>
       <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('people.accountsSection')}</p>
-      <UsersAndAccessSection currentUsername={username} />
+      <UsersAndAccessSection currentUsername={username} showRoles={false} onChanged={onChanged} />
     </div>
   )
 }
@@ -331,7 +383,7 @@ function Head({ title, sub }) {
   )
 }
 
-function PersonCard({ p, i, selected, onClick }) {
+function PersonCard({ p, preset, i, selected, onClick }) {
   const t = useT()
   const age = p.attrs?.age
   return (
@@ -346,7 +398,7 @@ function PersonCard({ p, i, selected, onClick }) {
       <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden',
         textOverflow: 'ellipsis' }} dir="auto">{p.name}</div>
       <div style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>
-        {p.role ? presetLabel(t, p.role) : '—'}{age != null ? ` · ${age}` : ''}</div>
+        {preset ? presetLabel(t, preset) : '—'}{age != null ? ` · ${age}` : ''}</div>
     </button>
   )
 }
@@ -713,7 +765,8 @@ function Decision({ res, loading, channel }) {
   )
 }
 
-function AuditStrip() {
+// Rendered on /ops/audit (engineering telemetry), not on the family screen.
+export function AuditStrip() {
   const t = useT()
   const [rows, setRows] = useState(null)
   useEffect(() => { getPermissionAudit({ limit: 6 }).then(d => setRows(d.events || [])).catch(() => setRows([])) }, [])

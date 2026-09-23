@@ -658,9 +658,9 @@ function PresenceSection() {
             <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.homeZone.title')}</p>
             <p style={{ fontSize: 13, color: zone?.configured ? 'var(--ok-text)' : 'var(--warn-text)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }} dir="auto">
               {zone?.configured
-                ? t('homeSensing.homeZone.summary', { lat: zone.lat?.toFixed(4), lon: zone.lon?.toFixed(4), radius: zone.radius })
+                ? t('homeSensing.homeZone.summary', { radius: zone.radius })
                 : zone?.lat != null
-                  ? t('homeSensing.homeZone.detected', { lat: zone.lat?.toFixed(4), lon: zone.lon?.toFixed(4) })
+                  ? t('homeSensing.homeZone.detected')
                   : t('homeSensing.homeZone.notConfigured')}
             </p>
           </div>
@@ -677,16 +677,10 @@ function PresenceSection() {
         </div>
         {zoneEdit && (
           <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: 120 }}>
-                <Input label={t('homeSensing.latitude')} value={zoneDraft.lat} onChange={e => setZoneDraft(d => ({ ...d, lat: e.target.value }))} dir="ltr" placeholder="32.0853" />
-              </div>
-              <div style={{ flex: 1, minWidth: 120 }}>
-                <Input label={t('homeSensing.longitude')} value={zoneDraft.lon} onChange={e => setZoneDraft(d => ({ ...d, lon: e.target.value }))} dir="ltr" placeholder="34.7818" />
-              </div>
-              <div style={{ width: 112 }}>
-                <Input label={t('homeSensing.radiusM')} type="number" min={50} max={2000} value={zoneDraft.radius_m} onChange={e => setZoneDraft(d => ({ ...d, radius_m: e.target.value }))} dir="ltr" />
-              </div>
+            {/* No coordinate fields: the centre comes from "Use my location".
+                Nobody types latitude on a phone. */}
+            <div style={{ width: 140 }}>
+              <Input label={t('homeSensing.radiusM')} type="number" min={50} max={2000} value={zoneDraft.radius_m} onChange={e => setZoneDraft(d => ({ ...d, radius_m: e.target.value }))} dir="ltr" />
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={saveZone} disabled={zoneSaving || !zoneDraft.lat || !zoneDraft.lon} className="z-btn-primary">
@@ -715,16 +709,10 @@ function PresenceSection() {
           <div key={z.id} style={{ padding: '8px 16px', borderBottom: i < extraZones.length - 1 ? '0.5px solid var(--line)' : 'none' }}>
             {editingZoneId === z.id ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBlock: 8 }}>
-                <Input value={zoneEditDraft.name} onChange={e => setZoneEditDraft(d => ({ ...d, name: e.target.value }))} dir="auto"
-                       placeholder={t('homeSensing.extraZones.namePh')} aria-label={t('homeSensing.extraZones.namePh')} />
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1, minWidth: 120 }}>
-                    <Input value={zoneEditDraft.lat} onChange={e => setZoneEditDraft(d => ({ ...d, lat: e.target.value }))} dir="ltr"
-                           placeholder={t('homeSensing.extraZones.latPh')} aria-label={t('homeSensing.extraZones.latPh')} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 120 }}>
-                    <Input value={zoneEditDraft.lon} onChange={e => setZoneEditDraft(d => ({ ...d, lon: e.target.value }))} dir="ltr"
-                           placeholder={t('homeSensing.extraZones.lonPh')} aria-label={t('homeSensing.extraZones.lonPh')} />
+                  <div style={{ flex: 1, minWidth: 160 }}>
+                    <Input value={zoneEditDraft.name} onChange={e => setZoneEditDraft(d => ({ ...d, name: e.target.value }))} dir="auto"
+                           placeholder={t('homeSensing.extraZones.namePh')} aria-label={t('homeSensing.extraZones.namePh')} />
                   </div>
                   <div style={{ width: 112 }}>
                     <Input type="number" value={zoneEditDraft.radius_m} onChange={e => setZoneEditDraft(d => ({ ...d, radius_m: e.target.value }))} dir="ltr"
@@ -741,7 +729,7 @@ function PresenceSection() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }} dir="auto">{z.name}</p>
                   <p style={{ fontSize: 13, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
-                    {z.lat?.toFixed(4)}, {z.lon?.toFixed(4)} · {z.radius_m}m
+                    {t('homeSensing.extraZones.radiusSummary', { radius: z.radius_m })}
                   </p>
                 </div>
                 <button onClick={() => beginEditZone(z)} style={ghostText}>{t('homeSensing.extraZones.editAction')}</button>
@@ -937,7 +925,9 @@ function MyNameCard() {
 // Rendered on the People page (super admins only; the backend 403s anyone
 // else). Exported because People.jsx composes it.
 
-export function UsersAndAccessSection({ currentUsername }) {
+// `showRoles=false` (People page) hides the per-account role select: there the
+// role is set once, on the person card, and mapped onto the login role.
+export function UsersAndAccessSection({ currentUsername, showRoles = true, onChanged }) {
   const t = useT()
   const { addToast } = useUIStore()
   const [users,        setUsers]        = useState([])
@@ -969,6 +959,7 @@ export function UsersAndAccessSection({ currentUsername }) {
       await deleteUser(username)
       setUsers(u => u.filter(x => x.username !== username))
       addToast(t('settings.userRemoved'), 'success')
+      onChanged?.()
     } catch (e) { addToast(e.message || t('common.failedToSave'), 'error') }
   }
 
@@ -1006,7 +997,7 @@ export function UsersAndAccessSection({ currentUsername }) {
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</span>
                 {isSelf && <span className="z-chip" style={{ flexShrink: 0 }}>{t('settings.youBadge')}</span>}
               </span>
-              {isSelf ? (
+              {showRoles && (isSelf ? (
                 <span className="z-chip" style={{ color: roleColor(u.role), flexShrink: 0 }}>
                   {roleLabel(t, u.role)}
                 </span>
@@ -1017,7 +1008,7 @@ export function UsersAndAccessSection({ currentUsername }) {
                   aria-label={u.username}
                   options={roleOptions(t)}
                 />
-              )}
+              ))}
               {!isSelf && (
                 <button onClick={() => handleDeleteUser(u.username)} style={{ ...ghostIcon, color: 'var(--err-text)' }} title={t('common.remove')} aria-label={t('common.remove')}>
                   <Trash2 size={18} />
@@ -1082,11 +1073,19 @@ export function UsersAndAccessSection({ currentUsername }) {
                   dir="ltr"
                 />
               </div>
+              {/* On People the vocabulary is the access presets (Admin, Adult,
+                  Guest); an invite creates a login account, so the preset maps
+                  onto its login role. Kid and Teen are set on the person card
+                  after the invite is accepted. */}
               <Select
                 value={inviteRole}
                 onChange={e => setInviteRole(e.target.value)}
                 aria-label={t('members.invite')}
-                options={roleOptions(t)}
+                options={showRoles ? roleOptions(t) : [
+                  { value: 'admin', label: t('people.preset.admin') },
+                  { value: 'user',  label: t('people.preset.adult') },
+                  { value: 'guest', label: t('people.preset.guest') },
+                ]}
               />
               <button
                 onClick={handleCreateInvite}
@@ -1291,7 +1290,6 @@ function AccountForms({ username, role, logout }) {
                 {roleLabel(t, role)}
               </span>
             )}
-            <span className="z-chip">{t('members.local')}</span>
           </div>
         </SettingRow>
 
@@ -1375,13 +1373,13 @@ export function DisplayPage() {
     }).catch(() => {})
   }, [])
 
-  const save = async () => {
+  // No Save button: theme and icons already applied instantly, language
+  // applied instantly but only persisted on Save, timezone waited for Save.
+  // Now every control persists as it changes. Errors toast; success is silent.
+  const persist = async (patch) => {
     setSaving(true)
-    try {
-      await patchGeneralSettings(general)
-      setI18nLang(general.language)
-      addToast(t('common.saved'), 'success')
-    } catch { addToast(t('common.failedToSave'), 'error') }
+    try { await patchGeneralSettings(patch) }
+    catch { addToast(t('common.failedToSave'), 'error') }
     finally { setSaving(false) }
   }
 
@@ -1411,17 +1409,26 @@ export function DisplayPage() {
             <Select
               label={t('settings.language')}
               value={general.language}
+              disabled={saving}
               onChange={e => {
                 const v = e.target.value
                 setGeneral(s => ({ ...s, language: v }))
                 setI18nLang(v)
+                persist({ language: v })
               }}
               options={LANGUAGES}
             />
-            <Select label={t('settings.timezone')} value={general.timezone} onChange={e => setGeneral(s => ({ ...s, timezone: e.target.value }))} options={TIMEZONES.map(tz => ({ value: tz, label: tz }))} />
-            <button onClick={save} disabled={saving} className="z-btn-primary" style={{ width: '100%' }}>
-              {saving ? t('common.saving') : t('common.save')}
-            </button>
+            <Select
+              label={t('settings.timezone')}
+              value={general.timezone}
+              disabled={saving}
+              onChange={e => {
+                const v = e.target.value
+                setGeneral(s => ({ ...s, timezone: v }))
+                persist({ timezone: v })
+              }}
+              options={TIMEZONES.map(tz => ({ value: tz, label: tz }))}
+            />
           </div>
         </Card>
       </div>
@@ -1844,7 +1851,6 @@ export default function Settings() {
 
       <div className="z-page-head">
         <div>
-          <p className="z-eyebrow">{t('settings.eyebrow')}</p>
           <h1 className="z-display" style={{ margin: 0 }}>{t('settings.title')}</h1>
         </div>
       </div>

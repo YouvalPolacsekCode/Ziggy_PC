@@ -31,11 +31,16 @@ async def status():
     }
 
 
-# Long-term memory carries a few hub-internal records alongside the facts a
-# person told Ziggy. `home_assistant` is the bridge's URL — plumbing, and the
-# one HA term the product must never show. Settings → Memory rendered it as a
-# "Home → assistant" fact with the raw URL as its value.
-_INTERNAL_MEMORY_KEYS = frozenset({"home_assistant"})
+# Long-term memory carries hub-internal and setup-derived records alongside
+# the facts a person told Ziggy. `home_assistant` is the bridge's URL —
+# plumbing, and the one HA term the product must never show. The rest are
+# onboarding answers that Settings already owns (language, timezone, home
+# city, the assistant's name, the wake word, the owner's name); editing them
+# as "memories" changes nothing, so they are not offered as memories.
+_INTERNAL_MEMORY_KEYS = frozenset({
+    "home_assistant", "language", "home_timezone", "home_city", "home_country",
+    "assistant_name", "wake_word", "user_name",
+})
 
 
 def _is_internal_memory_key(key) -> bool:

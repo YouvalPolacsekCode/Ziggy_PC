@@ -178,6 +178,20 @@ async def add_principal(body: PrincipalBody, user: dict = _admin):
     return {"status": "ok", "seq": seq}
 
 
+@router.delete("/api/permissions/principals/{ref:path}")
+async def remove_principal(ref: str, user: dict = _admin):
+    """Drop a person from the permission model (their bindings and grants go
+    with them). For people who exist only here — sample or seeded entries with
+    no login account. A person WITH a login account is removed through
+    /api/auth/users, which cascades here."""
+    if not ref.startswith("person:"):
+        raise HTTPException(status_code=400, detail="Only person:* refs can be removed here.")
+    if ref == _self_ref(user):
+        raise HTTPException(status_code=400, detail="You can't remove yourself.")
+    seq = get_service().remove_principal(ref, actor=_self_ref(user))
+    return {"status": "ok", "seq": seq}
+
+
 class GroupBody(BaseModel):
     id: str
     kind: str

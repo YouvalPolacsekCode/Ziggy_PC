@@ -10,6 +10,7 @@ import { Button } from '../components/ui/Button'
 import { useUIStore } from '../stores/uiStore'
 import { useT } from '../lib/i18n'
 import { isRelayConfigured, relayAuditLog, relayListHomes } from '../lib/api'
+import { AuditStrip as PermissionDecisions } from './People'
 
 const PAGE_SIZE = 100
 
@@ -284,6 +285,11 @@ export default function AuditLog() {
             </Button>
           </div>
         </div>
+      </div>
+
+      {/* Permission-engine decisions (moved off the family-facing People page). */}
+      <div style={{ padding: '16px 12px 0', maxWidth: 720 }}>
+        <PermissionDecisions />
       </div>
 
       <DetailPanel row={selected} onClose={() => setSelected(null)} />

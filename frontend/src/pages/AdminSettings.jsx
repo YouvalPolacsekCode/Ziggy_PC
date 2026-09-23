@@ -23,6 +23,8 @@ import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { useUIStore } from '../stores/uiStore'
 import { useAuthStore } from '../stores/authStore'
+import { useFeaturesStore } from '../stores/featuresStore'
+import { isNative } from '../lib/native'
 import { useT } from '../lib/i18n'
 import {
   getIntegrationsSettings, patchIntegrationsSettings,
@@ -167,9 +169,17 @@ function parseOS(ua) {
 
 const cardBox = { background: 'var(--surface)', border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', overflow: 'hidden' }
 
+// A category for a feature that is switched off is noise ("Task reminders"
+// while task tracking is off). Map category → the feature flag that owns it.
+const CATEGORY_FEATURE = { task_reminder: 'task_tracking' }
+
 export function PushPreferenceCenter() {
   const t = useT()
   const { addToast } = useUIStore()
+  const features = useFeaturesStore(s => s.features)
+  // Web push (the browser card + subscribed-browser list) is not the phone's
+  // channel — the native app uses FCM — so inside the app both are hidden.
+  const native = isNative()
   const [categories,  setCategories]  = useState([])
   const [quietHours,  setQuietHours]  = useState({ enabled: false, start: '23:00', end: '07:00' })
   const [devices,     setDevices]     = useState([])
@@ -243,7 +253,7 @@ export function PushPreferenceCenter() {
     } catch { addToast(t('adminSettings.failedRemove'), 'error') }
   }
 
-  const systemCats = categories.filter(c => c.type === 'system')
+  const systemCats = categories.filter(c => c.type === 'system' && (features[CATEGORY_FEATURE[c.id]] ?? true) !== false)
   const sensorCats = categories.filter(c => c.type === 'sensor')
   const qh         = quietHours
   const pushGranted = 'Notification' in window && Notification.permission === 'granted'
@@ -257,6 +267,7 @@ export function PushPreferenceCenter() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
+      {!native && (
       <div style={cardBox}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 48, padding: '8px 16px', borderBottom: '0.5px solid var(--line)' }}>
           <div style={{ minWidth: 0 }}>
@@ -282,6 +293,7 @@ export function PushPreferenceCenter() {
           >{t('adminSettings.sendTest')}</button>
         </div>
       </div>
+      )}
 
       <div style={cardBox}>
         <div style={{ display: 'flex', alignItems: 'center', minHeight: 48, padding: '8px 16px', borderBottom: qh.enabled ? '0.5px solid var(--line)' : 'none', gap: 12 }}>
@@ -376,13 +388,12 @@ export function PushPreferenceCenter() {
         </div>
       )}
 
+      {!native && devices.length > 0 && (
       <div style={cardBox}>
-        <div style={{ padding: '12px 16px 8px', borderBottom: devices.length > 0 ? '0.5px solid var(--line)' : 'none' }}>
+        <div style={{ padding: '12px 16px 8px', borderBottom: '0.5px solid var(--line)' }}>
           <p className="z-eyebrow">{t('adminSettings.subscribedDevices')}</p>
         </div>
-        {devices.length === 0 ? (
-          <p style={{ fontSize: 13, color: 'var(--ink-mute)', padding: '8px 16px 16px' }}>{t('adminSettings.noDevicesSubbed')}</p>
-        ) : (
+        {(
           devices.map((d, i) => {
             const browser   = parseBrowser(d.user_agent, t)
             const os        = parseOS(d.user_agent)
@@ -407,6 +418,7 @@ export function PushPreferenceCenter() {
           })
         )}
       </div>
+      )}
 
     </div>
   )

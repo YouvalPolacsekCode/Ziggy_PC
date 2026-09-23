@@ -23,10 +23,12 @@ function colorForName(name) {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]
 }
 
-// Hub plumbing that lives in long-term memory next to real facts. The API
-// filters these too (backend/routers/status_router.py) — this is the belt for
-// a phone whose bundle is newer than the hub it talks to.
-const INTERNAL_KEYS = new Set(['home_assistant'])
+// Hub plumbing and onboarding answers that live in long-term memory next to
+// real facts. Settings already owns the language, timezone and names, so they
+// are not offered as "memories" here. The API filters these too
+// (backend/routers/status_router.py) — this is the belt for a phone whose
+// bundle is newer than the hub it talks to.
+const INTERNAL_KEYS = new Set(['home_assistant', 'language', 'home_timezone', 'home_city', 'home_country', 'assistant_name', 'wake_word', 'user_name'])
 export function isInternalMemoryKey(key) {
   return typeof key !== 'string' || INTERNAL_KEYS.has(key) || key.startsWith('_')
 }

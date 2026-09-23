@@ -1187,6 +1187,7 @@ export const bindPermissionRole = (body) => post('/permissions/role-bindings', b
 export const issuePermissionGrant = (body) => post('/permissions/grants', body)
 export const revokePermissionGrant = (grantId, cascade = false) =>
   del(`/permissions/grants/${encodeURIComponent(grantId)}${cascade ? '?cascade=true' : ''}`)
+export const removePermissionPrincipal = (ref) => del(`/permissions/principals/${encodeURIComponent(ref)}`)
 export const whoCanDo = (resourceRef, action) =>
   get(`/permissions/resources/${encodeURIComponent(resourceRef)}/principals?action=${encodeURIComponent(action)}`)
 export const getPermissionAudit = (params = {}) => {

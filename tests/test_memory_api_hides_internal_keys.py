@@ -1,4 +1,4 @@
-"""GET /api/memory must not surface hub plumbing as user facts.
+"""GET /api/memory must not surface hub plumbing or onboarding answers as user facts.
 
 Long-term memory stores `home_assistant: {url: ...}` next to "my dog is Mika".
 Settings → Memory rendered that as a "Home → assistant" card with the bridge
@@ -21,11 +21,19 @@ async def test_home_assistant_record_is_hidden(monkeypatch):
             "_scratch": "x",
             "my dog": "Mika",
             "home_city": "Binyamina",
+            "language": "English",
+            "home_timezone": "Asia/Jerusalem",
+            "assistant_name": "Ziggy",
+            "wake_word": "hey ziggy",
+            "user_name": "Youval",
+            "wife": "Adi",
         },
     )
     res = await status_router.get_memory()
     keys = [e["key"] for e in res["memory"]]
-    assert keys == ["my dog", "home_city"]
+    # Only what a person told Ziggy survives; plumbing and onboarding answers
+    # (owned by Settings) are not memories.
+    assert keys == ["my dog", "wife"]
 
 
 @pytest.mark.asyncio
