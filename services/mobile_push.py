@@ -112,9 +112,56 @@ def _device_belongs_to(device: dict, username: str) -> bool:
     return False
 
 
+def _owner_username(device: dict) -> Optional[str]:
+    """The login email of the account a device is registered to, if resolvable.
+
+    Devices store the account ROW ID (`user_id: "1"`); preferences are keyed by
+    the login email, the same key web-push subscriptions use. Bridging the two
+    is what lets a phone honour the same per-category mute a browser does.
+    """
+    raw = str(device.get("user_id") or "").strip()
+    if not raw:
+        return None
+    if "@" in raw:                      # older device rows stored the email
+        return raw
+    try:
+        from services import auth_db
+        for u in auth_db.list_users():
+            if str(u.get("id")) == raw:
+                return u.get("username")
+    except Exception:
+        return None
+    return None
+
+
+def _category_allows(device: dict, category: str) -> bool:
+    """Honour the owner's per-category push preference on the native path too.
+
+    The category gate lives inside push_notify's web-subscription loop, so it
+    never applied to phones: a category the user muted in Settings →
+    Notifications was still delivered to their device. Today that is masked
+    because anomalies take the web-only fire-and-forget path — route them
+    through the awaited one and the mute would silently stop working.
+
+    Fails OPEN when the owner can't be resolved: a stray notification is a
+    smaller failure than an alert nobody ever sees.
+    """
+    if not category or category == "general":
+        return True
+    owner = _owner_username(device)
+    if not owner:
+        return True
+    try:
+        from services.push_preferences import is_allowed
+        return is_allowed(owner, category)
+    except Exception:
+        return True
+
+
 async def send_to_all(*, title: str, body: str,
                       data: Optional[dict] = None,
-                      exclude_user_id: Optional[str] = None) -> list[dict]:
+                      exclude_user_id: Optional[str] = None,
+                      category: str = "general") -> list[dict]:
     """Fan a push out to every registered mobile device that has a token +
     provider. Used by the shared web-push path so automation/presence/anomaly
     notifications reach native phones too, not just browsers. Best-effort and
@@ -130,6 +177,7 @@ async def send_to_all(*, title: str, body: str,
                if d.get("push_token") and d.get("push_provider")]
     if exclude_user_id:
         targets = [d for d in targets if not _device_belongs_to(d, exclude_user_id)]
+    targets = [d for d in targets if _category_allows(d, category)]
     if not targets:
         return []
     return await asyncio.gather(*[

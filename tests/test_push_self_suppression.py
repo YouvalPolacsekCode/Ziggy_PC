@@ -102,13 +102,20 @@ def test_an_auth_lookup_failure_sends_rather_than_silently_dropping(monkeypatch)
     assert mobile_push._device_belongs_to({"user_id": "1"}, "youval@example.com") is False
 
 
-def test_push_notify_passes_the_exclusion_through_to_native(monkeypatch):
-    """The actual regression: the wrapper dropped the argument on the floor."""
+def test_push_notify_forwards_exclusion_and_category_to_native(monkeypatch):
+    """The actual regression: the wrapper dropped these on the floor.
+
+    Both matter. Without `exclude_user_id` you get told about yourself;
+    without `category` a mute set in Settings → Notifications applies to the
+    browser and not the phone.
+    """
     import services.push_notify as pn
     seen = {}
 
-    async def fake_send_to_all(*, title, body, data=None, exclude_user_id=None):
+    async def fake_send_to_all(*, title, body, data=None,
+                               exclude_user_id=None, category="general"):
         seen["exclude"] = exclude_user_id
+        seen["category"] = category
         return []
 
     monkeypatch.setattr(mobile_push, "send_to_all", fake_send_to_all)
@@ -118,3 +125,52 @@ def test_push_notify_passes_the_exclusion_through_to_native(monkeypatch):
     assert seen.get("exclude") == "youval@example.com", (
         "push_notify stopped forwarding exclude_user_id to the native path"
     )
+    assert seen.get("category") == "presence", (
+        "push_notify stopped forwarding category — per-category mutes would "
+        "hold for browsers and silently not for phones"
+    )
+
+
+# ── Per-category mute must hold on the phone too ────────────────────────────
+
+def test_a_muted_category_is_not_delivered_to_native_devices(devices, monkeypatch):
+    """The gate lived only inside push_notify's web-subscription loop.
+
+    A category switched off in Settings → Notifications still reached the
+    phone. Masked today because anomalies take the web-only fire-and-forget
+    path — route them through the awaited one and the mute silently stops
+    working.
+    """
+    monkeypatch.setattr("services.auth_db.list_users",
+                        lambda: [{"id": 1, "username": "youval@example.com"},
+                                 {"id": 2, "username": "partner@example.com"}])
+    monkeypatch.setattr("services.push_preferences.is_allowed",
+                        lambda user, cat: not (user == "youval@example.com"
+                                               and cat == "anomaly_warning"))
+    _send(category="anomaly_warning")
+    assert devices == ["t-partner"], "a muted category still reached the phone"
+
+
+def test_general_category_is_never_filtered(devices):
+    _send(category="general")
+    assert len(devices) == 3
+
+
+def test_unresolvable_owner_fails_open(devices, monkeypatch):
+    """Better a stray notification than an alert nobody ever sees."""
+    monkeypatch.setattr("services.auth_db.list_users", lambda: [])
+    monkeypatch.setattr("services.push_preferences.is_allowed",
+                        lambda user, cat: False)
+    _send(category="anomaly_critical")
+    assert len(devices) == 3
+
+
+def test_anomalies_default_to_in_app_only():
+    """Product decision 2026-09-23 — anomalies are a wall, not an interruption."""
+    from services.push_preferences import _DEFAULT_PREFS
+    cats = _DEFAULT_PREFS["categories"]
+    assert cats["anomaly_critical"] is False
+    assert cats["anomaly_warning"] is False
+    # The ones that should still interrupt you.
+    assert cats["sensor_alert"] is True
+    assert cats["automation"] is True

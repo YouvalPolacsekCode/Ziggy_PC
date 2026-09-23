@@ -29,6 +29,15 @@ _DEFAULT_PREFS: dict = {
     "categories": {
         **{k: True for k in CATEGORIES},
         "suggestion": False,  # low-urgency; shown in-app, not worth a push by default
+        # Anomalies are a WALL, not an interruption. Every one of them is
+        # already recorded, broadcast over the WS and rendered on the
+        # Dashboard alert list the moment it fires, so a push adds noise
+        # rather than information — and a rule that fires on a door left ajar
+        # can do that several times an evening. Product decision 2026-09-23:
+        # in-app only. Both remain per-user toggles in Settings →
+        # Notifications for anyone who does want them on the phone.
+        "anomaly_critical": False,
+        "anomaly_warning":  False,
     },
     "quiet_hours": {"enabled": False, "start": "23:00", "end": "07:00"},
 }
