@@ -1,4 +1,4 @@
-// Settings → Location must not offer a "Your name" card the hub cannot save.
+// Settings → Account must not offer a "Your name" card the hub cannot save.
 //
 // Why: the household endpoints shipped after release-2026.09.18-4, but the
 // phone's bundle comes from Canary. On a customer hub still on that tag the
@@ -53,7 +53,7 @@ vi.mock('../../lib/api', () => {
   }
 })
 
-import { LocationPage } from '../Settings'
+import { AccountPage } from '../Settings'
 
 function notFound() {
   const e = new Error('Not Found'); e.status = 404; return Promise.reject(e)
@@ -74,19 +74,20 @@ beforeEach(() => {
   api.getAuthStatus.mockResolvedValue({ username: 'youval@example.com', role: 'user' })
 })
 
-describe('LocationPage · "Your name" card', () => {
+describe('AccountPage · "Your name" card', () => {
   it('shows the card when the hub serves the household endpoint', async () => {
     api.getHousehold.mockResolvedValue({ household: [{ username: 'youval@example.com', name: 'Youval' }] })
-    render(<MemoryRouter><LocationPage /></MemoryRouter>)
+    render(<MemoryRouter><AccountPage /></MemoryRouter>)
     await waitFor(() => expect(screen.getByTestId('my-name-card')).toBeInTheDocument())
     expect(screen.getByLabelText('homeSensing.myName.title')).toHaveValue('Youval')
   })
 
   it('hides the card when the hub 404s the household endpoint (older release)', async () => {
     api.getHousehold.mockImplementation(notFound)
-    render(<MemoryRouter><LocationPage /></MemoryRouter>)
-    // Wait for the page to finish loading (the track-me card is always there).
-    await waitFor(() => expect(screen.getByText('homeSensing.trackMe.title')).toBeInTheDocument())
+    render(<MemoryRouter><AccountPage /></MemoryRouter>)
+    // The account form is always there; the name card must not be.
+    await waitFor(() => expect(screen.getByText('settings.changePassword')).toBeInTheDocument())
+    await new Promise(r => setTimeout(r, 50))
     expect(screen.queryByTestId('my-name-card')).not.toBeInTheDocument()
   })
 })

@@ -193,7 +193,9 @@ function BlasterRow({ blaster, onRename, onDelete }) {
 
 // ─── Main section ────────────────────────────────────────────────────────────
 
-export default function BlastersSection() {
+// `onChanged` lets a host page (Devices keeps its own hub count for the
+// collapsible header) refresh after a rename, delete or re-scan.
+export default function BlastersSection({ onChanged } = {}) {
   const t = useT()
   const [blasters, setBlasters] = useState([])
   const [loading, setLoading]   = useState(true)
@@ -224,7 +226,7 @@ export default function BlastersSection() {
     try {
       await patchIrBlaster(id, { name })
       addToast(t('irHubs.renamed'), 'success')
-      load()
+      load(); onChanged?.()
     } catch (e) {
       addToast(e.message || t('irHubs.renameFailed'), 'error')
     }
@@ -240,7 +242,7 @@ export default function BlastersSection() {
           : t('irHubs.deleted'),
         'success',
       )
-      load()
+      load(); onChanged?.()
     } catch (e) {
       addToast(e.message || t('irHubs.deleteFailed'), 'error')
     }
@@ -251,7 +253,7 @@ export default function BlastersSection() {
     try {
       await discoverIrBlasters({ refresh: true })
       addToast(t('irHubs.scanDone'), 'success')
-      load()
+      load(); onChanged?.()
     } catch (e) {
       addToast(e.message || t('irHubs.scanFailed'), 'error')
     } finally {

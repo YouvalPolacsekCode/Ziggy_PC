@@ -1,4 +1,4 @@
-// Settings → Wall tablets.
+// Settings → Wall → paired tablets (embedded by Settings.jsx WallPage).
 //
 // Admin surface for the wall dashboard: pair a new tablet, see which panels
 // are alive, and decide what each one is allowed to do.
@@ -9,8 +9,6 @@
 // a row of switches, and a PIN that gates the dangerous ones.
 
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import {
   listWallTablets, mintWallPairCode, removeWallTablet,
   putWallPolicy, setWallPin,
@@ -162,18 +160,12 @@ function TabletCard({ tablet, onChanged }) {
   )
 }
 
-export default function WallTablets() {
+export default function WallTabletsSection() {
   const t = useT()
-  const navigate = useNavigate()
   const [tablets, setTablets] = useState([])
   const [loading, setLoading] = useState(true)
   const [code, setCode] = useState(null)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    document.title = `Ziggy · ${t('settings.tablets')}`
-    return () => { document.title = 'Ziggy' }
-  }, [t])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -208,28 +200,8 @@ export default function WallTablets() {
   }, [t])
 
   return (
-    <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
-      {/* Same back affordance as every other Settings sub-page. This one
-          used to be the only one without a way back except the browser. */}
-      <button
-        onClick={() => navigate('/settings')}
-        style={{
-          background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-          color: 'var(--ink-mute)', fontSize: 13, fontWeight: 500,
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          minHeight: 40, padding: 0, marginBottom: 8,
-        }}
-      >
-        <ArrowLeft size={18} className="icon-flip-rtl" />
-        {t('settings.title')}
-      </button>
-      <div className="z-page-head">
-        <div>
-          <h1 className="z-display" style={{ margin: 0 }}>{t('settings.tablets')}</h1>
-          <p className="z-subhead" style={{ marginTop: 4 }}>{t('wallTablets.subtitle')}</p>
-        </div>
-      </div>
-
+    <div>
+      <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: '0 0 12px' }}>{t('wallTablets.subtitle')}</p>
       <div style={card}>
         <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)', marginBottom: 4 }}>{t('wallTablets.pairTitle')}</div>
         <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: '0 0 12px' }}>

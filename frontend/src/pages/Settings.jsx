@@ -23,7 +23,7 @@ import { T_STATE, T_ENTER } from '../lib/motion'
 import { PairWithPhone } from '../components/PairWithPhone'
 import { isWallMode, setWallMode as setWallModeFlag } from '../lib/wallMode'
 import { MobileDevicesList } from '../components/MobileDevicesList'
-import BlastersSection from '../components/settings/BlastersSection'
+import WallTabletsSection from './WallTablets'
 import VoiceSection from '../components/settings/VoiceSection'
 import { Card } from '../components/ui/Card'
 import BuildInfo from '../components/settings/BuildInfo'
@@ -43,7 +43,7 @@ import {
   createInvite, listInvites, revokeInvite,
   listExternalTokens, createExternalToken, revokeExternalToken,
   getPresenceZone, savePresenceZone, getPresenceDebug,
-  pingMePresence, getMyPresencePerson, setMyPresenceLanHost,
+  pingMePresence,
   listPresenceZones, createPresenceZone, updatePresenceZone, deletePresenceZone,
   getHousehold, renameHouseholdMember,
 } from '../lib/api'
@@ -448,10 +448,11 @@ function ZigbeeBridgeSection({ isAdmin }) {
 }
 
 // ─── Presence Section (Home Sensing) ──────────────────────────────────────────
-// Trimmed: only Track-my-location, Home zone editor, Additional zones.
-// People list, LAN-probe field, and Presence debug were removed — household
-// members get a presence record auto-created on first /api/presence/me/ping,
-// and the debug card moved to /ops/presence-debug.
+// Track-my-location, Home zone editor, Additional zones. The "Your name" card
+// moved to Account (it is a profile fact). The "phone at home" address field
+// is gone: the Ziggy app reports the phone's LAN address itself and the
+// backend heals a pin that stops answering (services/presence_engine.py
+// heal_lan_host) — nobody should be typing an IP into a settings screen.
 
 function PresenceSection() {
   const t = useT()
@@ -474,23 +475,8 @@ function PresenceSection() {
   const [trackMe,        setTrackMe]        = useState(() => localStorage.getItem(TRACK_ME_KEY) === '1')
   const [trackMeStatus,  setTrackMeStatus]  = useState('idle')
   const [trackMePerson,  setTrackMePerson]  = useState(null)
-  // Your household name (see the card at the top of this section).
-  const [myName,       setMyName]       = useState('')
-  const [myNameSaving, setMyNameSaving] = useState(false)
-  const [myUsername,   setMyUsername]   = useState(null)
-  // The household endpoint shipped after release-2026.09.18-4. The phone's
-  // bundle comes from Canary, so on a customer hub that hasn't taken the next
-  // tag the call 404s — and the card used to render anyway, empty, with a
-  // Save that always failed. Only show it once the hub has answered.
-  const [householdOk,  setHouseholdOk]  = useState(false)
   const watchIdRef = useRef(null)
   const lastPingRef = useRef(0)
-
-  // ── "Phone at home" — LAN-reachability presence (keeps you 'home' while the
-  //    app is closed, so leaving is detected cleanly against a solid baseline) ─
-  const [lanHost,        setLanHost]        = useState('')
-  const [lanSuggestion,  setLanSuggestion]  = useState('')
-  const [lanSaving,      setLanSaving]      = useState(false)
 
   const stopWatch = () => {
     if (watchIdRef.current != null && navigator.geolocation) {
@@ -551,58 +537,7 @@ function PresenceSection() {
       const z = await listPresenceZones()
       setExtraZones(z.zones ?? [])
     } catch { setExtraZones([]) }
-    try {
-      const me = await getMyPresencePerson()
-      setLanHost(me?.person?.lan_host || '')
-      setLanSuggestion(me?.person?.lan_host_suggested || '')
-      if (me?.person?.name) setMyName(me.person.name)
-      if (me?.person?.linked_user) setMyUsername(me.person.linked_user)
-    } catch {}
-    // The name field must work even for someone whose phone has never
-    // reported (no person record yet, so /my-person 404s) — the household
-    // list always has them, flagged as their own row by username.
-    try {
-      const auth = await getAuthStatus()
-      const uname = auth?.username || auth?.user?.username || null
-      if (uname) {
-        setMyUsername(prev => prev || uname)
-        const hh = await getHousehold()
-        setHouseholdOk(true)
-        const mine = (hh?.household || []).find(m => (m.username || '').toLowerCase() === uname.toLowerCase())
-        if (mine?.name) setMyName(prev => prev || mine.name)
-      }
-    } catch {}
     finally { setLoading(false) }
-  }
-
-  const saveMyName = async () => {
-    const name = myName.trim()
-    if (!name || !myUsername) return
-    setMyNameSaving(true)
-    try {
-      const res = await renameHouseholdMember(myUsername, name)
-      addToast(
-        res?.automations_updated
-          ? t('homeSensing.myName.savedWithAutomations', { n: res.automations_updated })
-          : t('homeSensing.myName.saved'),
-        'success',
-      )
-    } catch (e) {
-      addToast(e.message || t('homeSensing.myName.saveFailed'), 'error')
-    } finally { setMyNameSaving(false) }
-  }
-
-  const saveLanHost = async (value) => {
-    const host = (value ?? lanHost).trim()
-    setLanSaving(true)
-    try {
-      await setMyPresenceLanHost(host)
-      setLanHost(host)
-      setLanSuggestion('')
-      addToast(host ? t('homeSensing.phoneAtHome.saved') : t('homeSensing.phoneAtHome.cleared'), 'success')
-    } catch (e) {
-      addToast(e.message || t('homeSensing.phoneAtHome.saveFailed'), 'error')
-    } finally { setLanSaving(false) }
   }
 
   const addZone = async () => {
@@ -694,39 +629,6 @@ function PresenceSection() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-      {/* Your name — what the household calls you, and the label automations
-          pick from ("when Youval gets home"). Accounts created before invites
-          captured a name derive one from the email, which is how you end up
-          called "Silentyouval"; this is where you fix that. Renaming moves
-          the presence record and any automation naming you along with it. */}
-      {householdOk && (
-      <div data-testid="my-name-card" style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
-        <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div>
-            <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.myName.title')}</p>
-            <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, lineHeight: 1.5 }} dir="auto">
-              {t('homeSensing.myName.desc')}
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Input
-                value={myName}
-                onChange={e => setMyName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') saveMyName() }}
-                placeholder={t('homeSensing.myName.placeholder')}
-                aria-label={t('homeSensing.myName.title')}
-                dir="auto"
-              />
-            </div>
-            <button onClick={saveMyName} disabled={myNameSaving || !myName.trim()} className="z-btn-secondary">
-              {myNameSaving ? t('common.saving') : t('common.save')}
-            </button>
-          </div>
-        </div>
-      </div>
-      )}
-
       {/* Track my location card */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 48, padding: '8px 16px' }}>
@@ -746,42 +648,6 @@ function PresenceSection() {
             </p>
           </div>
           <Toggle checked={trackMe} onCheckedChange={toggleTrackMe} aria-label={t('homeSensing.trackMe.title')} />
-        </div>
-      </div>
-
-      {/* Phone-at-home (LAN reachability) card */}
-      <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
-        <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div>
-            <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.phoneAtHome.title')}</p>
-            <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, lineHeight: 1.5 }} dir="auto">
-              {t('homeSensing.phoneAtHome.desc')}
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Input
-                value={lanHost}
-                onChange={e => setLanHost(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') saveLanHost() }}
-                dir="ltr"
-                placeholder={t('homeSensing.phoneAtHome.placeholder')}
-                aria-label={t('homeSensing.phoneAtHome.title')}
-              />
-            </div>
-            <button onClick={() => saveLanHost()} disabled={lanSaving} className="z-btn-primary" style={{ flexShrink: 0 }}>
-              {lanSaving ? '…' : t('homeSensing.phoneAtHome.save')}
-            </button>
-          </div>
-          {lanSuggestion && lanSuggestion !== lanHost && (
-            <button onClick={() => saveLanHost(lanSuggestion)} disabled={lanSaving}
-                    style={{ ...ghostText, alignSelf: 'flex-start', padding: 0 }} dir="auto">
-              {t('homeSensing.phoneAtHome.useSuggestion', { ip: lanSuggestion })}
-            </button>
-          )}
-          <p style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5 }} dir="auto">
-            {t('homeSensing.phoneAtHome.tip')}
-          </p>
         </div>
       </div>
 
@@ -983,9 +849,95 @@ function PresenceDebugCard() {
   )
 }
 
-// ─── Users & Access Section ───────────────────────────────────────────────────
+// ─── Your name — what the household calls you ─────────────────────────────────
+// The label automations pick from ("when Youval gets home"). Accounts created
+// before invites captured a name derive one from the email, which is how you
+// end up called "Silentyouval"; this is where you fix that. Renaming moves the
+// presence record and any automation naming you along with it.
+//
+// The household endpoint shipped after release-2026.09.18-4. The phone's
+// bundle comes from Canary, so on a customer hub that hasn't taken the next
+// tag the call 404s — the card used to render anyway, empty, with a Save that
+// always failed. It renders only once the hub has answered.
 
-function UsersAndAccessSection({ currentUsername }) {
+function MyNameCard() {
+  const t = useT()
+  const { addToast } = useUIStore()
+  const [ready,    setReady]    = useState(false)
+  const [name,     setName]     = useState('')
+  const [username, setUsername] = useState(null)
+  const [saving,   setSaving]   = useState(false)
+
+  useEffect(() => {
+    let live = true
+    ;(async () => {
+      try {
+        const auth = await getAuthStatus()
+        const uname = auth?.username || auth?.user?.username || null
+        if (!uname) return
+        const hh = await getHousehold()
+        if (!live) return
+        setUsername(uname)
+        const mine = (hh?.household || []).find(m => (m.username || '').toLowerCase() === uname.toLowerCase())
+        if (mine?.name) setName(mine.name)
+        setReady(true)
+      } catch { /* hub without the endpoint: stay hidden */ }
+    })()
+    return () => { live = false }
+  }, [])
+
+  const save = async () => {
+    const n = name.trim()
+    if (!n || !username) return
+    setSaving(true)
+    try {
+      const res = await renameHouseholdMember(username, n)
+      addToast(
+        res?.automations_updated
+          ? t('homeSensing.myName.savedWithAutomations', { n: res.automations_updated })
+          : t('homeSensing.myName.saved'),
+        'success',
+      )
+    } catch (e) {
+      addToast(e.message || t('homeSensing.myName.saveFailed'), 'error')
+    } finally { setSaving(false) }
+  }
+
+  if (!ready) return null
+  return (
+    <Card data-testid="my-name-card">
+      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div>
+          <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.myName.title')}</p>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, lineHeight: 1.5 }} dir="auto">
+            {t('homeSensing.myName.desc')}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') save() }}
+              placeholder={t('homeSensing.myName.placeholder')}
+              aria-label={t('homeSensing.myName.title')}
+              dir="auto"
+            />
+          </div>
+          <button onClick={save} disabled={saving || !name.trim()} className="z-btn-secondary">
+            {saving ? t('common.saving') : t('common.save')}
+          </button>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// ─── Users & Access Section — login accounts, roles, invites ──────────────────
+// Rendered on the People page (super admins only; the backend 403s anyone
+// else). Exported because People.jsx composes it.
+
+export function UsersAndAccessSection({ currentUsername }) {
   const t = useT()
   const { addToast } = useUIStore()
   const [users,        setUsers]        = useState([])
@@ -1493,7 +1445,10 @@ export function AccountPage() {
 
   return (
     <SettingsPageWrapper title={t('settings.account')}>
-      <AccountForms username={username} role={role} logout={logout} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <MyNameCard />
+        <AccountForms username={username} role={role} logout={logout} />
+      </div>
     </SettingsPageWrapper>
   )
 }
@@ -1523,43 +1478,61 @@ export function LocationPage() {
   )
 }
 
-export function UsersPage() {
-  const t = useT()
-  const role = useAuthStore(s => s.role)
-  const [username, setUsername] = useState('')
-  useEffect(() => {
-    getAuthStatus().then(a => setUsername(a?.username || '')).catch(() => {})
-  }, [])
-  if (!hasRole(role, 'super_admin')) {
-    return (
-      <SettingsPageWrapper title={t('settings.usersAndAccess')}>
-        <p style={{ fontSize: 13, color: 'var(--ink-mute)', padding: 12 }}>{t('adminSettings.superAdminOnly')}</p>
-      </SettingsPageWrapper>
-    )
-  }
-  return (
-    <SettingsPageWrapper title={t('settings.usersAndAccess')}>
-      <UsersAndAccessSection currentUsername={username} />
-    </SettingsPageWrapper>
-  )
-}
+// ─── Ziggy — the assistant itself: voice, memory, external assistants ─────────
 
-export function MemoryPage() {
+export function ZiggyPage() {
   const t = useT()
+  const [showAssistants, setShowAssistants] = useState(false)
   return (
-    <SettingsPageWrapper title={t('settings.memory')}>
-      <div style={{ borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', padding: 12 }}>
-        <MemoryPanel />
+    <SettingsPageWrapper title={t('settings.ziggy')}>
+      <SectionTitle icon={Volume2}>{t('settings.voice')}</SectionTitle>
+      <VoiceSection />
+
+      <div style={{ marginTop: 24 }}>
+        <SectionTitle icon={Cloud}>{t('settings.memory')}</SectionTitle>
+        <div style={{ borderRadius: 'var(--r-card)', background: 'var(--surface)', border: '0.5px solid var(--line)', padding: 12 }}>
+          <MemoryPanel />
+        </div>
+      </div>
+
+      {/* Power-user feature: one revoked probe token across the fleet. It stays
+          reachable but collapsed so the page reads as voice + memory. */}
+      <div style={{ marginTop: 24 }}>
+        <button
+          onClick={() => setShowAssistants(v => !v)}
+          aria-expanded={showAssistants}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 48, padding: '8px 0', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'start' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Bot size={16} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
+            <span className="z-eyebrow">{t('settings.assistants')}</span>
+          </div>
+          <ChevronDown size={18} style={{ color: 'var(--ink-faint)', transform: showAssistants ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-state) var(--ease-standard)' }} />
+        </button>
+        {!showAssistants && (
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: 0 }}>{t('settings.assistantsSub')}</p>
+        )}
+        {showAssistants && <ExternalAssistantsSection />}
       </div>
     </SettingsPageWrapper>
   )
 }
 
-export function IrHubsPage() {
+// ─── Wall — this device as a wall, and the paired wall tablets ────────────────
+
+export function WallPage() {
   const t = useT()
+  const role = useAuthStore(s => s.role)
   return (
-    <SettingsPageWrapper title={t('settings.irHubs')}>
-      <BlastersSection />
+    <SettingsPageWrapper title={t('settings.wall')}>
+      <SectionTitle icon={Monitor}>{t('settings.wallThisDevice')}</SectionTitle>
+      <WallModeCard />
+      {hasRole(role, 'super_admin') && (
+        <div style={{ marginTop: 24 }}>
+          <SectionTitle icon={Smartphone}>{t('settings.wallTablets')}</SectionTitle>
+          <WallTabletsSection />
+        </div>
+      )}
     </SettingsPageWrapper>
   )
 }
@@ -1776,24 +1749,6 @@ function ExternalAssistantsSection() {
   )
 }
 
-export function AssistantsPage() {
-  const t = useT()
-  return (
-    <SettingsPageWrapper title={t('settings.assistants')}>
-      <ExternalAssistantsSection />
-    </SettingsPageWrapper>
-  )
-}
-
-export function VoicePage() {
-  const t = useT()
-  return (
-    <SettingsPageWrapper title={t('settings.voice')}>
-      <VoiceSection />
-    </SettingsPageWrapper>
-  )
-}
-
 // ─── /ops sub-pages — wrapped by App.jsx's OpsPageWrapper, no extra chrome ──
 
 export function SystemDiagnosticsPage() {
@@ -1874,7 +1829,7 @@ export default function Settings() {
   const musicEnabled = useFeature('media_music')
 
   const isAdmin      = hasRole(role, 'admin')
-  const isSuperAdmin = hasRole(role, 'super_admin')
+  const isSuperAdmin = hasRole(role, 'super_admin')   // ops console link only
 
   useEffect(() => {
     getAuthStatus().then(a => { if (a?.role) setRole(a.role) }).catch(() => {})
@@ -1904,16 +1859,8 @@ export default function Settings() {
         {isAdmin && (
           <HubCard icon={Users}     title={t('settings.people')}          subtitle={t('settings.peopleSub')}          to="/settings/people" />
         )}
-        <HubCard icon={Cloud}       title={t('settings.memory')}          subtitle={t('settings.memorySub')}          to="/settings/memory" />
-        <HubCard icon={Bot}         title={t('settings.assistants')}      subtitle={t('settings.assistantsSub')}      to="/settings/assistants" />
-        <HubCard icon={Volume2}     title={t('settings.voice')}           subtitle={t('settings.voiceSub')}           to="/settings/voice" />
-        {isAdmin && (
-          <HubCard icon={Radio}     title={t('settings.irHubs')}          subtitle={t('settings.irHubsSub')}          to="/settings/ir-hubs" />
-        )}
-        {isSuperAdmin && (
-          <HubCard icon={Monitor}   title={t('settings.tablets')}         subtitle={t('settings.tabletsSub')}         to="/settings/tablets" />
-        )}
-        <WallModeCard />
+        <HubCard icon={Bot}         title={t('settings.ziggy')}           subtitle={t('settings.ziggySub')}           to="/settings/ziggy" />
+        <HubCard icon={Monitor}     title={t('settings.wall')}            subtitle={t('settings.wallSub')}            to="/settings/wall" />
         {musicEnabled && (
           <HubCard icon={Activity}  title={t('media.settingsLinkTitle')}  subtitle={t('media.settingsLinkSubtitle')}  to="/settings/music" />
         )}

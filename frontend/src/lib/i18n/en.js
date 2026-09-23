@@ -2903,8 +2903,7 @@ export default {
 
   'settings.mobileApp':           'Ziggy Home (mobile)',
   'settings.display':             'Display',
-  'settings.location':            'Location',
-  'settings.usersAndAccess':      'Users & access',
+  'settings.location':            'Presence & phones',
   'settings.memory':              'Memory',
   'settings.advanced':            'Advanced',
   'settings.build.title':    'Version',
@@ -2919,12 +2918,8 @@ export default {
   'settings.accountSub':          'Profile, password, sign out',
   'settings.notificationsSub':    'Push alerts, quiet hours, per-sensor rules',
   'settings.displaySub':          'Theme, language and timezone',
-  'settings.locationSub':         'Zones, tracking, phone pairing',
-  'settings.memorySub':           'What Ziggy remembers about you',
-  'settings.irHubs':              'IR hubs',
-  'settings.irHubsSub':           'Broadlink and other infrared remote bridges',
+  'settings.locationSub':         'Track this phone, home zone, paired phones',
   'settings.voice':               'Voice & speech',
-  'settings.voiceSub':            'Pick the voice Ziggy uses for replies',
   // External assistants (Settings → External assistants) — outside tools
   // driving this home through Ziggy. "Access code", never "token".
   'settings.assistants':          'External assistants',
@@ -4239,7 +4234,7 @@ export default {
 
   // ── Devices page section headings (unassigned / no-room) ───────────────
   'devices.unassignedTitle':            'Devices not assigned to any room',
-  'devices.irBlastersTitle':            'IR Blasters',
+  'devices.irBlastersTitle':            'IR hubs',
   'devices.unassignedHint':             'Use "Assign to room" on each card to organize them.',
   'devices.noRoomTitle':                'Devices with no room',
   'devices.noRoomHint':                 'These devices are intentionally left without a room. Use the ··· menu to assign one.',
@@ -4392,15 +4387,6 @@ export default {
   'homeSensing.trackMe.pinging':         'Updating location…',
   'homeSensing.trackMe.activeOther':     'Active · {status}',
   'homeSensing.trackMe.off':             'Off — turn on to let this device report its GPS to Ziggy',
-  'homeSensing.phoneAtHome.title':       'My phone at home',
-  'homeSensing.phoneAtHome.desc':        'Ziggy checks whether your phone is on the home Wi-Fi to know you\'re home — even with the app closed. In the app this sets up automatically; you only need this field to override the address by hand.',
-  'homeSensing.phoneAtHome.placeholder': 'auto — or type an IP / name.local',
-  'homeSensing.phoneAtHome.save':        'Save',
-  'homeSensing.phoneAtHome.saved':       'Saved — Ziggy will watch for your phone on Wi-Fi',
-  'homeSensing.phoneAtHome.cleared':     'Back to automatic',
-  'homeSensing.phoneAtHome.saveFailed':  'Couldn\'t save — check the address',
-  'homeSensing.phoneAtHome.useSuggestion': 'Use {ip} (your phone\'s current address)',
-  'homeSensing.phoneAtHome.tip':         'Usually detected automatically in the app. Type an address only to override it; clear it to go back to automatic. A fixed address (router DHCP reservation) is the most reliable.',
   'homeSensing.homeZone.title':          'Home zone',
   'homeSensing.homeZone.summary':        '{lat}, {lon} · {radius}m radius',
   'homeSensing.homeZone.detected':       'Using detected location ({lat}, {lon}) — save to confirm',
@@ -4851,8 +4837,6 @@ export default {
   // ── Settings review 2026-09-23: IR hubs, wall tablets, people, and keys that were referenced but never defined ──
   'settings.people': 'People & Access',
   'settings.peopleSub': 'Members, roles and what each person can control',
-  'settings.tablets': 'Wall tablets',
-  'settings.tabletsSub': 'Pair wall dashboards and set what each one may control',
   'settings.deviceIcons': 'Device icons',
   'settings.deviceIconsEmoji': 'Emoji (default)',
   'settings.deviceIconsLine': 'Line — flat',
@@ -4948,7 +4932,6 @@ export default {
   'wallTablets.capHint.devices': 'Open the device list and pair new hardware',
   'wallTablets.capHint.settings': 'Change hub settings from the wall',
   'people.subtitle': 'Set what each person can control. Every decision below is computed by the policy engine.',
-  'people.manageAccounts': 'Manage login accounts',
   'people.adminsOnlyTitle': 'Admins only',
   'people.adminsOnlyBody': 'Managing people and permissions is limited to the home\'s owner and admins.',
   'people.loadFailed': 'Could not load permissions.',
@@ -5033,4 +5016,12 @@ export default {
   'people.recentDecisions': 'Recent decisions',
   'people.attributed': 'attributed',
   'webOnboard.locationAppNote': 'Automatic arrive/leave (turning things on as you get home) needs the Ziggy app on your phone — you can set that up later.',
+  // ── Settings simplification 2026-09-23 ──
+  'settings.ziggy': 'Ziggy',
+  'settings.ziggySub': 'Voice, memory and external assistants',
+  'settings.wall': 'Wall',
+  'settings.wallSub': 'Use this device as a wall, and manage wall tablets',
+  'settings.wallThisDevice': 'This device',
+  'settings.wallTablets': 'Paired tablets',
+  'people.accountsSection': 'Login accounts',
 }

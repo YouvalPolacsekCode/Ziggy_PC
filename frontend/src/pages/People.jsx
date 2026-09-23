@@ -25,6 +25,8 @@ import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { T_ENTER } from '../lib/motion'
 import { useT } from '../lib/i18n'
+import { useAuthStore } from '../stores/authStore'
+import { UsersAndAccessSection } from './Settings'
 
 // Presets, actions and obligations are engine vocabulary; each maps to an i18n
 // key so the Hebrew screen reads as a product, not as a policy dump.
@@ -208,6 +210,7 @@ export default function People() {
 
   return (
     <Shell>
+      <LoginAccounts />
       <div className="perm-grid">
         <div className="perm-col" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={card}>
@@ -279,6 +282,25 @@ export default function People() {
   )
 }
 
+// Login accounts (username, role, invites) used to be a separate page reached
+// through a side link. They are the same humans as the cards below, so they
+// live here — super admins only, because the backend 403s everyone else.
+function LoginAccounts() {
+  const t = useT()
+  const role = useAuthStore(s => s.role)
+  const [username, setUsername] = useState('')
+  useEffect(() => {
+    import('../lib/api').then(({ getAuthStatus }) => getAuthStatus().then(a => setUsername(a?.username || '')).catch(() => {}))
+  }, [])
+  if (role !== 'super_admin') return null
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('people.accountsSection')}</p>
+      <UsersAndAccessSection currentUsername={username} />
+    </div>
+  )
+}
+
 function Shell({ children }) {
   const t = useT()
   return (
@@ -293,12 +315,7 @@ function Shell({ children }) {
           <h1 className="z-display" style={{ margin: 0 }}>{t('settings.people')}</h1>
           <p className="z-subhead" style={{ marginTop: 4 }}>{t('people.subtitle')}</p>
         </div>
-        <Link to="/settings/users" className="z-link-quiet" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 40,
-          fontSize: 13, fontWeight: 500, color: 'var(--ink)', textDecoration: 'none', whiteSpace: 'nowrap', gap: 4 }}>
-          {t('people.manageAccounts')} <ChevronRight size={18} className="icon-flip-rtl" />
-        </Link>
       </div>
-      <style>{`.z-link-quiet:hover{text-decoration:underline}`}</style>
       {children}
     </div>
   )

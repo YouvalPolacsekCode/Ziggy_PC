@@ -26,6 +26,7 @@ import { cn, entityDisplayName } from '../lib/utils'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PairingWizard } from '../components/PairingWizard'
 import IRWizard from '../components/IRWizard'
+import BlastersSection from '../components/settings/BlastersSection'
 import UnassignedSignalsPanel from '../components/UnassignedSignalsPanel'
 import { getRoomPhoto } from '../lib/roomPhotos'
 import { useT, useLang, translateNamePhrase } from '../lib/i18n'
@@ -2822,35 +2823,19 @@ export default function Devices() {
         ))}
       </div>
 
-      {/* IR Blasters — collapsible status strip (infrastructure, not control
-          tiles). Collapsed by default; the only place blasters are surfaced.
-          Rows are display-only — no navigation. */}
+      {/* IR hubs — collapsible group (infrastructure, not control tiles).
+          Collapsed by default. This is THE place a hub is managed: status,
+          rename, remove, and a re-scan for the day DHCP moves it. It used to
+          live on an unrouted Settings page; a hub is a device, so it's here. */}
       {domain === 'all' && blasters.length > 0 && (
         <CollapsibleGroup
-          label={t('devices.irBlastersTitle') || 'IR Blasters'}
+          label={t('devices.irBlastersTitle')}
           count={blasters.length}
           open={blastersOpen}
           onToggle={() => setBlastersOpen(v => !v)}
         >
-          <div data-motion-stagger="" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
-            {blasters.map(b => {
-              const host = b.ip || b.last_seen_ip || ''
-              const color = b.status === 'online' ? 'var(--ok)' : b.status === 'stale' ? 'var(--warn)' : 'var(--err)'
-              return (
-                <div
-                  key={b.id}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 11,
-                    background: 'var(--surface)', border: '0.5px solid var(--line)' }}
-                >
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p dir="auto" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</p>
-                    {host && <p style={{ fontSize: 11, color: 'var(--ink-mute)' }}>{host}</p>}
-                  </div>
-                  <Zap size={14} style={{ color: 'var(--ink-faint)', flexShrink: 0 }} />
-                </div>
-              )
-            })}
+          <div style={{ marginBottom: 8 }}>
+            <BlastersSection onChanged={loadBlasters} />
           </div>
         </CollapsibleGroup>
       )}

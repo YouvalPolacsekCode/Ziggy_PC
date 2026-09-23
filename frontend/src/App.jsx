@@ -31,11 +31,11 @@ const DisplayPage      = lazy(() => import('./pages/Settings').then(m => ({ defa
 const AccountPage      = lazy(() => import('./pages/Settings').then(m => ({ default: m.AccountPage })))
 const NotificationsPage = lazy(() => import('./pages/Settings').then(m => ({ default: m.NotificationsPage })))
 const LocationPage     = lazy(() => import('./pages/Settings').then(m => ({ default: m.LocationPage })))
-const UsersPage        = lazy(() => import('./pages/Settings').then(m => ({ default: m.UsersPage })))
-const MemoryPage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.MemoryPage })))
-const AssistantsPage   = lazy(() => import('./pages/Settings').then(m => ({ default: m.AssistantsPage })))
-const VoicePage        = lazy(() => import('./pages/Settings').then(m => ({ default: m.VoicePage })))
-const IrHubsPage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.IrHubsPage })))
+// 2026-09-23 simplification: Voice + Memory + External assistants are one
+// "Ziggy" page; Wall tablets + the wall-mode toggle are one "Wall" page; login
+// accounts live on People; IR hubs live on Devices. Old URLs redirect below.
+const ZiggyPage        = lazy(() => import('./pages/Settings').then(m => ({ default: m.ZiggyPage })))
+const WallPage         = lazy(() => import('./pages/Settings').then(m => ({ default: m.WallPage })))
 // Ops sub-pages migrated out of the old /admin route during the 2026-06 refactor
 const SystemDiagnosticsPage = lazy(() => import('./pages/Settings').then(m => ({ default: m.SystemDiagnosticsPage })))
 const PresenceDebugPage     = lazy(() => import('./pages/Settings').then(m => ({ default: m.PresenceDebugPage })))
@@ -60,7 +60,6 @@ const MediaSettings     = lazy(() => import('./pages/MediaSettings'))
 // Wall dashboard (tablet). Lazy so none of it — grid engine, modules, CSS —
 // ships in the bundle a phone or browser downloads.
 const Wall              = lazy(() => import('./pages/Wall'))
-const WallTablets       = lazy(() => import('./pages/WallTablets'))
 const MediaDiagnostics  = lazy(() => import('./pages/MediaDiagnostics'))
 // Public client-facing marketing site. Lazy so none of it ships in the
 // authenticated app's initial bundle — only the /welcome branch in App() loads it.
@@ -628,17 +627,17 @@ function AppRoutes() {
         <Route path="settings/language"      element={<Navigate to="/settings/display" replace />} />
         <Route path="settings/home-sensing"  element={<Navigate to="/settings/location" replace />} />
         <Route path="settings/mobile"        element={<Navigate to="/settings/location" replace />} />
-        <Route path="settings/users"         element={<UsersPage />} />
         <Route path="settings/people"        element={<People />} />
         <Route path="people"                 element={<Navigate to="/settings/people" replace />} />
-        <Route path="settings/memory"        element={<MemoryPage />} />
-        <Route path="settings/assistants"    element={<AssistantsPage />} />
-        <Route path="settings/voice"         element={<VoicePage />} />
-        {/* IR hubs: the only place a blaster can be renamed, removed or
-            re-scanned after a DHCP move. Exported for months with no route. */}
-        <Route path="settings/ir-hubs"       element={<IrHubsPage />} />
-        {/* Wall dashboard tablet management (additive) */}
-        <Route path="settings/tablets"       element={<WallTablets />} />
+        <Route path="settings/ziggy"         element={<ZiggyPage />} />
+        <Route path="settings/wall"          element={<WallPage />} />
+        {/* 2026-09-23 simplification — old sub-page URLs keep working. */}
+        <Route path="settings/users"         element={<Navigate to="/settings/people" replace />} />
+        <Route path="settings/memory"        element={<Navigate to="/settings/ziggy" replace />} />
+        <Route path="settings/assistants"    element={<Navigate to="/settings/ziggy" replace />} />
+        <Route path="settings/voice"         element={<Navigate to="/settings/ziggy" replace />} />
+        <Route path="settings/tablets"       element={<Navigate to="/settings/wall" replace />} />
+        <Route path="settings/ir-hubs"       element={<Navigate to="/devices" replace />} />
         <Route path="alerts" element={<Anomalies />} />
         <Route path="suggestions" element={<Suggestions />} />
         <Route path="anomalies" element={<Navigate to="/alerts" replace />} />
@@ -647,7 +646,7 @@ function AppRoutes() {
             /quick-asks routes were removed. Old bookmarks redirect to the
             nearest replacement so they don't 404 silently. */}
         <Route path="admin"           element={<Navigate to="/settings" replace />} />
-        <Route path="memory"          element={<Navigate to="/settings/memory" replace />} />
+        <Route path="memory"          element={<Navigate to="/settings/ziggy" replace />} />
         <Route path="virtual-devices" element={<Navigate to="/settings" replace />} />
         <Route path="quick-asks"      element={<Navigate to="/actions" replace />} />
         {mediaMusicEnabled && (

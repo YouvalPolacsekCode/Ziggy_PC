@@ -21,16 +21,29 @@ function namedExports(file) {
   return [...src.matchAll(/^export function ([A-Z][A-Za-z0-9]*)\(/gm)].map(m => m[1])
 }
 
-describe('Settings sub-page exports are mounted', () => {
+// Every source file except the one being checked, for "does anyone import it".
+function otherSources(except) {
+  const out = []
+  const walk = (dir) => {
+    for (const name of fs.readdirSync(dir)) {
+      const p = path.join(dir, name)
+      if (fs.statSync(p).isDirectory()) { if (name !== '__tests__') walk(p) }
+      else if (/\.jsx?$/.test(name) && path.resolve(p) !== path.resolve(PAGES, except)) out.push(fs.readFileSync(p, 'utf8'))
+    }
+  }
+  walk(path.resolve(PAGES, '..'))
+  return out.join('\n')
+}
+
+describe('Settings exports are reachable', () => {
   for (const file of ['Settings.jsx', 'AdminSettings.jsx']) {
-    it(`${file}: every named export is referenced by App.jsx`, () => {
-      const unrouted = namedExports(file).filter(name => {
-        // A sub-component consumed by another page (PushPreferenceCenter) is
-        // not a page; only things App.jsx should mount are checked.
-        if (name === 'PushPreferenceCenter') return false
-        return !new RegExp(`\\b${name}\\b`).test(APP)
+    it(`${file}: every *Page export is routed by App.jsx; every other export is imported somewhere`, () => {
+      const others = otherSources(file)
+      const dead = namedExports(file).filter(name => {
+        const used = name.endsWith('Page') ? APP : others
+        return !new RegExp(`\\b${name}\\b`).test(used)
       })
-      expect(unrouted, `exported but never mounted: ${unrouted.join(', ')}`).toEqual([])
+      expect(dead, `exported but never mounted or imported: ${dead.join(', ')}`).toEqual([])
     })
   }
 })
