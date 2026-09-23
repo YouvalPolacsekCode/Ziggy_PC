@@ -14,7 +14,7 @@ import { useEffect, useState, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Sun, Moon, User, Lock, LogOut, RefreshCw,
+  Sun, Moon, User, Lock, LogOut,
   Plus, Trash2, Wifi, Shield, Users, MapPin,
   Radio, Cloud, Activity, Check, Copy, Zap,
   Smartphone, Bell, ArrowLeft, ChevronRight, ChevronDown, CheckCircle2,
@@ -64,13 +64,22 @@ const LANGUAGES = LANGS
 // Role tint is read at 13px inside a chip, so only text-safe tokens: the
 // owner is plain ink (no accent for decoration), a user is ok-text, a guest
 // is muted. Admin sits between owner and user as ink-2.
-const ROLE_LABELS = {
-  super_admin: { label: 'Super Admin', color: 'var(--ink)' },
-  admin:       { label: 'Admin',       color: 'var(--ink-2)' },
-  user:        { label: 'User',        color: 'var(--ok-text)' },
-  guest:       { label: 'Guest',       color: 'var(--ink-mute)' },
+const ROLE_COLORS = {
+  super_admin: 'var(--ink)',
+  admin:       'var(--ink-2)',
+  user:        'var(--ok-text)',
+  guest:       'var(--ink-mute)',
+}
+const ROLE_KEYS = {
+  super_admin: 'settings.roleSuperAdmin',
+  admin:       'settings.roleAdmin',
+  user:        'settings.roleUser',
+  guest:       'settings.roleGuest',
 }
 const ROLE_ORDER_FE = { guest: 0, user: 1, admin: 2, super_admin: 3 }
+const roleLabel = (t, role) => (ROLE_KEYS[role] ? t(ROLE_KEYS[role]) : role)
+const roleColor = (role) => ROLE_COLORS[role] || 'var(--ink-mute)'
+const roleOptions = (t) => Object.keys(ROLE_KEYS).map(value => ({ value, label: t(ROLE_KEYS[value]) }))
 
 function hasRole(userRole, minRole) {
   return (ROLE_ORDER_FE[userRole] ?? 0) >= (ROLE_ORDER_FE[minRole] ?? 999)
@@ -469,6 +478,11 @@ function PresenceSection() {
   const [myName,       setMyName]       = useState('')
   const [myNameSaving, setMyNameSaving] = useState(false)
   const [myUsername,   setMyUsername]   = useState(null)
+  // The household endpoint shipped after release-2026.09.18-4. The phone's
+  // bundle comes from Canary, so on a customer hub that hasn't taken the next
+  // tag the call 404s — and the card used to render anyway, empty, with a
+  // Save that always failed. Only show it once the hub has answered.
+  const [householdOk,  setHouseholdOk]  = useState(false)
   const watchIdRef = useRef(null)
   const lastPingRef = useRef(0)
 
@@ -553,6 +567,7 @@ function PresenceSection() {
       if (uname) {
         setMyUsername(prev => prev || uname)
         const hh = await getHousehold()
+        setHouseholdOk(true)
         const mine = (hh?.household || []).find(m => (m.username || '').toLowerCase() === uname.toLowerCase())
         if (mine?.name) setMyName(prev => prev || mine.name)
       }
@@ -592,8 +607,8 @@ function PresenceSection() {
 
   const addZone = async () => {
     const name = zoneNewName.trim()
-    if (!name) { addToast('Name is required', 'error'); return }
-    if (!navigator.geolocation) { addToast('Geolocation not available — open this in Ziggy on a device', 'error'); return }
+    if (!name) { addToast(t('settings.zoneNameRequired'), 'error'); return }
+    if (!navigator.geolocation) { addToast(t('settings.geoUnavailableDevice'), 'error'); return }
     setZoneAdding(true)
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
@@ -606,11 +621,11 @@ function PresenceSection() {
           })
           setZoneNewName('')
           await load()
-          addToast(`Zone '${name}' created at your current location`, 'success')
-        } catch (e) { addToast(e.message || 'Failed to create zone', 'error') }
+          addToast(t('settings.zoneCreated', { name }), 'success')
+        } catch (e) { addToast(e.message || t('settings.zoneCreateFailed'), 'error') }
         finally { setZoneAdding(false) }
       },
-      () => { addToast('Could not get current location — set lat/lon manually after creating', 'error'); setZoneAdding(false) },
+      () => { addToast(t('settings.zoneCouldNotLocate'), 'error'); setZoneAdding(false) },
       { enableHighAccuracy: true, timeout: 10000 },
     )
   }
@@ -629,22 +644,22 @@ function PresenceSection() {
       })
       setEditingZoneId(null)
       await load()
-      addToast(`Zone '${z.name}' updated`, 'success')
-    } catch (e) { addToast(e.message || 'Failed to update', 'error') }
+      addToast(t('settings.zoneUpdated', { name: z.name }), 'success')
+    } catch (e) { addToast(e.message || t('settings.zoneUpdateFailed'), 'error') }
   }
   const removeZone = async (z) => {
-    if (!window.confirm(`Delete zone '${z.name}'?`)) return
+    if (!window.confirm(t('settings.zoneDeletePrompt', { name: z.name }))) return
     try {
       await deletePresenceZone(z.id)
       await load()
-      addToast(`Zone '${z.name}' deleted`, 'success')
-    } catch (e) { addToast(e.message || 'Failed to delete', 'error') }
+      addToast(t('settings.zoneDeleted', { name: z.name }), 'success')
+    } catch (e) { addToast(e.message || t('settings.zoneDeleteFailed'), 'error') }
   }
 
   useEffect(() => { load() }, [])
 
   const useMyLocation = () => {
-    if (!navigator.geolocation) { addToast('Geolocation not available', 'error'); return }
+    if (!navigator.geolocation) { addToast(t('settings.geoUnavailable'), 'error'); return }
     setLocating(true)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -652,7 +667,7 @@ function PresenceSection() {
         setLocating(false)
         setZoneEdit(true)
       },
-      () => { addToast('Could not get location', 'error'); setLocating(false) },
+      () => { addToast(t('settings.couldNotGetLocation'), 'error'); setLocating(false) },
       { enableHighAccuracy: true, timeout: 10000 }
     )
   }
@@ -663,8 +678,8 @@ function PresenceSection() {
       await savePresenceZone({ lat: parseFloat(zoneDraft.lat), lon: parseFloat(zoneDraft.lon), radius_m: parseFloat(zoneDraft.radius_m) || 200 })
       await load()
       setZoneEdit(false)
-      addToast('Home zone saved', 'success')
-    } catch (e) { addToast(e.message || 'Failed to save', 'error') }
+      addToast(t('settings.zoneSaved'), 'success')
+    } catch (e) { addToast(e.message || t('settings.zoneSaveFailed'), 'error') }
     finally { setZoneSaving(false) }
   }
 
@@ -684,7 +699,8 @@ function PresenceSection() {
           captured a name derive one from the email, which is how you end up
           called "Silentyouval"; this is where you fix that. Renaming moves
           the presence record and any automation naming you along with it. */}
-      <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
+      {householdOk && (
+      <div data-testid="my-name-card" style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
         <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div>
             <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.myName.title')}</p>
@@ -709,6 +725,7 @@ function PresenceSection() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Track my location card */}
       <div style={{ border: '0.5px solid var(--line)', borderRadius: 'var(--r-card)', background: 'var(--surface)', overflow: 'hidden' }}>
@@ -990,17 +1007,17 @@ function UsersAndAccessSection({ currentUsername }) {
     try {
       await updateUser(username, { role })
       setUsers(u => u.map(x => x.username === username ? { ...x, role } : x))
-      addToast('Role updated', 'success')
-    } catch (e) { addToast(e.message || 'Failed to update role', 'error') }
+      addToast(t('settings.roleUpdated'), 'success')
+    } catch (e) { addToast(e.message || t('settings.roleUpdateFailed'), 'error') }
   }
 
   const handleDeleteUser = async (username) => {
-    if (!window.confirm(`Remove "${username}" from this home?`)) return
+    if (!window.confirm(t('settings.userRemovePrompt', { name: username }))) return
     try {
       await deleteUser(username)
       setUsers(u => u.filter(x => x.username !== username))
-      addToast('User removed', 'success')
-    } catch (e) { addToast(e.message || 'Failed', 'error') }
+      addToast(t('settings.userRemoved'), 'success')
+    } catch (e) { addToast(e.message || t('common.failedToSave'), 'error') }
   }
 
   const handleCreateInvite = async () => {
@@ -1010,10 +1027,10 @@ function UsersAndAccessSection({ currentUsername }) {
       const res = await createInvite({ type: 'user', email: inviteEmail.trim() || undefined, name: inviteName.trim() || undefined, role: inviteRole, public_url: window.location.origin })
       const url = `${window.location.origin}${res.invite_url}`
       setInviteLink(url)
-      navigator.clipboard.writeText(url).catch(() => {})
-      addToast('Invite link copied', 'success')
+      _copyText(url)
+      addToast(t('settings.inviteCopied'), 'success')
       setInvites(prev => [...prev, { ...res, status: 'pending' }])
-    } catch (e) { addToast(e.message || 'Failed to create invite', 'error') }
+    } catch (e) { addToast(e.message || t('settings.inviteCreateFailed'), 'error') }
     finally { setInviteSaving(false) }
   }
 
@@ -1021,35 +1038,32 @@ function UsersAndAccessSection({ currentUsername }) {
     try {
       await revokeInvite(token)
       setInvites(prev => prev.filter(i => i.token !== token))
-      addToast('Invite revoked', 'success')
-    } catch (e) { addToast(e.message || 'Failed', 'error') }
+      addToast(t('settings.inviteRevoked'), 'success')
+    } catch (e) { addToast(e.message || t('common.failedToSave'), 'error') }
   }
-
-  const ROLE_OPT_LABELS = { super_admin: 'Super Admin', admin: 'Admin', user: 'User', guest: 'Guest' }
 
   return (
     <Card>
       <div className="divide-y divide-line">
 
         {users.map(u => {
-          const roleInfo = ROLE_LABELS[u.role] || ROLE_LABELS.user
           const isSelf = u.username.toLowerCase() === currentUsername?.toLowerCase()
           return (
             <div key={u.username} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 48, padding: '8px 16px' }}>
               <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.username}</span>
-                {isSelf && <span className="z-chip" style={{ flexShrink: 0 }}>YOU</span>}
+                {isSelf && <span className="z-chip" style={{ flexShrink: 0 }}>{t('settings.youBadge')}</span>}
               </span>
               {isSelf ? (
-                <span className="z-chip" style={{ color: roleInfo.color, flexShrink: 0 }}>
-                  {roleInfo.label}
+                <span className="z-chip" style={{ color: roleColor(u.role), flexShrink: 0 }}>
+                  {roleLabel(t, u.role)}
                 </span>
               ) : (
                 <Select
                   value={u.role}
                   onChange={e => handleUpdateRole(u.username, e.target.value)}
                   aria-label={u.username}
-                  options={Object.entries(ROLE_OPT_LABELS).map(([val, label]) => ({ value: val, label }))}
+                  options={roleOptions(t)}
                 />
               )}
               {!isSelf && (
@@ -1064,10 +1078,10 @@ function UsersAndAccessSection({ currentUsername }) {
         {invites.map(inv => (
           <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 48, padding: '8px 16px' }}>
             <span style={{ flex: 1, fontSize: 13, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
-              {inv.email || '(open invite)'} · {ROLE_OPT_LABELS[inv.role] || inv.role}
+              {inv.email || t('settings.openInvite')} · {roleLabel(t, inv.role)}
             </span>
             <span className="z-chip" style={{ color: 'var(--warn-text)', flexShrink: 0 }}>{t('members.pending')}</span>
-            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/invite/${inv.token}`).catch(() => {}); addToast(t('members.linkCopied'), 'success') }} className="z-icon-btn" title={t('members.copy')} aria-label={t('members.copy')}>
+            <button onClick={() => { _copyText(`${window.location.origin}/invite/${inv.token}`); addToast(t('members.linkCopied'), 'success') }} className="z-icon-btn" title={t('members.copy')} aria-label={t('members.copy')}>
               <Copy size={18} />
             </button>
             <button onClick={() => handleRevokeInvite(inv.token)} style={{ ...ghostIcon, color: 'var(--err-text)' }} title={t('common.remove')} aria-label={t('common.remove')}>
@@ -1085,7 +1099,7 @@ function UsersAndAccessSection({ currentUsername }) {
                 <div style={{ flex: 1, minWidth: 160, background: 'var(--bg-2)', borderRadius: 'var(--r-ctl)', padding: '0 16px', minHeight: 40, display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
                   <span className="z-code" style={{ fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inviteLink}</span>
                 </div>
-                <button onClick={() => { navigator.clipboard.writeText(inviteLink).catch(() => {}); addToast(t('members.copied'), 'success') }} className="z-btn-secondary">
+                <button onClick={() => { _copyText(inviteLink); addToast(t('members.copied'), 'success') }} className="z-btn-secondary">
                   <Copy size={18} /> {t('members.copy')}
                 </button>
                 <button onClick={() => { setInviteLink(null); setInviteEmail('') }} className="z-btn-secondary">{t('members.newLink')}</button>
@@ -1120,7 +1134,7 @@ function UsersAndAccessSection({ currentUsername }) {
                 value={inviteRole}
                 onChange={e => setInviteRole(e.target.value)}
                 aria-label={t('members.invite')}
-                options={Object.entries(ROLE_OPT_LABELS).map(([val, label]) => ({ value: val, label }))}
+                options={roleOptions(t)}
               />
               <button
                 onClick={handleCreateInvite}
@@ -1286,6 +1300,10 @@ function DeleteAccountModal({ open, onClose, logout }) {
 function AccountForms({ username, role, logout }) {
   const t = useT()
   const { addToast } = useUIStore()
+  // Only a super admin may change someone else's password (the backend 403s
+  // anyone else). Showing everyone an editable username field just invited
+  // them to hit that 403.
+  const canPickUser = hasRole(role, 'super_admin')
   const [showChangePw, setShowChangePw] = useState(false)
   const [pwForm, setPwForm] = useState({ username: username || '', password: '', confirm: '' })
   const [pwError, setPwError] = useState('')
@@ -1317,8 +1335,8 @@ function AccountForms({ username, role, logout }) {
         <SettingRow icon={User} label={t('settings.profile')} subtitle={username || t('settings.account')}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             {role && (
-              <span className="z-chip" style={{ color: ROLE_LABELS[role]?.color || 'var(--ink-mute)' }}>
-                {ROLE_LABELS[role]?.label || role}
+              <span className="z-chip" style={{ color: roleColor(role) }}>
+                {roleLabel(t, role)}
               </span>
             )}
             <span className="z-chip">{t('members.local')}</span>
@@ -1341,7 +1359,9 @@ function AccountForms({ username, role, logout }) {
             {showChangePw && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={T_STATE} style={{ overflow: 'hidden' }}>
                 <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <Input label={t('common.username')} placeholder={t('common.username')} value={pwForm.username} onChange={e => setPwForm(s => ({ ...s, username: e.target.value }))} />
+                  {canPickUser && (
+                    <Input label={t('common.username')} placeholder={t('common.username')} value={pwForm.username} onChange={e => setPwForm(s => ({ ...s, username: e.target.value }))} />
+                  )}
                   <Input label={t('settings.newPassword')} type="password" placeholder="••••••••" value={pwForm.password} onChange={e => setPwForm(s => ({ ...s, password: e.target.value }))} />
                   <Input label={t('common.confirmPassword')} type="password" placeholder="••••••••" value={pwForm.confirm} onChange={e => setPwForm(s => ({ ...s, confirm: e.target.value }))} error={pwError} />
                   <button onClick={handleChangePassword} disabled={savingPw} className="z-btn-primary" style={{ width: '100%' }}>
@@ -1421,13 +1441,13 @@ export function DisplayPage() {
         </SettingRow>
         <div style={{ padding: '16px 16px', borderTop: '0.5px solid var(--line)' }}>
           <Select
-            label="Device icons"
+            label={t('settings.deviceIcons')}
             value={iconStyle}
             onChange={e => setIconStyle(e.target.value)}
             options={[
-              { value: 'emoji', label: 'Emoji (default)' },
-              { value: 'line',  label: 'Line — flat SVG' },
-              { value: '3d',    label: '3D — realistic' },
+              { value: 'emoji', label: t('settings.deviceIconsEmoji') },
+              { value: 'line',  label: t('settings.deviceIconsLine') },
+              { value: '3d',    label: t('settings.deviceIcons3d') },
             ]}
           />
         </div>
@@ -1815,6 +1835,7 @@ export function PresenceDebugPage() {
 // it on makes THIS device boot straight into /wall, which is what lets one
 // store build serve both surfaces instead of shipping a second app.
 function WallModeCard() {
+  const t = useT()
   const [on, setOn] = useState(() => isWallMode())
   const navigate = useNavigate()
   return (
@@ -1829,15 +1850,14 @@ function WallModeCard() {
         <Monitor size={20} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>Use as wall dashboard</div>
-        <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>
-          This device opens straight into the wall view. Use the exit button in the
-          wall header (or long-press the Ziggy mark) to come back.
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{t('settings.wallMode.title')}</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }} dir="auto">
+          {t('settings.wallMode.desc')}
         </div>
       </div>
       <Toggle
         checked={on}
-        aria-label="Use as wall dashboard"
+        aria-label={t('settings.wallMode.title')}
         onCheckedChange={(next) => {
           setWallModeFlag(next); setOn(next)
           if (next) navigate('/wall')
@@ -1851,25 +1871,18 @@ export default function Settings() {
   const t = useT()
   const role = useAuthStore(s => s.role)
   const setRole = useAuthStore(s => s.setRole)
-  const [refreshing, setRefreshing] = useState(false)
   const musicEnabled = useFeature('media_music')
 
+  const isAdmin      = hasRole(role, 'admin')
   const isSuperAdmin = hasRole(role, 'super_admin')
 
   useEffect(() => {
     getAuthStatus().then(a => { if (a?.role) setRole(a.role) }).catch(() => {})
   }, [setRole])
 
-  // Refresh re-reads the session (role gates what the hub shows) and spins
-  // until that fetch actually settles — no fixed timer.
-  const handleRefresh = async () => {
-    setRefreshing(true)
-    try {
-      const a = await getAuthStatus()
-      if (a?.role) setRole(a.role)
-    } catch {}
-    finally { setRefreshing(false) }
-  }
+  // No refresh button here: the only thing it re-read was the session role,
+  // which the effect above already does on mount. A spinner that changes
+  // nothing visible teaches people the button is broken.
 
   return (
     <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
@@ -1879,9 +1892,6 @@ export default function Settings() {
           <p className="z-eyebrow">{t('settings.eyebrow')}</p>
           <h1 className="z-display" style={{ margin: 0 }}>{t('settings.title')}</h1>
         </div>
-        <button onClick={handleRefresh} disabled={refreshing} className="z-icon-btn" aria-label={t('common.refresh')} title={t('common.refresh')}>
-          <RefreshCw size={18} className={refreshing ? 'z-spin' : undefined} />
-        </button>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1889,14 +1899,19 @@ export default function Settings() {
         <HubCard icon={User}        title={t('settings.account')}         subtitle={t('settings.accountSub')}         to="/settings/account" />
         <HubCard icon={Bell}        title={t('adminSettings.sectionNotifications')} subtitle={t('settings.notificationsSub')} to="/settings/notifications" />
         <HubCard icon={MapPin}      title={t('settings.location')}        subtitle={t('settings.locationSub')}        to="/settings/location" />
-        {isSuperAdmin && (
-          <HubCard icon={Users}     title="People & Access"  subtitle="Members, roles and what each person can control"  to="/settings/people" />
+        {/* The page itself admits admins (it 403-gates, not super_admin-gates),
+            so the card must too — otherwise an admin can reach it only by URL. */}
+        {isAdmin && (
+          <HubCard icon={Users}     title={t('settings.people')}          subtitle={t('settings.peopleSub')}          to="/settings/people" />
         )}
         <HubCard icon={Cloud}       title={t('settings.memory')}          subtitle={t('settings.memorySub')}          to="/settings/memory" />
         <HubCard icon={Bot}         title={t('settings.assistants')}      subtitle={t('settings.assistantsSub')}      to="/settings/assistants" />
         <HubCard icon={Volume2}     title={t('settings.voice')}           subtitle={t('settings.voiceSub')}           to="/settings/voice" />
+        {isAdmin && (
+          <HubCard icon={Radio}     title={t('settings.irHubs')}          subtitle={t('settings.irHubsSub')}          to="/settings/ir-hubs" />
+        )}
         {isSuperAdmin && (
-          <HubCard icon={MapPin}    title="Wall tablets"  subtitle="Pair wall dashboards and set what each one may control"  to="/settings/tablets" />
+          <HubCard icon={Monitor}   title={t('settings.tablets')}         subtitle={t('settings.tabletsSub')}         to="/settings/tablets" />
         )}
         <WallModeCard />
         {musicEnabled && (

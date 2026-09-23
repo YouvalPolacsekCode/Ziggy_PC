@@ -35,6 +35,7 @@ const UsersPage        = lazy(() => import('./pages/Settings').then(m => ({ defa
 const MemoryPage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.MemoryPage })))
 const AssistantsPage   = lazy(() => import('./pages/Settings').then(m => ({ default: m.AssistantsPage })))
 const VoicePage        = lazy(() => import('./pages/Settings').then(m => ({ default: m.VoicePage })))
+const IrHubsPage       = lazy(() => import('./pages/Settings').then(m => ({ default: m.IrHubsPage })))
 // Ops sub-pages migrated out of the old /admin route during the 2026-06 refactor
 const SystemDiagnosticsPage = lazy(() => import('./pages/Settings').then(m => ({ default: m.SystemDiagnosticsPage })))
 const PresenceDebugPage     = lazy(() => import('./pages/Settings').then(m => ({ default: m.PresenceDebugPage })))
@@ -633,6 +634,9 @@ function AppRoutes() {
         <Route path="settings/memory"        element={<MemoryPage />} />
         <Route path="settings/assistants"    element={<AssistantsPage />} />
         <Route path="settings/voice"         element={<VoicePage />} />
+        {/* IR hubs: the only place a blaster can be renamed, removed or
+            re-scanned after a DHCP move. Exported for months with no route. */}
+        <Route path="settings/ir-hubs"       element={<IrHubsPage />} />
         {/* Wall dashboard tablet management (additive) */}
         <Route path="settings/tablets"       element={<WallTablets />} />
         <Route path="alerts" element={<Anomalies />} />

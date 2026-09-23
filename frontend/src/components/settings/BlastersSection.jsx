@@ -4,26 +4,28 @@ import {
   listIrBlasters, patchIrBlaster, deleteIrBlaster, discoverIrBlasters,
 } from '../../lib/api'
 import { useUIStore } from '../../stores/uiStore'
+import { useT } from '../../lib/i18n'
 import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
 
 // ─── Status chip ─────────────────────────────────────────────────────────────
 // Derived field from the registry: online (< 60s since last contact), stale
 // (< 5 min), unreachable (older / never). Surfaced as a small inline chip
-// so the user can scan a list of blasters and immediately spot the dead one.
+// so the user can scan a list of hubs and immediately spot the dead one.
 
 const STATUS_META = {
-  online:      { label: 'Online',      text: 'var(--ok-text)',   dot: 'z-dot-ok'   },
-  stale:       { label: 'Stale',       text: 'var(--warn-text)', dot: 'z-dot-warn' },
-  unreachable: { label: 'Unreachable', text: 'var(--err-text)',  dot: 'z-dot-err'  },
+  online:      { key: 'irHubs.status.online',      text: 'var(--ok-text)',   dot: 'z-dot-ok'   },
+  stale:       { key: 'irHubs.status.stale',       text: 'var(--warn-text)', dot: 'z-dot-warn' },
+  unreachable: { key: 'irHubs.status.unreachable', text: 'var(--err-text)',  dot: 'z-dot-err'  },
 }
 
 function StatusChip({ status }) {
+  const t = useT()
   const meta = STATUS_META[status] || STATUS_META.unreachable
   return (
     <span className="z-chip" style={{ color: meta.text }}>
       <span className={`z-dot ${meta.dot}`} />
-      {meta.label}
+      {t(meta.key)}
     </span>
   )
 }
@@ -39,6 +41,7 @@ const ghostIcon = {
 // ─── Inline rename input ─────────────────────────────────────────────────────
 
 function InlineRename({ value, onSave, onCancel }) {
+  const t = useT()
   const [val, setVal] = useState(value || '')
   const handleSave = () => {
     const trimmed = val.trim()
@@ -59,19 +62,20 @@ function InlineRename({ value, onSave, onCancel }) {
           dir="auto"
         />
       </div>
-      <button onClick={handleSave} title="Save" aria-label="Save" className="z-icon-btn">
+      <button onClick={handleSave} title={t('common.save')} aria-label={t('common.save')} className="z-icon-btn">
         <Check size={18} />
       </button>
-      <button onClick={onCancel} title="Cancel" aria-label="Cancel" className="z-icon-btn">
+      <button onClick={onCancel} title={t('common.cancel')} aria-label={t('common.cancel')} className="z-icon-btn">
         <X size={18} />
       </button>
     </div>
   )
 }
 
-// ─── Delete confirmation modal-like inline panel ─────────────────────────────
+// ─── Delete confirmation — inline panel ──────────────────────────────────────
 
 function DeleteConfirm({ blaster, onConfirm, onCancel }) {
+  const t = useT()
   const [cascade, setCascade] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const deviceCount = blaster.device_count || 0
@@ -81,13 +85,13 @@ function DeleteConfirm({ blaster, onConfirm, onCancel }) {
       background: 'color-mix(in srgb, var(--err) 8%, var(--surface-2))',
       border: '0.5px solid color-mix(in srgb, var(--err) 30%, var(--line))',
     }}>
-      <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
-        Delete "{blaster.name}"?
+      <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }} dir="auto">
+        {t('irHubs.deleteTitle', { name: blaster.name })}
       </p>
       <p style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5, marginBottom: 12 }}>
         {deviceCount > 0
-          ? `${deviceCount} IR device${deviceCount === 1 ? '' : 's'} currently route through this blaster.`
-          : 'No IR devices are attached.'}
+          ? (deviceCount === 1 ? t('irHubs.routesThroughOne') : t('irHubs.routesThroughMany', { n: deviceCount }))
+          : t('irHubs.noDevicesAttached')}
       </p>
       {deviceCount > 0 && (
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12, minHeight: 40,
@@ -95,31 +99,32 @@ function DeleteConfirm({ blaster, onConfirm, onCancel }) {
           <input type="checkbox" checked={cascade} onChange={(e) => setCascade(e.target.checked)}
                  style={{ marginTop: 2, width: 20, height: 20, flexShrink: 0 }} />
           <span>
-            Also delete the {deviceCount} attached IR device{deviceCount === 1 ? '' : 's'}.
-            {' '}<span style={{ color: 'var(--ink-mute)' }}>Otherwise they'll be orphaned — visible but unable to send.</span>
+            {deviceCount === 1 ? t('irHubs.alsoDeleteOne') : t('irHubs.alsoDeleteMany', { n: deviceCount })}
+            {' '}<span style={{ color: 'var(--ink-mute)' }}>{t('irHubs.orphanNote')}</span>
           </span>
         </label>
       )}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button onClick={onCancel} disabled={deleting} className="z-btn-secondary">Cancel</button>
+        <button onClick={onCancel} disabled={deleting} className="z-btn-secondary">{t('common.cancel')}</button>
         <Button
           variant="danger"
           onClick={async () => { setDeleting(true); try { await onConfirm(cascade) } finally { setDeleting(false) } }}
           disabled={deleting}
         >
-          {deleting ? 'Deleting…' : 'Delete'}
+          {deleting ? t('common.deleting') : t('common.delete')}
         </Button>
       </div>
     </div>
   )
 }
 
-// ─── One row per blaster ─────────────────────────────────────────────────────
+// ─── One row per hub ─────────────────────────────────────────────────────────
 
 function BlasterRow({ blaster, onRename, onDelete }) {
+  const t = useT()
   const [editing, setEditing] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const macShort = (blaster.mac || '').slice(-4).toUpperCase()
+  const deviceCount = blaster.device_count || 0
   return (
     <div style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--line)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48 }}>
@@ -147,26 +152,27 @@ function BlasterRow({ blaster, onRename, onDelete }) {
               </p>
               <StatusChip status={blaster.status} />
             </div>
-            <p className="z-mono" style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2,
-                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {/* Room + device count are product facts. The IP is kept because a
+                hub that moved on DHCP is the one failure a person can fix by
+                looking at this line; the MAC is not, so it is gone. */}
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
               {[
-                blaster.model,
-                blaster.ip,
-                macShort && `MAC ${macShort}`,
                 blaster.room && blaster.room.replace(/_/g, ' '),
-                `${blaster.device_count || 0} device${blaster.device_count === 1 ? '' : 's'}`,
-              ].filter(Boolean).join(' · ')}
+                blaster.ip && <span key="ip" className="z-code">{blaster.ip}</span>,
+                deviceCount === 1 ? t('irHubs.devicesOne') : t('irHubs.devicesMany', { n: deviceCount }),
+              ].filter(Boolean).map((part, i) => <span key={i}>{i > 0 && ' · '}{part}</span>)}
             </p>
           </div>
         )}
 
         {!editing && !confirmingDelete && (
           <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-            <button onClick={() => setEditing(true)} title="Rename" aria-label="Rename"
+            <button onClick={() => setEditing(true)} title={t('common.rename')} aria-label={t('common.rename')}
               style={{ ...ghostIcon, color: 'var(--ink-mute)' }}>
               <Pencil size={18} />
             </button>
-            <button onClick={() => setConfirmingDelete(true)} title="Delete" aria-label="Delete"
+            <button onClick={() => setConfirmingDelete(true)} title={t('common.delete')} aria-label={t('common.delete')}
               style={{ ...ghostIcon, color: 'var(--err-text)' }}>
               <Trash2 size={18} />
             </button>
@@ -188,6 +194,7 @@ function BlasterRow({ blaster, onRename, onDelete }) {
 // ─── Main section ────────────────────────────────────────────────────────────
 
 export default function BlastersSection() {
+  const t = useT()
   const [blasters, setBlasters] = useState([])
   const [loading, setLoading]   = useState(true)
   const [discovering, setDiscovering] = useState(false)
@@ -195,10 +202,11 @@ export default function BlastersSection() {
 
   const load = async () => {
     try {
-      const list = await listIrBlasters()
-      setBlasters(list || [])
+      const res = await listIrBlasters()
+      const list = Array.isArray(res) ? res : (res?.blasters || [])
+      setBlasters(list)
     } catch (e) {
-      addToast(e.message || 'Failed to load blasters', 'error')
+      addToast(e.message || t('irHubs.loadFailed'), 'error')
     } finally {
       setLoading(false)
     }
@@ -215,10 +223,10 @@ export default function BlastersSection() {
   const handleRename = async (id, name) => {
     try {
       await patchIrBlaster(id, { name })
-      addToast('Renamed', 'success')
+      addToast(t('irHubs.renamed'), 'success')
       load()
     } catch (e) {
-      addToast(e.message || 'Rename failed', 'error')
+      addToast(e.message || t('irHubs.renameFailed'), 'error')
     }
   }
 
@@ -228,13 +236,13 @@ export default function BlastersSection() {
       const removed = res?.cascaded_devices || 0
       addToast(
         removed > 0
-          ? `Blaster + ${removed} device${removed === 1 ? '' : 's'} deleted`
-          : 'Blaster deleted',
+          ? (removed === 1 ? t('irHubs.deletedWithOne') : t('irHubs.deletedWithMany', { n: removed }))
+          : t('irHubs.deleted'),
         'success',
       )
       load()
     } catch (e) {
-      addToast(e.message || 'Delete failed', 'error')
+      addToast(e.message || t('irHubs.deleteFailed'), 'error')
     }
   }
 
@@ -242,15 +250,16 @@ export default function BlastersSection() {
     setDiscovering(true)
     try {
       await discoverIrBlasters({ refresh: true })
-      addToast('Scan complete', 'success')
+      addToast(t('irHubs.scanDone'), 'success')
       load()
     } catch (e) {
-      addToast(e.message || 'Scan failed', 'error')
+      addToast(e.message || t('irHubs.scanFailed'), 'error')
     } finally {
       setDiscovering(false)
     }
   }
 
+  const count = blasters.length
   return (
     <div>
       <div style={{
@@ -262,17 +271,17 @@ export default function BlastersSection() {
                       padding: '12px 16px', borderBottom: '0.5px solid var(--line)' }}>
           <div style={{ minWidth: 0 }}>
             <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
-              {blasters.length === 0 ? 'No blasters' : `${blasters.length} blaster${blasters.length === 1 ? '' : 's'}`}
+              {count === 0 ? t('irHubs.countZero') : count === 1 ? t('irHubs.countOne') : t('irHubs.countMany', { n: count })}
             </p>
             <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>
-              IR-blaster hardware paired to Ziggy. Status refreshes every 30s.
+              {t('irHubs.headerDesc')}
             </p>
           </div>
           <button
             onClick={handleRediscover}
             disabled={discovering}
-            title="Scan LAN for new blasters"
-            aria-label="Scan LAN for new blasters"
+            title={t('irHubs.scan')}
+            aria-label={t('irHubs.scan')}
             className="z-icon-btn"
             style={{ cursor: discovering ? 'default' : 'pointer' }}
           >
@@ -283,16 +292,15 @@ export default function BlastersSection() {
         {/* List */}
         {loading ? (
           <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: 'var(--ink-mute)' }}>
-            Loading…
+            {t('common.loading')}
           </div>
         ) : blasters.length === 0 ? (
           <div style={{ padding: 32, textAlign: 'center' }}>
             <p style={{ fontSize: 15, color: 'var(--ink)', marginBottom: 4 }}>
-              No blasters paired yet.
+              {t('irHubs.emptyTitle')}
             </p>
             <p style={{ fontSize: 13, color: 'var(--ink-mute)', lineHeight: 1.5 }}>
-              Pair a Broadlink RM4 (or compatible) via the IR Wizard on the Devices page.
-              Once paired, it'll show up here.
+              {t('irHubs.emptyBody')}
             </p>
           </div>
         ) : (

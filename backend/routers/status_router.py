@@ -31,10 +31,24 @@ async def status():
     }
 
 
+# Long-term memory carries a few hub-internal records alongside the facts a
+# person told Ziggy. `home_assistant` is the bridge's URL — plumbing, and the
+# one HA term the product must never show. Settings → Memory rendered it as a
+# "Home → assistant" fact with the raw URL as its value.
+_INTERNAL_MEMORY_KEYS = frozenset({"home_assistant"})
+
+
+def _is_internal_memory_key(key) -> bool:
+    return not isinstance(key, str) or key in _INTERNAL_MEMORY_KEYS or key.startswith("_")
+
+
 @router.get("/api/memory")
 async def get_memory():
     raw = list_memory() or {}
-    entries = [{"key": k, "value": v} for k, v in raw.items()] if isinstance(raw, dict) else raw
+    if isinstance(raw, dict):
+        entries = [{"key": k, "value": v} for k, v in raw.items() if not _is_internal_memory_key(k)]
+    else:
+        entries = [e for e in raw if not _is_internal_memory_key((e or {}).get("key"))]
     return {"memory": entries}
 
 

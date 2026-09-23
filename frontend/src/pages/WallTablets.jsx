@@ -9,35 +9,29 @@
 // a row of switches, and a PIN that gates the dangerous ones.
 
 import { useCallback, useEffect, useState } from 'react'
+import { ArrowLeft } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import {
-  listWallTablets, mintWallPairCode, patchWallTablet, removeWallTablet,
+  listWallTablets, mintWallPairCode, removeWallTablet,
   putWallPolicy, setWallPin,
 } from '../lib/api'
-import { useT } from '../lib/i18n'
+import { useT, t as i18nT } from '../lib/i18n'
 import { Toggle } from '../components/ui/Toggle'
 import { Input } from '../components/ui/Input'
 import { Button } from '../components/ui/Button'
 
-const CAPS = [
-  { key: 'lights',      label: 'Lights',           hint: 'Turn lights on/off and dim them' },
-  { key: 'climate',     label: 'Heating & cooling', hint: 'Change AC and heater setpoints' },
-  { key: 'media',       label: 'Media',            hint: 'Play, pause and skip' },
-  { key: 'scenes',      label: 'Scenes',           hint: 'Run on-demand actions' },
-  { key: 'lists',       label: 'Lists & agenda',   hint: 'Shopping list and reminders' },
-  { key: 'automations', label: 'Automations',      hint: 'View and switch automations on/off' },
-  { key: 'cameras',     label: 'Cameras',          hint: 'See camera feeds on the wall' },
-  { key: 'locks',       label: 'Locks',            hint: 'Lock and unlock doors' },
-  { key: 'devices',     label: 'Devices & pairing', hint: 'Open the device list and pair new hardware' },
-  { key: 'settings',    label: 'Settings',         hint: 'Change hub settings from the wall' },
-]
+// Mirrors services/wall_policy.CAPABILITIES minus `presence`, which the
+// backend forces off for every tablet (a wall panel is furniture, not a
+// person) and does not offer as a switch on purpose.
+const CAPS = ['lights', 'climate', 'media', 'scenes', 'lists', 'automations', 'cameras', 'locks', 'devices', 'settings']
 
 function relTime(ts) {
-  if (!ts) return '—'
+  if (!ts) return i18nT('common.never')
   const secs = Math.max(0, Math.floor(Date.now() / 1000 - ts))
-  if (secs < 90) return 'just now'
-  if (secs < 3600) return `${Math.floor(secs / 60)} min ago`
-  if (secs < 86400) return `${Math.floor(secs / 3600)} h ago`
-  return `${Math.floor(secs / 86400)} d ago`
+  if (secs < 90) return i18nT('time.justNow')
+  if (secs < 3600) return i18nT('time.minutesAgo', { n: Math.floor(secs / 60) })
+  if (secs < 86400) return i18nT('time.hoursAgo', { n: Math.floor(secs / 3600) })
+  return i18nT('time.daysAgo', { n: Math.floor(secs / 86400) })
 }
 
 const card = {
@@ -59,6 +53,7 @@ function chipStyle(on) {
 }
 
 function TabletCard({ tablet, onChanged }) {
+  const t = useT()
   const [policy, setPolicy] = useState(tablet.policy)
   const [saving, setSaving] = useState(false)
   const [pin, setPin] = useState('')
@@ -75,9 +70,9 @@ function TabletCard({ tablet, onChanged }) {
       setPolicy(res.policy)
     } catch (e) {
       setPolicy(prev)
-      setMsg(e?.userMessage || 'Could not save.')
+      setMsg(e?.userMessage || t('wallTablets.saveFailed'))
     } finally { setSaving(false) }
-  }, [policy, tablet.id])
+  }, [policy, tablet.id, t])
 
   const toggleCap = (key, on) =>
     save({ ...policy, capabilities: { ...policy.capabilities, [key]: on } })
@@ -95,51 +90,53 @@ function TabletCard({ tablet, onChanged }) {
       const res = await setWallPin(tablet.id, pin || null)
       setPolicy(res.policy)
       setPin('')
-      setMsg(res.policy.has_pin ? 'PIN set.' : 'PIN cleared.')
-    } catch (e) { setMsg(e?.userMessage || 'Could not set the PIN.') }
-  }, [tablet.id, pin])
+      setMsg(res.policy.has_pin ? t('wallTablets.pinSet') : t('wallTablets.pinCleared'))
+    } catch (e) { setMsg(e?.userMessage || t('wallTablets.pinFailed')) }
+  }, [tablet.id, pin, t])
 
   const unpair = useCallback(async () => {
-    if (!window.confirm(`Un-pair "${tablet.display_name}"? Its layout and PIN are deleted.`)) return
+    if (!window.confirm(t('wallTablets.unpairConfirm', { name: tablet.display_name }))) return
     try { await removeWallTablet(tablet.id); onChanged() }
-    catch (e) { setMsg(e?.userMessage || 'Could not un-pair.') }
-  }, [tablet, onChanged])
+    catch (e) { setMsg(e?.userMessage || t('wallTablets.unpairFailed')) }
+  }, [tablet, onChanged, t])
 
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)' }}>{tablet.display_name}</div>
-          <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>
-            {tablet.room ? `${tablet.room} · ` : ''}last seen {relTime(tablet.last_seen)}
+          <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)' }} dir="auto">{tablet.display_name}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }} dir="auto">
+            {tablet.room ? `${tablet.room} · ` : ''}{t('wallTablets.lastSeen', { ago: relTime(tablet.last_seen) })}
           </div>
         </div>
-        <Button variant="danger" onClick={unpair}>Un-pair</Button>
+        <Button variant="danger" onClick={unpair}>{t('wallTablets.unpair')}</Button>
       </div>
 
-      <p className="z-eyebrow" style={{ marginBottom: 8 }}>What this tablet may do</p>
+      <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('wallTablets.whatMayDo')}</p>
 
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {CAPS.map((c) => {
-          const on = policy?.capabilities?.[c.key] !== false
-          const pinned = policy?.pin_required?.includes(c.key)
+        {CAPS.map((key) => {
+          const on = policy?.capabilities?.[key] !== false
+          const pinned = policy?.pin_required?.includes(key)
+          const label = t(`wallTablets.cap.${key}`)
           return (
-            <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 0',
-                                      borderBottom: '0.5px solid var(--line)' }}>
+            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '8px 0',
+                                    borderBottom: '0.5px solid var(--line)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{c.label}</div>
-                <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{c.hint}</div>
+                <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{label}</div>
+                <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{t(`wallTablets.capHint.${key}`)}</div>
               </div>
               {on && (
                 <button
                   type="button"
-                  onClick={() => togglePinReq(c.key, !pinned)}
-                  title="Require the PIN for this"
+                  onClick={() => togglePinReq(key, !pinned)}
+                  title={t('wallTablets.requirePin')}
+                  aria-label={t('wallTablets.requirePin')}
                   aria-pressed={!!pinned}
                   style={chipStyle(pinned)}
-                >PIN</button>
+                >{t('wallTablets.pinChip')}</button>
               )}
-              <Toggle checked={on} disabled={saving} onCheckedChange={(v) => toggleCap(c.key, v)} aria-label={c.label} />
+              <Toggle checked={on} disabled={saving} onCheckedChange={(v) => toggleCap(key, v)} aria-label={label} />
             </div>
           )
         })}
@@ -152,32 +149,39 @@ function TabletCard({ tablet, onChanged }) {
             inputMode="numeric"
             maxLength={8}
             dir="ltr"
-            placeholder={policy?.has_pin ? 'Change PIN (4–8 digits)' : 'Set a PIN (4–8 digits)'}
+            placeholder={policy?.has_pin ? t('wallTablets.pinChangePh') : t('wallTablets.pinSetPh')}
+            aria-label={policy?.has_pin ? t('wallTablets.pinChangePh') : t('wallTablets.pinSetPh')}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
           />
         </div>
-        <button onClick={savePin} className="z-btn-secondary">{pin ? 'Save PIN' : 'Clear PIN'}</button>
-        {policy?.has_pin && <span style={{ fontSize: 13, color: 'var(--ok-text)' }}>PIN is set</span>}
+        <button onClick={savePin} className="z-btn-secondary">{pin ? t('wallTablets.savePin') : t('wallTablets.clearPin')}</button>
+        {policy?.has_pin && <span style={{ fontSize: 13, color: 'var(--ok-text)' }}>{t('wallTablets.pinIsSet')}</span>}
       </div>
-      {msg && <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 8 }}>{msg}</div>}
+      {msg && <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 8 }} dir="auto">{msg}</div>}
     </div>
   )
 }
 
 export default function WallTablets() {
   const t = useT()
+  const navigate = useNavigate()
   const [tablets, setTablets] = useState([])
   const [loading, setLoading] = useState(true)
   const [code, setCode] = useState(null)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    document.title = `Ziggy · ${t('settings.tablets')}`
+    return () => { document.title = 'Ziggy' }
+  }, [t])
+
   const load = useCallback(() => {
     setLoading(true)
     listWallTablets()
       .then((r) => setTablets(r?.tablets || []))
-      .catch((e) => setError(e?.userMessage || 'Could not load tablets.'))
+      .catch((e) => setError(e?.userMessage || t('wallTablets.loadFailed')))
       .finally(() => setLoading(false))
-  }, [])
+  }, [t])
 
   useEffect(() => { load() }, [load])
 
@@ -200,46 +204,57 @@ export default function WallTablets() {
       const res = await mintWallPairCode('')
       setCode(res)
       setLeft(res.ttl_s || 300)
-    } catch (e) { setError(e?.userMessage || 'Could not create a code.') }
-  }, [])
+    } catch (e) { setError(e?.userMessage || t('wallTablets.codeFailed')) }
+  }, [t])
 
   return (
     <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
+      {/* Same back affordance as every other Settings sub-page. This one
+          used to be the only one without a way back except the browser. */}
+      <button
+        onClick={() => navigate('/settings')}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+          color: 'var(--ink-mute)', fontSize: 13, fontWeight: 500,
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          minHeight: 40, padding: 0, marginBottom: 8,
+        }}
+      >
+        <ArrowLeft size={18} className="icon-flip-rtl" />
+        {t('settings.title')}
+      </button>
       <div className="z-page-head">
         <div>
-          <h1 className="z-display" style={{ margin: 0 }}>Wall tablets</h1>
-          <p className="z-subhead" style={{ marginTop: 4 }}>
-            Tablets that show the wall dashboard at <span className="z-code">/wall</span>. Each one keeps its own
-            layout and its own set of permissions.
-          </p>
+          <h1 className="z-display" style={{ margin: 0 }}>{t('settings.tablets')}</h1>
+          <p className="z-subhead" style={{ marginTop: 4 }}>{t('wallTablets.subtitle')}</p>
         </div>
       </div>
 
       <div style={card}>
-        <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)', marginBottom: 4 }}>Pair a new tablet</div>
+        <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)', marginBottom: 4 }}>{t('wallTablets.pairTitle')}</div>
         <p style={{ fontSize: 13, color: 'var(--ink-mute)', margin: '0 0 12px' }}>
-          Open <span className="z-code">/wall</span> on the tablet, tap “Pair tablet”, and enter this code.
+          {t('wallTablets.pairHow')}
         </p>
         {code ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <div className="z-code" style={{ fontSize: 34, fontWeight: 700, lineHeight: '41px', color: 'var(--ink)' }}>{code.code}</div>
             <div style={{ fontSize: 12, color: 'var(--ink-mute)', fontVariantNumeric: 'tabular-nums' }}>
-              expires in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
+              {t('wallTablets.expiresIn', { time: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` })}
             </div>
           </div>
         ) : (
-          <button onClick={mint} className="z-btn-primary">Generate a code</button>
+          <button onClick={mint} className="z-btn-primary">{t('wallTablets.generateCode')}</button>
         )}
       </div>
 
-      {error && <div style={{ color: 'var(--err-text)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+      {error && <div style={{ color: 'var(--err-text)', fontSize: 13, marginBottom: 12 }} dir="auto">{error}</div>}
 
       {loading ? (
-        <p style={{ fontSize: 13, color: 'var(--ink-mute)' }}>Loading…</p>
+        <p style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{t('common.loading')}</p>
       ) : tablets.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 32 }}>
-          <p style={{ fontSize: 15, color: 'var(--ink)' }}>No tablets paired yet.</p>
-          <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 4 }}>Generate a code above and enter it on the tablet.</p>
+          <p style={{ fontSize: 15, color: 'var(--ink)' }}>{t('wallTablets.emptyTitle')}</p>
+          <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 4 }}>{t('wallTablets.emptyBody')}</p>
         </div>
       ) : (
         tablets.map((tb) => <TabletCard key={tb.id} tablet={tb} onChanged={load} />)

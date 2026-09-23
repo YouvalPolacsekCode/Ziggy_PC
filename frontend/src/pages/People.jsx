@@ -24,22 +24,39 @@ import { Toggle } from '../components/ui/Toggle'
 import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
 import { T_ENTER } from '../lib/motion'
+import { useT } from '../lib/i18n'
 
-const PRESET_LABEL = {
-  owner: 'Owner', admin: 'Admin', adult: 'Adult', teen: 'Teen', kid: 'Kid', guest: 'Guest',
+// Presets, actions and obligations are engine vocabulary; each maps to an i18n
+// key so the Hebrew screen reads as a product, not as a policy dump.
+const PRESET_KEY = {
+  owner: 'people.preset.owner', admin: 'people.preset.admin', adult: 'people.preset.adult',
+  teen: 'people.preset.teen', kid: 'people.preset.kid', guest: 'people.preset.guest',
 }
+const ACTION_KEY = {
+  'light.onoff': 'people.action.lightOnOff', 'light.brightness': 'people.action.lightDim',
+  'media.playback': 'people.action.mediaPlayback', 'climate.setpoint': 'people.action.climateSetpoint',
+  'lock.lock': 'people.action.lockLock', 'lock.unlock': 'people.action.lockUnlock',
+  'camera.live': 'people.action.cameraLive', 'alarm.disarm': 'people.action.alarmDisarm',
+  'cover.open': 'people.action.coverOpen', 'cover.close': 'people.action.coverClose',
+}
+const OB_KEY = {
+  step_up: 'people.ob.stepUp', notify: 'people.ob.notify', two_person: 'people.ob.twoPerson',
+  record_reason: 'people.ob.recordReason', log_verbose: 'people.ob.logVerbose', undo_window: 'people.ob.undoWindow',
+}
+const CLASS_KEY = {
+  light: 'people.class.light', switch: 'people.class.switch', media: 'people.class.media',
+  climate: 'people.class.climate', lock: 'people.class.lock', camera: 'people.class.camera',
+  alarm: 'people.class.alarm', garage: 'people.class.garage', cover: 'people.class.cover',
+  fan: 'people.class.fan', sensor: 'people.class.sensor',
+}
+const presetLabel = (t, p) => (PRESET_KEY[p] ? t(PRESET_KEY[p]) : p)
+const actionLabel = (t, a) => (ACTION_KEY[a] ? t(ACTION_KEY[a]) : a)
+const obLabel     = (t, o) => (OB_KEY[o] ? t(OB_KEY[o]) : o)
+const classLabel  = (t, c) => (CLASS_KEY[c] ? t(CLASS_KEY[c]) : c)
+
 // Person avatars are content (a face for a household member), not UI glyphs,
 // so they stay emoji.
 const AVATARS = ['👩', '🧑', '🧑‍🎤', '🧒', '👵', '👨', '🧓', '👧']
-const ACTION_LABEL = {
-  'light.onoff': 'Turn on / off', 'light.brightness': 'Dim', 'media.playback': 'Play / pause',
-  'climate.setpoint': 'Set temperature', 'lock.lock': 'Lock', 'lock.unlock': 'Unlock',
-  'camera.live': 'View live', 'alarm.disarm': 'Disarm alarm', 'cover.open': 'Open', 'cover.close': 'Close',
-}
-const OB_LABEL = {
-  step_up: 'Step-up', notify: 'Notify', two_person: 'Two-person',
-  record_reason: 'Record reason', log_verbose: 'Audit log', undo_window: 'Undo window',
-}
 // Device-class glyphs: line icons only.
 const CLASS_ICON = {
   light: Lightbulb, media: Tv, climate: Thermometer, lock: Lock, camera: Camera,
@@ -108,6 +125,7 @@ function capsForClass(cls, allCaps) {
 }
 
 export default function People() {
+  const t = useT()
   const [ov, setOv] = useState(null)
   const [err, setErr] = useState('')
   const [sel, setSel] = useState(null)
@@ -120,10 +138,15 @@ export default function People() {
     .then(d => { setOv(d); if (!sel && d.people?.length) setSel(d.people[0].ref) })
     .catch(e => {
       if (e?.status === 403) { setForbidden(true); return }
-      setErr(e?.message || 'Could not load permissions.')
+      setErr(e?.message || t('people.loadFailed'))
     })
 
   useEffect(() => { load() }, []) // eslint-disable-line
+
+  useEffect(() => {
+    document.title = `Ziggy · ${t('settings.people')}`
+    return () => { document.title = 'Ziggy' }
+  }, [t])
 
   // Access-level is a PENDING selection until saved — the person card keeps
   // showing the saved role; changing the segmented control only stages a change
@@ -139,9 +162,8 @@ export default function People() {
     <Shell>
       <div style={{ ...card, padding: 32, textAlign: 'center' }}>
         <Lock size={32} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
-        <h3 style={{ margin: '12px 0 4px', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>Admins only</h3>
-        <p style={{ color: 'var(--ink-mute)', fontSize: 13, margin: 0 }}>
-          Managing people and permissions is limited to the home’s owner and admins.</p>
+        <h3 style={{ margin: '12px 0 4px', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{t('people.adminsOnlyTitle')}</h3>
+        <p style={{ color: 'var(--ink-mute)', fontSize: 13, margin: 0 }}>{t('people.adminsOnlyBody')}</p>
       </div>
     </Shell>
   )
@@ -157,16 +179,16 @@ export default function People() {
         scope: 'space:home', role: pendingRole,
       })
       await load()   // reload → person.role updates → effect clears the dirty state
-    } catch (e) { setErr(e?.message || 'Could not update access.') }
+    } catch (e) { setErr(e?.message || t('people.updateFailed')) }
     finally { setBusy(false) }
   }
 
   if (err) return (
     <Shell>
       <div style={{ ...card, padding: 32, textAlign: 'center' }}>
-        <p style={{ margin: 0, fontSize: 15, color: 'var(--ink)' }}>{err}</p>
+        <p style={{ margin: 0, fontSize: 15, color: 'var(--ink)' }} dir="auto">{err}</p>
         <button onClick={() => { setErr(''); bootstrapPermissions().then(load).catch(e => setErr(e.message)) }}
-          className="z-btn-secondary" style={{ marginTop: 16 }}>Set up the permission model</button>
+          className="z-btn-secondary" style={{ marginTop: 16 }}>{t('people.setupModel')}</button>
       </div>
     </Shell>
   )
@@ -176,11 +198,10 @@ export default function People() {
     <Shell>
       <div style={{ ...card, padding: 32, textAlign: 'center' }}>
         <Lock size={32} strokeWidth={1.75} style={{ color: 'var(--ink-mute)' }} />
-        <h3 style={{ margin: '12px 0 4px', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>No people yet</h3>
-        <p style={{ color: 'var(--ink-mute)', fontSize: 13, margin: 0 }}>
-          Import your household + devices into the permission model to get started.</p>
+        <h3 style={{ margin: '12px 0 4px', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{t('people.noPeopleTitle')}</h3>
+        <p style={{ color: 'var(--ink-mute)', fontSize: 13, margin: 0 }}>{t('people.noPeopleBody')}</p>
         <button onClick={() => { setBusy(true); bootstrapPermissions().then(load).finally(() => setBusy(false)) }}
-          disabled={busy} className="z-btn-secondary" style={{ marginTop: 16 }}>{busy ? 'Setting up…' : 'Set up now'}</button>
+          disabled={busy} className="z-btn-secondary" style={{ marginTop: 16 }}>{busy ? t('people.settingUp') : t('people.setUpNow')}</button>
       </div>
     </Shell>
   )
@@ -190,7 +211,7 @@ export default function People() {
       <div className="perm-grid">
         <div className="perm-col" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={card}>
-            <Head title="People" sub="tap to select" />
+            <Head title={t('people.peopleHead')} sub={t('people.tapToSelect')} />
             <div style={{ padding: 12 }}>
               <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
                 {ov.people.map((p, i) => (
@@ -203,24 +224,24 @@ export default function People() {
 
           {person && (
             <div style={card}>
-              <Head title={`${person.name}’s access`} sub={person.role ? PRESET_LABEL[person.role] : 'no role'} />
+              <Head title={t('people.accessOf', { name: person.name })} sub={person.role ? presetLabel(t, person.role) : t('people.noRole')} />
               <div style={{ padding: 12 }}>
-                <p className="z-eyebrow" style={{ marginBottom: 8 }}>Access level</p>
+                <p className="z-eyebrow" style={{ marginBottom: 8 }}>{t('people.accessLevel')}</p>
                 <Segmented options={ov.presets} value={pendingRole} disabled={busy}
-                  onChange={setPendingRole} labels={PRESET_LABEL} />
+                  onChange={setPendingRole} label={(o) => presetLabel(t, o)} />
                 {pendingRole && pendingRole !== person.role && (
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 12 }}>
                     <button onClick={saveRole} disabled={busy} className="z-btn-primary">
-                      {busy ? 'Saving…' : 'Save'}</button>
+                      {busy ? t('common.saving') : t('common.save')}</button>
                     <button onClick={() => setPendingRole(person.role)} disabled={busy}
-                      style={ghostBtn}>Cancel</button>
+                      style={ghostBtn}>{t('common.cancel')}</button>
                   </div>
                 )}
                 {person.role === 'kid' && (
                   <KidAccess person={person} ov={ov} onChange={bump} />
                 )}
                 <p className="z-eyebrow" style={{ margin: '16px 0 8px' }}>
-                  What {person.name} can do — live from the engine
+                  {t('people.whatCanDo', { name: person.name })}
                 </p>
                 <CapabilityMatrix person={person} ov={ov} version={version} />
               </div>
@@ -259,22 +280,22 @@ export default function People() {
 }
 
 function Shell({ children }) {
+  const t = useT()
   return (
     <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 24px',
       width: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}>
       <Link to="/settings" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 40,
         fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)', textDecoration: 'none', marginBottom: 8 }}>
-        <ArrowLeft size={18} className="icon-flip-rtl" /> Settings
+        <ArrowLeft size={18} className="icon-flip-rtl" /> {t('settings.title')}
       </Link>
       <div className="z-page-head" style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div>
-          <h1 className="z-display" style={{ margin: 0 }}>People &amp; Access</h1>
-          <p className="z-subhead" style={{ marginTop: 4 }}>
-            Set what each person can control. Every decision below is computed by the policy engine.</p>
+          <h1 className="z-display" style={{ margin: 0 }}>{t('settings.people')}</h1>
+          <p className="z-subhead" style={{ marginTop: 4 }}>{t('people.subtitle')}</p>
         </div>
         <Link to="/settings/users" className="z-link-quiet" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 40,
           fontSize: 13, fontWeight: 500, color: 'var(--ink)', textDecoration: 'none', whiteSpace: 'nowrap', gap: 4 }}>
-          Manage login accounts <ChevronRight size={18} className="icon-flip-rtl" />
+          {t('people.manageAccounts')} <ChevronRight size={18} className="icon-flip-rtl" />
         </Link>
       </div>
       <style>{`.z-link-quiet:hover{text-decoration:underline}`}</style>
@@ -287,13 +308,14 @@ function Head({ title, sub }) {
   return (
     <div style={{ padding: '16px 16px 12px', borderBottom: '0.5px solid var(--line)',
       display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-      <h2 className="z-headline" style={{ margin: 0 }}>{title}</h2>
-      <span style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{sub}</span>
+      <h2 className="z-headline" style={{ margin: 0 }} dir="auto">{title}</h2>
+      <span style={{ fontSize: 13, color: 'var(--ink-mute)' }} dir="auto">{sub}</span>
     </div>
   )
 }
 
 function PersonCard({ p, i, selected, onClick }) {
+  const t = useT()
   const age = p.attrs?.age
   return (
     <button onClick={onClick} aria-pressed={selected} style={{
@@ -305,14 +327,14 @@ function PersonCard({ p, i, selected, onClick }) {
     }}>
       <div style={{ fontSize: 26, lineHeight: 1, marginBottom: 8 }}>{AVATARS[i % AVATARS.length]}</div>
       <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden',
-        textOverflow: 'ellipsis' }}>{p.name}</div>
+        textOverflow: 'ellipsis' }} dir="auto">{p.name}</div>
       <div style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 2 }}>
-        {p.role ? PRESET_LABEL[p.role] : '—'}{age != null ? ` · ${age}` : ''}</div>
+        {p.role ? presetLabel(t, p.role) : '—'}{age != null ? ` · ${age}` : ''}</div>
     </button>
   )
 }
 
-function Segmented({ options, value, onChange, labels, disabled }) {
+function Segmented({ options, value, onChange, label, disabled }) {
   return (
     <div style={{ display: 'flex', gap: 4, background: 'var(--surface-2)',
       border: '0.5px solid var(--line)', borderRadius: 'var(--r-ctl)', padding: 4, flexWrap: 'wrap' }}>
@@ -326,7 +348,7 @@ function Segmented({ options, value, onChange, labels, disabled }) {
             color: on ? 'var(--ink)' : 'var(--ink-mute)',
             boxShadow: on ? 'var(--shadow-sm)' : 'none',
             transition: 'background var(--dur-press) var(--ease-standard), color var(--dur-press) var(--ease-standard)',
-          }}>{labels[o] || o}</button>
+          }}>{label(o)}</button>
         )
       })}
     </div>
@@ -349,6 +371,7 @@ const CONTROLLABLE = new Set(['light', 'switch', 'media', 'climate', 'lock',
 function kidGrantId(person, dev) { return `kidallow:${person.name}:${dev.id}` }
 
 function KidAccess({ person, ov, onChange }) {
+  const t = useT()
   const [grants, setGrants] = useState(null)
   const [hoursOn, setHoursOn] = useState(false)
   const [from, setFrom] = useState('07:00')
@@ -413,9 +436,9 @@ function KidAccess({ person, ov, onChange }) {
     } finally { setSaving('') }
   }
 
-  if (grants === null) return <div style={{ color: 'var(--ink-mute)', fontSize: 13, marginTop: 12 }}>Loading…</div>
+  if (grants === null) return <div style={{ color: 'var(--ink-mute)', fontSize: 13, marginTop: 12 }}>{t('common.loading')}</div>
 
-  // Real HA area names from the overview (fall back to the humanized slug).
+  // Real room names from the overview (fall back to the humanized slug).
   const spaceName = {}
   for (const s of ov.spaces || []) { if (s.name) spaceName[s.id] = s.name }
   const roomLabel = (key) => spaceName[key] || humanizeRoom(key)
@@ -428,9 +451,9 @@ function KidAccess({ person, ov, onChange }) {
 
   return (
     <div>
-      <p className="z-eyebrow" style={{ margin: '16px 0 8px' }}>Devices {person.name} can use</p>
+      <p className="z-eyebrow" style={{ margin: '16px 0 8px' }}>{t('people.kid.devicesCanUse', { name: person.name })}</p>
       {roomEntries.length === 0 && (
-        <div style={{ color: 'var(--ink-mute)', fontSize: 13 }}>No controllable devices in this home.</div>
+        <div style={{ color: 'var(--ink-mute)', fontSize: 13 }}>{t('people.noControllable')}</div>
       )}
       {roomEntries.map(([room, devs]) => {
         const onCount = devs.filter(d => enabled.has(d.id)).length
@@ -441,11 +464,11 @@ function KidAccess({ person, ov, onChange }) {
                 <span className="chev chev-closed"><ChevronRight size={18} className="icon-flip-rtl" /></span>
                 <span className="chev chev-open"><ChevronDown size={18} /></span>
                 <span style={{ textTransform: 'capitalize', fontWeight: 500, fontSize: 15, color: 'var(--ink)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
                   {roomLabel(room)}</span>
               </span>
               <span style={{ fontSize: 13, color: onCount ? 'var(--ink)' : 'var(--ink-mute)',
-                flex: 'none', fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{onCount}/{devs.length} on</span>
+                flex: 'none', fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{t('people.kid.onCount', { on: onCount, total: devs.length })}</span>
             </summary>
             <div style={{ paddingBottom: 8 }}>
               {devs.map(d => {
@@ -457,9 +480,9 @@ function KidAccess({ person, ov, onChange }) {
                       <span style={{ color: 'var(--ink-mute)', display: 'flex' }}><ClassIcon cls={d.class} /></span>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 15, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap' }}>{deviceName(d)}</div>
-                        <div style={{ fontSize: 13, color: 'var(--ink-mute)', textTransform: danger ? 'none' : 'capitalize' }}>
-                          {danger ? 'Dangerous — kids can’t be given this' : d.class}</div>
+                          whiteSpace: 'nowrap' }} dir="auto">{deviceName(d)}</div>
+                        <div style={{ fontSize: 13, color: 'var(--ink-mute)' }}>
+                          {danger ? t('people.kid.dangerous') : classLabel(t, d.class)}</div>
                       </div>
                     </div>
                     <Toggle checked={on} disabled={danger || saving === d.id}
@@ -473,21 +496,20 @@ function KidAccess({ person, ov, onChange }) {
         )
       })}
 
-      <p className="z-eyebrow" style={{ margin: '16px 0 8px' }}>Allowed hours</p>
+      <p className="z-eyebrow" style={{ margin: '16px 0 8px' }}>{t('people.kid.allowedHours')}</p>
       <div style={rowStyle}>
         <div>
-          <div style={{ fontSize: 15, color: 'var(--ink)' }}>Only during set hours</div>
-          <div style={{ fontSize: 13, color: 'var(--ink-mute)' }}>
-            Outside this window, {person.name}’s controls are blocked</div>
+          <div style={{ fontSize: 15, color: 'var(--ink)' }}>{t('people.kid.onlyDuringHours')}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{t('people.kid.outsideBlocked', { name: person.name })}</div>
         </div>
-        <Toggle checked={hoursOn} disabled={saving === 'hours'} aria-label="Only during set hours"
+        <Toggle checked={hoursOn} disabled={saving === 'hours'} aria-label={t('people.kid.onlyDuringHours')}
           onCheckedChange={() => applyHours(!hoursOn, from, to)} />
       </div>
       {hoursOn && (
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
-          <Input type="time" value={from} onChange={e => applyHours(true, e.target.value, to)} aria-label="From" style={{ width: 140 }} />
-          <span style={{ color: 'var(--ink-mute)', fontSize: 13 }}>to</span>
-          <Input type="time" value={to} onChange={e => applyHours(true, from, e.target.value)} aria-label="To" style={{ width: 140 }} />
+          <Input type="time" value={from} onChange={e => applyHours(true, e.target.value, to)} aria-label={t('adminSettings.from')} style={{ width: 140 }} />
+          <span style={{ color: 'var(--ink-mute)', fontSize: 13 }}>{t('adminSettings.to')}</span>
+          <Input type="time" value={to} onChange={e => applyHours(true, from, e.target.value)} aria-label={t('adminSettings.to')} style={{ width: 140 }} />
         </div>
       )}
     </div>
@@ -500,17 +522,18 @@ const rowStyle = {
 }
 
 function CapabilityMatrix({ person, ov, version }) {
+  const t = useT()
   // Only offer checks for capabilities this home actually has — no thermostat
   // device ⇒ no "Thermostat" row, etc. Each check picks the first present
   // device of its class(es) and is evaluated against that real device.
   const CHECKS = [
-    { cls: 'light',  label: 'Lights', action: 'light.onoff', classes: ['light', 'switch'] },
-    { cls: 'media',  label: 'Media & TV', action: 'media.playback', classes: ['media'] },
-    { cls: 'climate', label: 'Thermostat', action: 'climate.setpoint', classes: ['climate'] },
-    { cls: 'lock',   label: 'Unlock the front door', action: 'lock.unlock', classes: ['lock'] },
-    { cls: 'garage', label: 'Garage', action: 'cover.open', classes: ['garage'] },
-    { cls: 'alarm',  label: 'Disarm the alarm', action: 'alarm.disarm', classes: ['alarm'] },
-    { cls: 'camera', label: 'View cameras', action: 'camera.live', classes: ['camera'] },
+    { cls: 'light',  key: 'people.check.lights',   action: 'light.onoff',     classes: ['light', 'switch'] },
+    { cls: 'media',  key: 'people.check.media',    action: 'media.playback',  classes: ['media'] },
+    { cls: 'climate', key: 'people.check.climate', action: 'climate.setpoint', classes: ['climate'] },
+    { cls: 'lock',   key: 'people.check.unlock',   action: 'lock.unlock',     classes: ['lock'] },
+    { cls: 'garage', key: 'people.check.garage',   action: 'cover.open',      classes: ['garage'] },
+    { cls: 'alarm',  key: 'people.check.disarm',   action: 'alarm.disarm',    classes: ['alarm'] },
+    { cls: 'camera', key: 'people.check.cameras',  action: 'camera.live',     classes: ['camera'] },
   ]
   const present = useMemo(() => CHECKS
     .map(c => ({ ...c, dev: ov.devices.find(d => c.classes.includes(d.class)) }))
@@ -536,10 +559,9 @@ function CapabilityMatrix({ person, ov, version }) {
     return () => { live = false }
   }, [person.ref, person.role, version]) // eslint-disable-line
 
-  if (!rows) return <div style={{ color: 'var(--ink-mute)', fontSize: 13 }}>Checking…</div>
+  if (!rows) return <div style={{ color: 'var(--ink-mute)', fontSize: 13 }}>{t('people.checking')}</div>
   if (!rows.length) return (
-    <div style={{ color: 'var(--ink-mute)', fontSize: 13 }}>
-      No controllable devices in this home yet.</div>
+    <div style={{ color: 'var(--ink-mute)', fontSize: 13 }}>{t('people.noControllableYet')}</div>
   )
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -547,7 +569,7 @@ function CapabilityMatrix({ person, ov, version }) {
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 15, minHeight: 40 }}>
           <span style={{ width: 32, height: 32, borderRadius: 'var(--r-ctl)', display: 'grid', placeItems: 'center',
             background: 'var(--surface-2)', color: 'var(--ink-mute)', flexShrink: 0 }}><ClassIcon cls={r.cls} /></span>
-          <span style={{ flex: 1, color: 'var(--ink)' }}>{r.label}</span>
+          <span style={{ flex: 1, color: 'var(--ink)' }}>{t(r.key)}</span>
           <Pill state={r.state} />
         </div>
       ))}
@@ -556,16 +578,18 @@ function CapabilityMatrix({ person, ov, version }) {
 }
 
 function Pill({ state }) {
+  const t = useT()
   const map = {
-    yes: ['Can', 'var(--ok-text)'],
-    no: ['No', 'var(--err-text)'],
+    yes: [t('people.can'), 'var(--ok-text)'],
+    no: [t('people.cannot'), 'var(--err-text)'],
     'n/a': ['—', 'var(--ink-mute)'],
   }
-  const [t, c] = map[state] || map['n/a']
-  return <span className="z-chip" style={{ color: c, fontWeight: 600 }}>{t}</span>
+  const [label, c] = map[state] || map['n/a']
+  return <span className="z-chip" style={{ color: c, fontWeight: 600 }}>{label}</span>
 }
 
 function Playground({ person, ov, version }) {
+  const t = useT()
   // Only real device tiles, not sub-entity sensors.
   const tiles = useMemo(() => ov.devices.filter(d => CONTROLLABLE.has(d.class)), [ov.devices])
   const [device, setDevice] = useState(tiles[0]?.ref || '')
@@ -593,22 +617,22 @@ function Playground({ person, ov, version }) {
 
   return (
     <div style={card}>
-      <Head title="Try a command" sub={`as ${person.name}`} />
+      <Head title={t('people.tryCommand')} sub={t('people.asName', { name: person.name })} />
       <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <Select label="Device" value={device} onChange={e => setDevice(e.target.value)}
+        <Select label={t('people.device')} value={device} onChange={e => setDevice(e.target.value)}
           style={{ width: '100%' }}
           options={tiles.map(d => ({ value: d.ref, label: deviceName(d) }))} />
         <div className="perm-two" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Select label="Action" value={action} onChange={e => setAction(e.target.value)}
+          <Select label={t('people.actionLabel')} value={action} onChange={e => setAction(e.target.value)}
             style={{ width: '100%' }}
-            options={actions.map(a => ({ value: a, label: ACTION_LABEL[a] || a }))} />
-          <Select label="Channel" value={channel} onChange={e => setChannel(e.target.value)}
+            options={actions.map(a => ({ value: a, label: actionLabel(t, a) }))} />
+          <Select label={t('people.channel')} value={channel} onChange={e => setChannel(e.target.value)}
             style={{ width: '100%' }}
             options={[
-              { value: 'app', label: 'App' },
-              { value: 'voice', label: 'Voice' },
-              { value: 'face', label: 'Face ID' },
-              { value: 'nfc', label: 'NFC' },
+              { value: 'app', label: t('people.channelApp') },
+              { value: 'voice', label: t('people.channelVoice') },
+              { value: 'face', label: t('people.channelFace') },
+              { value: 'nfc', label: t('people.channelNfc') },
             ]} />
         </div>
         <Decision res={res} loading={loading} channel={channel} />
@@ -618,7 +642,8 @@ function Playground({ person, ov, version }) {
 }
 
 function Decision({ res, loading, channel }) {
-  if (loading && !res) return <div style={{ ...decBox('n'), fontSize: 13, color: 'var(--ink-mute)' }}>Evaluating…</div>
+  const t = useT()
+  if (loading && !res) return <div style={{ ...decBox('n'), fontSize: 13, color: 'var(--ink-mute)' }}>{t('people.evaluating')}</div>
   if (!res) return null
   const allowed = res.allowed
   const trust = { app: 3, voice: 1, face: 3, nfc: 2 }[channel]
@@ -632,10 +657,10 @@ function Decision({ res, loading, channel }) {
             : <XCircle size={24} strokeWidth={1.75} style={{ color: 'var(--err)', flexShrink: 0 }} />}
           <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em',
             color: allowed ? 'var(--ok)' : 'var(--err)' }}>
-            {allowed ? 'Allowed' : 'Denied'}</span>
+            {allowed ? t('people.allowed') : t('people.denied')}</span>
         </div>
         <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 8,
-          overflowWrap: 'anywhere' }}>{res.reason}</div>
+          overflowWrap: 'anywhere' }} dir="auto">{res.reason}</div>
         {res.obligations?.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
             {res.obligations.map((o, i) => {
@@ -643,10 +668,10 @@ function Decision({ res, loading, channel }) {
               const unmet = o.kind === 'step_up' && need != null && trust < need
               return (
                 <span key={i} className="z-chip" style={{ color: unmet ? 'var(--warn-text)' : 'var(--ink-2)' }}>
-                  {OB_LABEL[o.kind] || o.kind}
+                  {obLabel(t, o.kind)}
                   {need != null ? ` ≥${need}` : ''}
                   {o.params?.targets ? ` ${o.params.targets.join(', ')}` : ''}
-                  {unmet ? ' — needs Face ID' : ''}
+                  {unmet ? ` — ${t('people.needsFaceId')}` : ''}
                 </span>
               )
             })}
@@ -655,13 +680,13 @@ function Decision({ res, loading, channel }) {
         {res.trace?.length > 0 && (
           <details style={{ marginTop: 12, borderTop: '0.5px solid var(--line)' }}>
             <summary style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-mute)', cursor: 'pointer', minHeight: 40, display: 'flex', alignItems: 'center' }}>
-              How Ziggy decided ({res.trace.length})</summary>
+              {t('people.howDecided', { n: res.trace.length })}</summary>
             <div className="z-code" style={{ fontSize: 12, lineHeight: 1.7,
               color: 'var(--ink-mute)', overflowWrap: 'anywhere', direction: 'ltr', textAlign: 'start' }}>
-              {res.trace.map((t, i) => (
-                <div key={i}>{humanizeTrace(t.stage === 'combine'
-                  ? `└─ ${t.result}`
-                  : `• ${t.grant || ''} ${t.note || t.result || ''}`)}</div>
+              {res.trace.map((tr, i) => (
+                <div key={i}>{humanizeTrace(tr.stage === 'combine'
+                  ? `└─ ${tr.result}`
+                  : `• ${tr.grant || ''} ${tr.note || tr.result || ''}`)}</div>
               ))}
             </div>
           </details>
@@ -672,20 +697,21 @@ function Decision({ res, loading, channel }) {
 }
 
 function AuditStrip() {
+  const t = useT()
   const [rows, setRows] = useState(null)
   useEffect(() => { getPermissionAudit({ limit: 6 }).then(d => setRows(d.events || [])).catch(() => setRows([])) }, [])
   if (!rows || !rows.length) return null
   return (
     <div style={card}>
-      <Head title="Recent decisions" sub="attributed" />
+      <Head title={t('people.recentDecisions')} sub={t('people.attributed')} />
       <div style={{ padding: '0 16px 8px' }}>
         {rows.map((r, i) => (
           <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, minHeight: 40,
             padding: '4px 0', borderTop: i ? '0.5px solid var(--line)' : 'none' }}>
             <span className={`z-dot ${r.effect === 'allow' ? 'z-dot-ok' : 'z-dot-err'}`} style={{ flex: 'none' }} />
-            <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{(r.subject || '').split(':')[1]}</span>
-            <span className="z-code" style={{ fontSize: 12, color: 'var(--ink-mute)' }}>{r.action}</span>
-            <span style={{ color: 'var(--ink-mute)', marginInlineStart: 'auto' }}>{resourceName(r.resource)}</span>
+            <span style={{ color: 'var(--ink)', fontWeight: 500 }} dir="auto">{(r.subject || '').split(':')[1]}</span>
+            <span style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{actionLabel(t, r.action)}</span>
+            <span style={{ color: 'var(--ink-mute)', marginInlineStart: 'auto' }} dir="auto">{resourceName(r.resource)}</span>
           </div>
         ))}
       </div>
@@ -701,5 +727,6 @@ function decBox(kind) {
   }
 }
 function Skeleton() {
-  return <div style={{ ...card, padding: 32, color: 'var(--ink-mute)', fontSize: 13, textAlign: 'center' }}>Loading household…</div>
+  const t = useT()
+  return <div style={{ ...card, padding: 32, color: 'var(--ink-mute)', fontSize: 13, textAlign: 'center' }}>{t('people.loadingHousehold')}</div>
 }

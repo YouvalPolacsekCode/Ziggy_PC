@@ -40,8 +40,14 @@ from core.logger_module import log_info, log_error
 # The container runs in UTC, but the ramp anchors (wake/noon/bedtime) are the
 # user's LOCAL wall-clock times — so "now" must be the home's local time, or the
 # whole schedule runs shifted by the UTC offset (e.g. Israel evening reads as
-# afternoon → too bright/cool). Resolve the home timezone from HA's core config
-# (canonical), fall back to the Israel-first default. Cached once resolved.
+# afternoon → too bright/cool). Resolve the home timezone from the hub's own
+# setting first (`system.timezone` — what Settings → Display writes and what
+# every other engine reads), then HA's core config, then the Israel-first
+# default. Cached once resolved.
+#
+# History: this used to read `home.timezone`, a key nothing in the product
+# writes, so the timezone a user picked in Settings never reached the ramp —
+# it silently ran on whatever HA happened to report.
 _home_tz_cache: Optional[ZoneInfo] = None
 _DEFAULT_HOME_TZ = "Asia/Jerusalem"
 
@@ -53,7 +59,11 @@ def _home_tz() -> ZoneInfo:
     tz_name = None
     try:
         from core.settings_loader import settings
-        tz_name = (settings.get("home") or {}).get("timezone") or None
+        tz_name = (
+            (settings.get("system") or {}).get("timezone")
+            or (settings.get("home") or {}).get("timezone")
+            or None
+        )
     except Exception:
         pass
     if not tz_name:
