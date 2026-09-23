@@ -217,7 +217,10 @@ async def push_notify(
     # fcm_not_configured). Never let a push failure break the caller.
     try:
         from services import mobile_push
-        await mobile_push.send_to_all(title=title, body=body, data={"url": url})
+        # `exclude_user_id` must reach here too, or self-suppression only
+        # holds for browsers while the user's phone still buzzes.
+        await mobile_push.send_to_all(title=title, body=body, data={"url": url},
+                                      exclude_user_id=exclude_user_id)
     except Exception as e:
         log_error(f"[push] mobile fan-out failed: {e}")
 

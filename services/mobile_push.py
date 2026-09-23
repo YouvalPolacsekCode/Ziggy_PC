@@ -80,15 +80,56 @@ async def send_to_user(user_id: str, *, title: str, body: str,
     ])
 
 
+def _device_belongs_to(device: dict, username: str) -> bool:
+    """True when `device` is registered to the account named by `username`.
+
+    These two stores name the owner differently under the SAME key, which is
+    the whole reason self-suppression leaked to phones:
+
+        push_subscriptions.json  user_id = "someone@example.com"   (email)
+        mobile_devices.json      user_id = "1"                     (row id)
+
+    Callers hold the email (a presence person's `linked_user`), so resolve it
+    to the account row and compare on both — email for any device registered
+    before ids were used, id for the rest.
+    """
+    want = (username or "").strip().lower()
+    if not want:
+        return False
+    owner = str(device.get("user_id") or "").strip().lower()
+    if not owner:
+        return False
+    if owner == want:
+        return True
+    try:
+        from services import auth_db
+        user = auth_db.get_user_by_username(username)
+        if user and str(user.get("id")) == owner:
+            return True
+    except Exception:
+        # Never let an auth lookup failure turn suppression into a send.
+        pass
+    return False
+
+
 async def send_to_all(*, title: str, body: str,
-                      data: Optional[dict] = None) -> list[dict]:
-    """Fan a push out to EVERY registered mobile device that has a token +
+                      data: Optional[dict] = None,
+                      exclude_user_id: Optional[str] = None) -> list[dict]:
+    """Fan a push out to every registered mobile device that has a token +
     provider. Used by the shared web-push path so automation/presence/anomaly
     notifications reach native phones too, not just browsers. Best-effort and
     a fast no-op when no device has a token yet (e.g. before FCM is set up).
+
+    `exclude_user_id`: an account's username/email whose own devices are
+    skipped — the native half of the self-suppression `push_notify` has always
+    applied to web push. Without it, "Youval arrived home" was delivered to
+    Youval's phone twice a day: the web path excluded him, this one fanned out
+    to EVERY device regardless, and the phone is the surface he actually reads.
     """
     targets = [d for d in _all_devices()
                if d.get("push_token") and d.get("push_provider")]
+    if exclude_user_id:
+        targets = [d for d in targets if not _device_belongs_to(d, exclude_user_id)]
     if not targets:
         return []
     return await asyncio.gather(*[
