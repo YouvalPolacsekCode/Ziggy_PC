@@ -312,6 +312,12 @@ export const listExternalTokens  = () => get('/external-tokens')
 export const createExternalToken = (name) => post('/external-tokens', { name })
 export const revokeExternalToken = (id) => del(`/external-tokens/${encodeURIComponent(id)}`)
 
+// Cameras. These go through request() so they carry the session token — a bare
+// fetch() here answered 401 for every signed-in person and the page read "no
+// cameras" whatever the home had.
+export const listCameras      = () => get('/cameras')
+export const listCameraMotion = (hours = 24) => get(`/cameras/motion?hours=${encodeURIComponent(hours)}`)
+
 // Persistent, resumable chat threads (server-side; see services/chat_threads.py)
 export const createThread = () => post('/threads', {})
 export const listThreads  = () => get('/threads')
