@@ -611,9 +611,9 @@ function AppRoutes() {
         <Route path="routines" element={<Routines />} />
         <Route path="scenes" element={<Navigate to="/routines" replace />} />
         <Route path="chat" element={<AIChat />} />
-        {taskTrackingEnabled && (
-          <Route path="tasks" element={<Tasks />} />
-        )}
+        {/* A feature that is off has no page: a deep link to it goes home instead
+            of painting an empty shell under the tab bar. */}
+        <Route path="tasks" element={taskTrackingEnabled ? <Tasks /> : <Navigate to="/" replace />} />
         <Route path="settings" element={<Settings />} />
         {/* Settings sub-pages — each old section now has its own URL so
             the user can deep-link / hit back to the hub */}
@@ -649,9 +649,7 @@ function AppRoutes() {
         <Route path="memory"          element={<Navigate to="/settings/ziggy" replace />} />
         <Route path="virtual-devices" element={<Navigate to="/settings" replace />} />
         <Route path="quick-asks"      element={<Navigate to="/actions" replace />} />
-        {mediaMusicEnabled && (
-          <Route path="settings/music" element={<MediaSettings />} />
-        )}
+        <Route path="settings/music" element={mediaMusicEnabled ? <MediaSettings /> : <Navigate to="/settings" replace />} />
       </Route>
 
       {/* ── Wall dashboard — tablet-only, no AppShell. Additive surface: nothing
