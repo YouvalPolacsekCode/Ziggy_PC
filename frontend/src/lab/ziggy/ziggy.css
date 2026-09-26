@@ -1,0 +1,137 @@
+/* Motion Lab — Ziggy-look primitives. Every value comes from the app's own
+   tokens (index.css / tailwind.config.js): --surface, --ink, --accent,
+   --r-card 16px, --r-ctl 10px, --r-sheet 24px, Heebo, Apple-scale type roles.
+   Motion is NOT defined here: each prototype owns its own timing so a
+   variant can differ. The only transitions here are colour/opacity that the
+   app already has (--dur-state 200ms). `--lab-speed` scales them. */
+
+.zl {
+  --sp: var(--lab-speed, 1);
+  font-family: 'Heebo', system-ui, -apple-system, sans-serif;
+  color: var(--ink);
+}
+
+/* type roles */
+.zl-large   { font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.02em; }
+.zl-title2  { font-size: 22px; line-height: 28px; font-weight: 600; }
+.zl-title3  { font-size: 20px; line-height: 25px; font-weight: 600; }
+.zl-headline{ font-size: 17px; line-height: 22px; font-weight: 600; }
+.zl-body    { font-size: 17px; line-height: 22px; }
+.zl-subhead { font-size: 15px; line-height: 20px; }
+.zl-footnote{ font-size: 13px; line-height: 18px; }
+.zl-caption { font-size: 11px; line-height: 13px; font-weight: 500; }
+.zl-mono    { font-variant-numeric: tabular-nums; }
+.zl-mute    { color: var(--ink-mute); }
+
+/* page scaffold inside a stage */
+.zl-page { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
+.zl-page__scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px 16px 90px; -webkit-overflow-scrolling: touch; }
+.zl-page__scroll::-webkit-scrollbar { display: none; }
+.zl-page__title { margin: 6px 0 14px; }
+
+/* card */
+.zl-card { background: var(--surface); border: 0.5px solid var(--line); border-radius: var(--r-card, 16px); box-shadow: var(--shadow-sm); }
+.zl-card--pad { padding: 14px 16px; }
+
+/* tile (device / room) */
+.zl-tile {
+  position: relative; display: flex; flex-direction: column; justify-content: space-between;
+  background: var(--tile-base); color: var(--ink);
+  border: 0.5px solid var(--line); border-radius: var(--r-card, 16px);
+  padding: 12px; min-height: 96px; text-align: start;
+  cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+  overflow: hidden; touch-action: manipulation;
+}
+.zl-tile[data-on="true"] { background: var(--surface); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.zl-tile__icon {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--r-ctl, 10px);
+  background: var(--surface-2); color: var(--ink-mute);
+}
+.zl-tile[data-on="true"] .zl-tile__icon { background: var(--accent-2); color: var(--accent-text); }
+.zl-tile__name { font-size: 15px; line-height: 20px; font-weight: 600; margin-top: 8px; }
+.zl-tile__meta { font-size: 13px; line-height: 18px; color: var(--ink-mute); font-variant-numeric: tabular-nums; }
+.zl-tile__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* room tile (taller, hero-ish) */
+.zl-room { min-height: 136px; background: var(--surface); }
+.zl-room__occ { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-mute); }
+.zl-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--ink-ghost); }
+.zl-dot[data-state="occupied"] { background: var(--ok); }
+.zl-dot[data-state="empty"] { background: var(--ink-ghost); }
+.zl-dot[data-state="unknown"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line-3); }
+
+/* buttons */
+.zl-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 44px; padding: 0 18px; border-radius: var(--r-ctl, 10px);
+  border: 0.5px solid var(--line); background: var(--surface); color: var(--ink);
+  font-size: 15px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  user-select: none; -webkit-user-select: none; touch-action: manipulation;
+}
+.zl-btn--primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.zl-btn--ghost { background: transparent; border-color: transparent; color: var(--accent-text); }
+.zl-btn--icon { width: 44px; padding: 0; }
+.zl-btn--pill { border-radius: 999px; height: 36px; padding: 0 14px; font-size: 14px; }
+
+/* switch (Radix-like look) */
+.zl-switch { position: relative; width: 40px; height: 24px; border-radius: 999px; background: var(--line-2); border: 0; cursor: pointer; padding: 0; -webkit-tap-highlight-color: transparent; flex: none; }
+.zl-switch[data-state="checked"] { background: var(--ok); }
+.zl-switch__thumb { position: absolute; top: 2px; inset-inline-start: 2px; width: 20px; height: 20px; border-radius: 999px; background: var(--surface); box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 22%, transparent); }
+
+/* bottom nav look */
+.zl-nav {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 56px;
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: center;
+  background: color-mix(in srgb, var(--surface) 90%, transparent); backdrop-filter: blur(14px);
+  border-top: 0.5px solid var(--line);
+  padding-bottom: 0;
+}
+.zl-nav__item {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  height: 100%; border: 0; background: transparent; color: var(--ink-mute); font-size: 11px; font-weight: 500; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; user-select: none; touch-action: manipulation;
+}
+.zl-nav__item[aria-current="page"] { color: var(--accent-text); }
+
+/* toast look */
+.zl-toast {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--ink); color: var(--bg); border-radius: 14px; padding: 12px 14px;
+  box-shadow: var(--shadow-lg); font-size: 14px; font-weight: 500; min-height: 48px;
+}
+[data-palette="dark"] .zl-toast { background: var(--surface-3); color: var(--ink); border: 1px solid var(--line-2); }
+.zl-toast__action { margin-inline-start: auto; color: var(--accent-3); font-weight: 600; background: transparent; border: 0; cursor: pointer; font-size: 14px; }
+.zl-toast--success .zl-toast__icon { color: var(--ok); }
+.zl-toast--error .zl-toast__icon { color: var(--err); }
+
+/* sheet chrome */
+.zl-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: var(--surface); border-radius: var(--r-sheet, 24px) var(--r-sheet, 24px) 0 0;
+  box-shadow: var(--shadow-lg); border-top: 0.5px solid var(--line);
+  will-change: transform;
+}
+.zl-sheet__grabber { width: 36px; height: 5px; border-radius: 999px; background: var(--line-2); margin: 8px auto 4px; }
+.zl-backdrop { position: absolute; inset: 0; background: var(--backdrop); }
+
+/* list row */
+.zl-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface); border-bottom: 0.5px solid var(--line); }
+.zl-row:last-child { border-bottom: 0; }
+.zl-row__icon { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); color: var(--ink-mute); flex: none; }
+.zl-row__main { flex: 1; min-width: 0; }
+.zl-row__title { font-size: 15px; font-weight: 600; line-height: 20px; }
+.zl-row__sub { font-size: 13px; color: var(--ink-mute); line-height: 18px; }
+
+/* chip */
+.zl-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: var(--surface-2); border: 0.5px solid var(--line); font-size: 13px; font-weight: 500; color: var(--ink-2); }
+.zl-chip[data-on="true"] { background: var(--accent-2); border-color: transparent; color: var(--accent-text); }
+
+/* skeleton */
+.zl-skel { background: var(--surface-3); border-radius: 8px; }
+
+/* utility */
+.zl-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.zl-stack { display: flex; flex-direction: column; gap: 12px; }
+.zl-hstack { display: flex; align-items: center; gap: 8px; }
+.zl-spacer { flex: 1; }
+.zl-hidden { visibility: hidden; }
