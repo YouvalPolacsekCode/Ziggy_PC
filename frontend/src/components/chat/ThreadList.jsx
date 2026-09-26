@@ -46,7 +46,7 @@ export default function ThreadList({ onSwitch }) {
                     dir="auto"
                     style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, lineHeight: '22px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   >
-                    {th.title || t('nav.ziggy')}
+                    {!th.title || th.title === 'New chat' ? t('nav.ziggy') : th.title}
                   </span>
                   {th.status === 'running' && (
                     <span

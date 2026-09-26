@@ -1,7 +1,11 @@
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { domainIcon as _registryDomainIcon, DOMAIN_REGISTRY } from './domainRegistry'
-import { t as i18nT } from './i18n'
+import { t as i18nT, getLang } from './i18n'
+
+// Dates and times follow the app's language, not the phone's system locale:
+// a Hebrew app on an English phone must not show "07:20 PM" and "Sep 12".
+const LOCALE = () => (getLang() === 'he' ? 'he-IL' : 'en-GB')
 import { inferBinarySensorClass } from './devices'
 
 export function cn(...inputs) {
@@ -9,7 +13,7 @@ export function cn(...inputs) {
 }
 
 export function formatTime(date) {
-  return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return new Date(date).toLocaleTimeString(LOCALE(), { hour: '2-digit', minute: '2-digit' })
 }
 
 /**
@@ -56,9 +60,9 @@ export function formatDate(date) {
   const now = new Date()
   const diff = d - now
   if (Math.abs(diff) < 86400000) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return d.toLocaleTimeString(LOCALE(), { hour: '2-digit', minute: '2-digit' })
   }
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  return d.toLocaleDateString(LOCALE(), { month: 'short', day: 'numeric' })
 }
 
 export function capitalize(str) {

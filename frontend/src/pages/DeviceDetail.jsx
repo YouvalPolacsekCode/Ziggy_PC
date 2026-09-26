@@ -173,7 +173,7 @@ function TimeAgo({ iso }) {
   if (diffMin < 1) return t('deviceDetail.justNow')
   if (diffMin < 60) return t('deviceDetail.minutesAgo', { n: diffMin })
   if (diffMin < 1440) return t('deviceDetail.hoursAgo', { n: Math.round(diffMin / 60) })
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  return d.toLocaleDateString(getLang() === 'he' ? 'he-IL' : 'en-GB', { month: 'short', day: 'numeric' })
 }
 
 // ── Ghost device page ────────────────────────────────────────────────────────
@@ -1483,7 +1483,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
           <SectionTitle>{t('deviceDetail.capabilities')}</SectionTitle>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {[...facts.capabilities].map(c => (
-              <span key={c} className="z-chip">{c.replace(/_/g, ' ')}</span>
+              <span key={c} className="z-chip">{t(`cap.${c}`) !== `cap.${c}` ? t(`cap.${c}`) : c.replace(/_/g, ' ')}</span>
             ))}
           </div>
         </Card>
@@ -1587,7 +1587,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
           }}>
             <Home size={18} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
             <span dir="auto" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
-              {currentRoom?.name || t('deviceDetail.noRoom')}
+              {translateNamePhrase(currentRoom?.name, getLang()) || t('deviceDetail.noRoom')}
             </span>
           </div>
         ) : (

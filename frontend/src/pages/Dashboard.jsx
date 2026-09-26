@@ -104,7 +104,7 @@ function prettifyIntent(intent) {
 function formatActivity(entry, entityMap) {
   const ts   = new Date(entry.ts)
   const diff = Math.floor((Date.now() - ts) / 60000)
-  const timeStr = diff < 1 ? tt('common.now') : diff < 60 ? `${diff}m` : diff < 1440 ? `${Math.floor(diff / 60)}h` : ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const timeStr = diff < 1 ? tt('common.now') : diff < 60 ? tt('common.minutesShort', { n: diff }) : diff < 1440 ? tt('common.hoursShort', { n: Math.floor(diff / 60) }) : ts.toLocaleDateString(getLang() === 'he' ? 'he-IL' : 'en-GB', { month: 'short', day: 'numeric' })
   const { intent, action, room, entity_id } = entry
   const ent = entity_id ? entityMap?.[entity_id] : null
   const entName = ent ? entityDisplayName(ent) : (entity_id ? humanizeSlug(entity_id) : null)
@@ -114,8 +114,12 @@ function formatActivity(entry, entityMap) {
   if (intent === 'create_automation' || intent === 'create_task') {
     label = head
   } else if (intent === 'toggle_device' || intent === 'control_device') {
-    const h = entName || head
-    label = action ? `${h} · ${action}${room ? ` · ${room}` : ''}` : h
+    // The feed stores the device's name and the verb as the hub saw them;
+    // the person reads them in their language ("מנורת סלון · כבוי").
+    const h = translateNamePhrase(entName, getLang()) || head
+    const verb = ({ on: tt('common.on'), off: tt('common.off'), turn_on: tt('common.on'), turn_off: tt('common.off') })[action] || action
+    const roomL = translateNamePhrase(room, getLang())
+    label = action ? `${h} · ${verb}${roomL ? ` · ${roomL}` : ''}` : h
   } else if (intent === 'control_tv' || intent === 'ir_send_command') {
     label = `${head} ${action}${room ? ` · ${room}` : ''}`
   } else if (head) {
@@ -361,7 +365,7 @@ function QuickControlTile({ entity }) {
           fontSize: 13, fontWeight: 600, lineHeight: 1.2,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
-          {facts.name}
+          {translateNamePhrase(facts.name, getLang())}
         </div>
         <div style={{
           fontSize: 13, marginTop: 4, color: subColor,
