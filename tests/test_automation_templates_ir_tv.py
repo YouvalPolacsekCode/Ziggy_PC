@@ -118,3 +118,12 @@ def test_prefill_motion_only_uses_longer_grace(monkeypatch):
     # No TV discovered → no gating condition, action slot left empty for the wizard.
     assert pre["conditions"] == []
     assert pre["actions"][0]["ir_device_id"] == ""
+
+
+def test_every_library_template_has_a_hebrew_name_and_description():
+    """The phone pass (2026-09-27) found 'Leave Home' and 'Motion Light' in English on a
+    Hebrew Actions page: the card shows name_he when it exists and the English name when
+    it does not. Israel/Hebrew defaults rule — every template the Library can show
+    carries both."""
+    missing = [t["id"] for t in TEMPLATES + RETIRED_TEMPLATES if not t.get("name_he") or not t.get("description_he")]
+    assert missing == [], f"templates without Hebrew: {missing}"
