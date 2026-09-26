@@ -6,7 +6,7 @@
 // Nothing here is wired into the app; App.jsx only mounts this before the
 // auth wall, the way the marketing site is mounted.
 import { lazy, Suspense, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, HashRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
 import { LabProvider, useLab } from './LabContext'
 import './lab.css'
 
@@ -113,14 +113,18 @@ function Shell() {
   )
 }
 
-export default function MotionLab() {
+// `standalone` = the lab.html build (hash routing, hostable at any path).
+// Inside the app it lives under /motion-lab with a real basename.
+export default function MotionLab({ standalone = false }) {
+  const Router = standalone ? HashRouter : BrowserRouter
+  const routerProps = standalone ? {} : { basename: '/motion-lab' }
   return (
-    <BrowserRouter basename="/motion-lab">
+    <Router {...routerProps}>
       <LabProvider>
         <Routes>
           <Route path="/*" element={<Shell />} />
         </Routes>
       </LabProvider>
-    </BrowserRouter>
+    </Router>
   )
 }
