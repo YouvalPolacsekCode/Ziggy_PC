@@ -150,7 +150,7 @@ export function QuickControlsPicker({ open, onClose }) {
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 4,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {facts.meta.label} · {facts.stateLabel}
+                    {facts.kindLabel} · {facts.stateLabel}
                   </div>
                 </div>
               </div>

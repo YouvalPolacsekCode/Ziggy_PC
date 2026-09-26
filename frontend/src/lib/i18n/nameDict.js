@@ -30,6 +30,7 @@ export const SMART_HOME_DICT = [
   { en: 'Balcony',         he: 'מרפסת',               aliases: ['terrace'] },
   { en: 'Patio',           he: 'פטיו' },
   { en: 'Garden',          he: 'גינה',                aliases: ['backyard'] },
+  { en: 'Outside',         he: 'בחוץ',                aliases: ['outdoor', 'outdoors', 'exterior'] },
   { en: 'Yard',            he: 'חצר',                 aliases: ['courtyard'] },
   { en: 'Garage',          he: 'חניה',                aliases: ['carport', 'parking'] },
   { en: 'Basement',        he: 'מרתף' },
@@ -320,5 +321,17 @@ export function translateNamePhrase(text, targetLang) {
     }
     if (!matched) { out.push(tokens[i]); i++ }
   }
-  return changed ? out.join('') : text
+  if (!changed) return text
+  const result = out.join('')
+  // Half a translation is worse than none: "AC Schedule" must not become
+  // "מזגן Schedule". If the source was written in one script and the result
+  // mixes two, the words we could not translate win and the name stays as it was.
+  if (!isMixedScript(text) && isMixedScript(result)) return text
+  return result
+}
+
+const HEBREW = /[֐-׿]/
+const LATIN = /[A-Za-z]/
+function isMixedScript(s) {
+  return HEBREW.test(s) && LATIN.test(s)
 }

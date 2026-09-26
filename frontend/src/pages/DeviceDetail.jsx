@@ -19,7 +19,7 @@ import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, ass
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn, normRoomSlug } from '../lib/utils'
 import { patchIrDevice } from '../lib/api'
-import { useT, useTranslatedName, getLang } from '../lib/i18n'
+import { useT, useTranslatedName, getLang, translateNamePhrase } from '../lib/i18n'
 import { buildFixerQuestion } from '../lib/fixerPrompt'
 
 
@@ -1026,9 +1026,11 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   // For sibling views we keep showing the entity's own name; the group name
   // is surfaced separately as the parent-device crumb.
   const groupName = group?.name || null
-  const displayName = (isGroupPrimary && groupName)
+  // Named the way the tiles name it: a room reads "מנורת סלון" on the card and
+  // must not become "Living Room Lamp" the moment the card is opened.
+  const displayName = translateNamePhrase((isGroupPrimary && groupName)
     ? groupName
-    : (facts.name || attributes.friendly_name || entityId)
+    : (facts.name || attributes.friendly_name || entityId), getLang())
   // IR pseudo-entities are never listed in an HA area's entities[], so the
   // registry match below never finds them → the header/Info tab read "No Room"
   // even when the device IS assigned. Resolve an IR device's room from its own
@@ -1093,7 +1095,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
 
   // One 15px line under the title: room · kind. Skips whichever half is
   // missing so it never reads "· Light".
-  const subtitle = [currentRoom?.name, meta?.label].filter(Boolean).join(' · ')
+  const subtitle = [translateNamePhrase(currentRoom?.name, getLang()), facts?.kindLabel || meta?.label].filter(Boolean).join(' · ')
 
   return (
     <div style={{ maxWidth: 'var(--page-max-w-narrow)', margin: '0 auto', padding: '24px 20px 24px' }}>
@@ -1300,10 +1302,9 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
           {/* Camera live view — keep as separate panel below the remote */}
           {entity.domain === 'camera' && <CameraPanel entityId={entityId} navigate={navigate} />}
 
-          {/* Entity ID footer */}
-          <p className="z-code" style={{ marginTop: 4, fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {entityId}{facts.irId ? ` · ir:${facts.irId}` : ''}
-          </p>
+          {/* No entity-id footer here: the raw HA id is a Home Assistant term, and
+              the Info tab already carries it in the identity card for anyone
+              who needs it. */}
         </>
       )}
 
