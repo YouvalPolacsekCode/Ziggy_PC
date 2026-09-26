@@ -66,6 +66,9 @@ export function Toggle({ checked, onCheckedChange, disabled, className, 'aria-la
         outline: 'none',
       }}
     >
+      {/* The drawn switch is 40×24; a thumb needs ~44px. This invisible pad
+          widens the hit area to 60×44 without changing what is painted. */}
+      <span aria-hidden="true" style={{ position: 'absolute', inset: -10, borderRadius: 999 }} />
       <Switch.Thumb
         style={{
           display: 'block', width: KNOB, height: KNOB, borderRadius: '50%',

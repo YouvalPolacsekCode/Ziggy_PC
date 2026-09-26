@@ -97,3 +97,12 @@
     transform: none;
   }
 }
+
+/* On a phone the bubble floats over the last row of every page — the
+   password button, the last device's switch. Pages that scroll leave room
+   under their content so that row can be pulled clear of it. */
+@media (max-width: 767px) {
+  body:has(.z-chat-bubble) .pb-nav {
+    padding-bottom: calc(var(--nav-clearance) + 72px);
+  }
+}
