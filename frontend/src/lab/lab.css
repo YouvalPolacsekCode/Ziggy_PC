@@ -210,3 +210,15 @@
 .ml-general { border: 1px solid var(--ml-line); border-radius: 10px; background: var(--ml-bg-2); padding: 14px; margin-bottom: 14px; }
 .ml-decision.is-note { border-inline-start-color: #6d7a9c; }
 .ml-decision__verdict.is-note { color: #9fb0e0; }
+
+/* ── Knob scope + reset ─────────────────────────────────────────────── */
+.ml-knobs__head { display: flex; justify-content: space-between; align-items: center; }
+.ml-knobs__title { font-family: var(--ml-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--ml-accent); }
+.ml-knobs__reset { border: 1px solid var(--ml-line); background: transparent; color: var(--ml-ink-2); font: inherit; font-size: 11px; padding: 3px 8px; border-radius: 6px; cursor: pointer; }
+.ml-knobs__reset:disabled { opacity: .35; cursor: default; }
+.ml-knob.is-inactive { opacity: .38; }
+.ml-knob.is-inactive input, .ml-knob.is-inactive select { pointer-events: none; }
+.ml-knob__scope { display: block; font-size: 9.5px; letter-spacing: .04em; color: var(--ml-ink-3); text-transform: none; margin-top: 2px; }
+.ml-knob__scope.is-off { color: #c9a84a; }
+.ml-knob__label > span { display: flex; flex-direction: column; }
+.ml-knob__dot { display: inline-block; width: 6px; height: 6px; border-radius: 999px; background: var(--ml-accent); margin-inline-start: 6px; vertical-align: middle; }

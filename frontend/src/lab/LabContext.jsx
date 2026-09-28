@@ -38,8 +38,11 @@ export function LabProvider({ children }) {
   // GSAP: one global time scale
   useEffect(() => { gsap.globalTimeline.timeScale(speed) }, [speed])
 
+  const resetAll = useCallback(() => { setSpeed(1); setTheme('light'); setDir('ltr'); setReduced(false); setFrame('phone') }, [setSpeed, setTheme, setDir, setReduced, setFrame])
+  const isDefault = speed === 1 && theme === 'light' && dir === 'ltr' && !reduced && frame === 'phone'
+
   const value = useMemo(() => ({
-    speed, setSpeed, SPEEDS,
+    speed, setSpeed, SPEEDS, resetAll, isDefault,
     theme, setTheme,
     dir, setDir, rtl: dir === 'rtl',
     reduced, setReduced,
@@ -49,7 +52,7 @@ export function LabProvider({ children }) {
     tx: (t) => scaleTransition(t, speed),
     // ms → ms scaled (for setTimeout choreography)
     ms: (n) => n / speed,
-  }), [speed, theme, dir, reduced, frame, haptics, setSpeed, setTheme, setDir, setReduced, setFrame])
+  }), [speed, theme, dir, reduced, frame, haptics, setSpeed, setTheme, setDir, setReduced, setFrame, resetAll, isDefault])
 
   return (
     <LabCtx.Provider value={value}>

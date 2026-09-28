@@ -74,6 +74,7 @@ function Toolbar() {
         options={lab.FRAMES.map(f => ({ value: f.key, label: f.label }))} />
       <Seg label="Reduced motion" value={lab.reduced} onChange={lab.setReduced}
         options={[{ value: false, label: 'Off' }, { value: true, label: 'On' }]} />
+      <button className="ml-btn" onClick={lab.resetAll} disabled={lab.isDefault} title="Speed 1×, light, English, phone, reduced motion off">Reset</button>
       <HapticIndicator />
     </div>
   )
@@ -105,6 +106,7 @@ function useReviewerKeys(lab) {
       if (k === 'd') { lab.setTheme(lab.theme === 'dark' ? 'light' : 'dark'); return }
       if (k === 'h') { lab.setDir(lab.dir === 'rtl' ? 'ltr' : 'rtl'); return }
       if (k === 'm') { lab.setReduced(!lab.reduced); return }
+      if (k === '0') { lab.resetAll(); return }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -123,7 +125,7 @@ function Shell() {
           <span className="ml-brand__mark">Z</span>
           <span className="ml-brand__name">Ziggy Motion Lab</span>
           <span className="ml-brand__sub">concept board · nothing here ships</span>
-          <span className="ml-keys" title="Keyboard: act on the demo nearest the middle of the screen">keys · 1–9 variant · R replay · C compare · S speed · D dark · H hebrew · M reduced</span>
+          <span className="ml-keys" title="Keyboard: act on the demo nearest the middle of the screen">keys · 1–9 variant · R replay · C compare · S speed · D dark · H hebrew · M reduced · 0 reset</span>
         </div>
         <Toolbar />
       </header>

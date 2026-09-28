@@ -101,7 +101,7 @@ function NavB({ knobs, tx, reduced, rtl }) {
   const p = useMotionValue(1)
   const seg = useRef({ from: null, to: null })
   const lagRef = useRef(0)
-  lagRef.current = Math.min(0.5, knobs.stretch * 0.5)
+  lagRef.current = Math.min(0.85, knobs.stretch)
   const lastActive = useRef(null)
 
   const geom = useTransform(p, (pv) => {
@@ -699,7 +699,7 @@ export default function Navigation() {
         knobs={[
           { key: 'duration', label: 'Duration', min: 0.15, max: 0.9, step: 0.02, value: 0.42, unit: 'ms' },
           { key: 'bounce', label: 'Bounce', min: 0, max: 0.4, step: 0.02, value: 0.18 },
-          { key: 'stretch', label: 'Stretch (B)', min: 0, max: 1, step: 0.05, value: 0.55 },
+          { key: 'stretch', label: 'Stretch (B)', min: 0, max: 1, step: 0.05, value: 0.6 },
         ]}
         recommend="C"
         variants={[

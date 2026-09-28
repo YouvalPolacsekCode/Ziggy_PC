@@ -133,7 +133,7 @@ export function Demo({ id, title, purpose, principles = [], inZiggy = [], varian
           {variant?.note && <p className="ml-note">{variant.note}</p>}
           {variant?.tradeoff && <p className="ml-note ml-note--tradeoff"><strong>Trade-off.</strong> {variant.tradeoff}</p>}
           {spec && <div className="ml-spec"><span className="ml-spec__label">spec</span>{spec}</div>}
-          {knobs.length > 0 && <Knobs knobs={knobs} values={knobValues} onChange={setKnobValues} />}
+          {knobs.length > 0 && <Knobs knobs={knobs} values={knobValues} onChange={setKnobValues} activeVariant={variant?.key} />}
           <Decide demoId={id} section={section || sectionFromPath()} title={title} variant={variant} knobs={knobValues} />
         </aside>
       </div>
