@@ -66,7 +66,7 @@ export default function Overview() {
       <div className="ml-section__intro">
         <h2>How to review</h2>
         <p>Every prototype is interactive; most have variants (A/B/C…) so a decision can be made by feel, not by description. Use <strong>Compare</strong> to put today's behaviour beside a proposal on the same stage. Use the toolbar: slow it to 0.25×, switch to dark, flip to Hebrew, simulate reduced motion. Each variant shows its spec (duration, bounce, easing) and the principles it serves. Nothing here touches the product.</p>
-        <p>The starred variant (★) is the one I would pick. It is a recommendation, not a decision.</p>
+        <p>The starred variant (★) is the one I would pick. It is a recommendation, not a decision. <strong>Your decision is the Decide strip under each demo's knobs:</strong> Pick this (records the variant and your knob settings), Maybe, or Keep today, plus a note. The <Link to="/decisions" style={{ color: 'var(--ml-accent)' }}>Decisions</Link> page lists them; when you are done, tell Claude to read them.</p>
       </div>
 
       <h3 className="ml-h3">What the investigation found</h3>

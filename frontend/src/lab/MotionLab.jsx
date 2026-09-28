@@ -22,6 +22,7 @@ const SECTIONS = [
   { key: 'pages', label: 'Page transitions', load: () => import('./sections/PageTransitions') },
   { key: 'moments', label: 'Moments', load: () => import('./sections/Moments') },
   { key: 'experimental', label: 'Experimental', load: () => import('./sections/Experimental') },
+  { key: 'decisions', label: 'Decisions', load: () => import('./sections/Decisions') },
 ]
 const COMPONENTS = Object.fromEntries(SECTIONS.map(s => [s.key, lazy(s.load)]))
 

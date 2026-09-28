@@ -422,7 +422,7 @@ export default function Rooms() {
         ]}
       />
 
-      <Demo id="occupancy" title="Room occupancy" purpose="Occupied, empty, unknown: three facts, three looks. And a change between them is an event." principles={['state', 'restraint']} inZiggy={['Dashboard.jsx RoomTileFace', 'Rooms.jsx RoomTile', 'services/occupancy → binary_sensor.ziggy_room_*']}
+      <Demo id="occupancy" activeNav="rooms" title="Room occupancy" purpose="Occupied, empty, unknown: three facts, three looks. And a change between them is an event." principles={['state', 'restraint']} inZiggy={['Dashboard.jsx RoomTileFace', 'Rooms.jsx RoomTile', 'services/occupancy → binary_sensor.ziggy_room_*']}
         knobs={[{ key: 'breath', label: 'Breath period (B)', min: 1.5, max: 5, step: 0.1, value: 3, unit: 's', digits: 1 }]}
         recommend="F"
         variants={[

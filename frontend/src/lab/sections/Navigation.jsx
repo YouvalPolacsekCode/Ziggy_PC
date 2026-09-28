@@ -695,7 +695,7 @@ export default function Navigation() {
         ]}
       />
 
-      <Demo id="nav-active" title="Nav active state" purpose="Which item is current, and that it MOVED there. One object, one journey." principles={['continuity', 'hierarchy', 'restraint']} inZiggy={['components/layout/BottomNav.jsx', 'motion.css [data-motion-nav-hl]']}
+      <Demo id="nav-active" stage="fixed" title="Nav active state" purpose="Which item is current, and that it MOVED there. One object, one journey." principles={['continuity', 'hierarchy', 'restraint']} inZiggy={['components/layout/BottomNav.jsx', 'motion.css [data-motion-nav-hl]']}
         knobs={[
           { key: 'duration', label: 'Duration', min: 0.15, max: 0.9, step: 0.02, value: 0.42, unit: 'ms' },
           { key: 'bounce', label: 'Bounce', min: 0, max: 0.4, step: 0.02, value: 0.18 },
@@ -713,7 +713,7 @@ export default function Navigation() {
           { key: 'H', label: 'Depth', note: 'No travelling object. The active icon comes forward (scale 1.16, up 2px, soft shadow) while the others recede to 94% and 65%. Hierarchy through depth rather than position.', spec: () => 'spring 420 ms · bounce 0.15', render: (p) => <NavH {...p} /> },
         ]} />
 
-      <Demo id="more-menu" title="More menu" purpose="A menu should come from where it was asked for, and go back there faster than it came." principles={['causality', 'continuity', 'restraint']} inZiggy={['BottomNav.jsx:227-270 MoreTab']}
+      <Demo id="more-menu" stage="fixed" title="More menu" purpose="A menu should come from where it was asked for, and go back there faster than it came." principles={['causality', 'continuity', 'restraint']} inZiggy={['BottomNav.jsx:227-270 MoreTab']}
         knobs={[
           { key: 'duration', label: 'Duration', min: 0.15, max: 0.7, step: 0.02, value: 0.32, unit: 'ms' },
           { key: 'bounce', label: 'Bounce', min: 0, max: 0.4, step: 0.02, value: 0.12 },
@@ -727,7 +727,7 @@ export default function Navigation() {
           { key: 'D', label: 'Tab becomes the sheet', note: 'The More cell itself is the surface: it grows upward into a small bottom sheet (layoutId), the gear turns 45° into an X, and the items arrive 120ms after the surface has. Closing reverses into the tab in 180ms. Recommended: the thing you tapped is the thing that opened, which is the strongest cause-and-effect the nav can show.', tradeoff: 'Needs the tab cell and the sheet in one LayoutGroup; the sheet must not be a lazy chunk or the cell would grow into nothing.', spec: () => 'grow spring 420 ms bounce 0.10 · items +120 ms · close 180 ms ease-out', render: (p) => <MoreD {...p} /> },
         ]} />
 
-      <Demo id="nav-scroll" title="Nav on scroll" purpose="Scrolling down is reading; the chrome should get out of the way without vanishing." principles={['restraint', 'state', 'continuity']} inZiggy={['gestures.js useScrollChrome', 'motion.css [data-motion-nav][data-tucked]']}
+      <Demo id="nav-scroll" stage="fixed" title="Nav on scroll" purpose="Scrolling down is reading; the chrome should get out of the way without vanishing." principles={['restraint', 'state', 'continuity']} inZiggy={['gestures.js useScrollChrome', 'motion.css [data-motion-nav][data-tucked]']}
         recommend="B"
         variants={[
           { key: 'A', label: 'Tuck away (today)', note: 'The bar slides fully off. Returns on any scroll-up or at the top.', render: (p) => <ScrollA {...p} /> },
@@ -736,7 +736,7 @@ export default function Navigation() {
           { key: 'D', label: 'Collapse to a pill', note: 'The nav is one object that changes size. On scroll-down the whole bar condenses into a floating pill at the bottom centre showing the current tab and a live line; tap it or scroll up and the same surface grows back into the bar (layoutId).', tradeoff: 'Introduces a second nav state users must learn, and the live line is a new information surface, not just chrome.', spec: () => 'condense spring 500 ms bounce 0.14 · expand spring 420 ms · content +140 ms', render: (p) => <ScrollD {...p} /> },
         ]} />
 
-      <Demo id="sidebar" title="Sidebar active highlight" purpose="Desktop: the highlight already slides. What should the icon do?" principles={['continuity', 'hierarchy', 'restraint']} inZiggy={['components/layout/Sidebar.jsx NavGroup', 'motion.css:274-289']} stage="desktop" height={520}
+      <Demo id="sidebar" bare title="Sidebar active highlight" purpose="Desktop: the highlight already slides. What should the icon do?" principles={['continuity', 'hierarchy', 'restraint']} inZiggy={['components/layout/Sidebar.jsx NavGroup', 'motion.css:274-289']} stage="desktop" height={520}
         knobs={[
           { key: 'duration', label: 'Duration', min: 0.15, max: 0.8, step: 0.02, value: 0.4, unit: 'ms' },
           { key: 'bounce', label: 'Bounce', min: 0, max: 0.35, step: 0.02, value: 0.1 },

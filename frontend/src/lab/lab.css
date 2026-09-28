@@ -178,3 +178,35 @@
 @keyframes mlWord { from { opacity: 0; transform: translateY(14px); filter: blur(4px) } }
 .ml-thesis-sub { color: var(--ml-ink-2); font-size: 16px; max-width: 720px; margin: 0 0 6px; animation: mlWord 520ms cubic-bezier(0.23,1,0.32,1) 480ms backwards; }
 @media (prefers-reduced-motion: reduce) { .ml-thesis .w, .ml-thesis-sub { animation: none } }
+
+/* ── Decide strip + Decisions page ─────────────────────────────────── */
+.ml-decide { border-top: 1px solid var(--ml-line); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.ml-decide__row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.ml-decide__btn { border: 1px solid var(--ml-line); background: #1f2126; color: var(--ml-ink-2); font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 8px; cursor: pointer; transition: transform 120ms cubic-bezier(0.23,1,0.32,1), background 140ms ease, color 140ms ease, border-color 140ms ease; }
+.ml-decide__btn:active { transform: scale(0.96); }
+.ml-decide__btn:disabled { opacity: .6; }
+.ml-decide__btn.is-pick.is-on { background: var(--ml-accent); color: #1e1812; border-color: transparent; }
+.ml-decide__btn.is-maybe.is-on { background: #3b3a2a; color: #f0d98a; border-color: #6b6034; }
+.ml-decide__btn.is-reject.is-on { background: #2a2c31; color: var(--ml-ink); border-color: #4a4d55; }
+.ml-decide__clear { border: 0; background: transparent; color: var(--ml-ink-3); font-size: 16px; cursor: pointer; padding: 0 6px; }
+.ml-decide__note { background: #16171a; border: 1px solid var(--ml-line); border-radius: 8px; color: var(--ml-ink); font: inherit; font-size: 12.5px; padding: 7px 10px; width: 100%; }
+.ml-decide__note::placeholder { color: var(--ml-ink-3); }
+.ml-decide__status { font-family: var(--ml-mono); font-size: 10.5px; color: var(--ml-ink-3); }
+.ml-decide__status strong { color: var(--ml-accent); font-weight: 600; }
+.ml-decisions__bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 14px; border: 1px solid var(--ml-line); border-radius: 10px; background: var(--ml-bg-2); }
+.ml-decisions__count { color: var(--ml-ink-2); font-size: 13px; }
+.ml-decisions__count strong { color: var(--ml-ink); }
+.ml-decision { border-inline-start: 3px solid var(--ml-line); }
+.ml-decision.is-pick { border-inline-start-color: var(--ml-accent); }
+.ml-decision.is-maybe { border-inline-start-color: #c9a84a; }
+.ml-decision.is-reject { border-inline-start-color: #4a4d55; }
+.ml-decision__head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.ml-decision__verdict { font-family: var(--ml-mono); font-size: 11px; color: var(--ml-ink-2); }
+.ml-decision__verdict.is-pick { color: var(--ml-accent); }
+.ml-decision__verdict.is-maybe { color: #f0d98a; }
+.ml-decision__knobs { display: flex; gap: 10px; flex-wrap: wrap; font-family: var(--ml-mono); font-size: 11px; color: var(--ml-ink-3); margin-top: 6px; }
+.ml-decision__knobs em { font-style: normal; color: var(--ml-ink-2); }
+.ml-decision__foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-family: var(--ml-mono); font-size: 10.5px; color: var(--ml-ink-3); }
+.ml-general { border: 1px solid var(--ml-line); border-radius: 10px; background: var(--ml-bg-2); padding: 14px; margin-bottom: 14px; }
+.ml-decision.is-note { border-inline-start-color: #6d7a9c; }
+.ml-decision__verdict.is-note { color: #9fb0e0; }

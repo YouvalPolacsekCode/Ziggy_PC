@@ -712,7 +712,7 @@ export default function Feedback() {
         ]}
       />
 
-      <Demo id="toast" title="Toast" purpose="Confirmation should come from the cause, stack without chaos, and leave faster than it came." principles={['causality', 'continuity', 'restraint']} inZiggy={['components/ui/Toast.jsx', 'stores/uiStore.js addToast', 'AutomationCard Run']}
+      <Demo id="toast" activeNav="rooms" title="Toast" purpose="Confirmation should come from the cause, stack without chaos, and leave faster than it came." principles={['causality', 'continuity', 'restraint']} inZiggy={['components/ui/Toast.jsx', 'stores/uiStore.js addToast', 'AutomationCard Run']}
         knobs={[{ key: 'duration', label: 'Spring duration (B, C)', min: 0.2, max: 0.9, step: 0.02, value: 0.45, unit: 'ms' }]}
         recommend="D"
         variants={[

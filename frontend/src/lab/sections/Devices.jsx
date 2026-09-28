@@ -690,7 +690,7 @@ export default function Devices() {
         ]}
       />
 
-      <Demo id="origin" title="State change: who did it?" purpose="Your own tap needs no announcement. A change from elsewhere does." principles={['causality', 'restraint']} inZiggy={['Devices.jsx / DeviceCard.jsx tiles', 'App.jsx state_changed handler', 'motion.css [data-on] + zm-ignite']}
+      <Demo id="origin" activeNav="devices" title="State change: who did it?" purpose="Your own tap needs no announcement. A change from elsewhere does." principles={['causality', 'restraint']} inZiggy={['Devices.jsx / DeviceCard.jsx tiles', 'App.jsx state_changed handler', 'motion.css [data-on] + zm-ignite']}
         knobs={[{ key: 'duration', label: 'Ring / bloom duration', min: 0.2, max: 1, step: 0.02, value: 0.6, unit: 'ms' }]}
         recommend="E"
         variants={[
@@ -702,7 +702,7 @@ export default function Devices() {
           { key: 'F', label: 'Knock', note: 'The restraint variant: someone else\'s change nudges the tile from behind (0.985 → 1.012 → 1, 320ms, faint ring) under the same colour crossfade; your own tap presses it from the front (0.97). No chip, no text, but the two causes still read differently.', tradeoff: 'Says "not you", never "who". Pair with E when the name matters (a log, a notification).', spec: () => '320 ms keyframes [1, .985, 1.012, 1] · press spring 180 ms', render: (p) => <OriginF {...p} /> },
         ]} />
 
-      <Demo id="pending" title="Pending → confirmed / failed" purpose="Between the tap and the hub's answer, show that we are waiting; on the answer, show which answer." principles={['causality', 'state']} inZiggy={['motion.css zm-pending', 'DeviceCard.jsx optimistic + revert', 'toast.didNotRespond']}
+      <Demo id="pending" activeNav="devices" title="Pending → confirmed / failed" purpose="Between the tap and the hub's answer, show that we are waiting; on the answer, show which answer." principles={['causality', 'state']} inZiggy={['motion.css zm-pending', 'DeviceCard.jsx optimistic + revert', 'toast.didNotRespond']}
         recommend="E"
         variants={[
           { key: 'A', label: 'Breathe (today)', render: (p) => <PendingA {...p} /> },
@@ -713,7 +713,7 @@ export default function Devices() {
           { key: 'F', label: 'Icon breathes, dots in the line', note: 'The quiet option. One breath on the icon (1→1.05→1, 1.2s, one cycle) and the state text becomes three dots that resolve into the answer. Only the fact that is unknown moves. For dense grids where E\'s fill on several tiles at once would be loud.', tradeoff: 'Failure is text-only (the line turns red); no shape change, so it is easy to miss at a glance.', spec: () => 'breath 1200 ms one cycle · dots 900 ms loop (bounded by the answer) · text 200 ms', render: (p) => <PendingF {...p} /> },
         ]} />
 
-      <Demo id="card-controls" title="Card expand: Show controls" purpose="Controls belong to the tile. Either the tile grows to hold them, or the tile becomes the sheet." principles={['continuity', 'physical']} inZiggy={['Devices.jsx:2164 expanded control surface', 'motion/DeviceSheet.jsx']}
+      <Demo id="card-controls" activeNav="devices" title="Card expand: Show controls" purpose="Controls belong to the tile. Either the tile grows to hold them, or the tile becomes the sheet." principles={['continuity', 'physical']} inZiggy={['Devices.jsx:2164 expanded control surface', 'motion/DeviceSheet.jsx']}
         knobs={[{ key: 'duration', label: 'Duration', min: 0.2, max: 0.9, step: 0.02, value: 0.42, unit: 'ms' }]}
         recommend="C"
         variants={[
@@ -730,7 +730,7 @@ export default function Devices() {
           { key: 'B', label: 'Sensors & rooms', note: 'Recommended as the first set to ship: these are the glyphs the dashboard shows all day. The door swings open on its hinge (HTML panel, rotateY −60°, mirrored in RTL); the camera\'s red dot blinks twice then holds and the lens ring breathes only while live; the snowflake spins in 180° on a spring while six arms draw (off retracts them in 140ms); the bulb\'s filament draws and glows gold. Each glyph carries its state; the colour becomes optional.', tradeoff: 'The camera ring is an ambient loop; it is earned by "streaming right now" but must stop the moment the stream does.', render: (p) => <IconMorphsB {...p} /> },
         ]} />
 
-      <Demo id="sheet" title="Device sheet detents (interactive)" purpose="The sheet is the most complete gesture in the app. Tune it here." principles={['physical', 'continuity']} inZiggy={['motion/SheetSurface.jsx', 'motion/DeviceSheet.jsx DETENTS [0.72, 1]']}
+      <Demo id="sheet" stage="fixed" title="Device sheet detents (interactive)" purpose="The sheet is the most complete gesture in the app. Tune it here." principles={['physical', 'continuity']} inZiggy={['motion/SheetSurface.jsx', 'motion/DeviceSheet.jsx DETENTS [0.72, 1]']}
         knobs={[
           { key: 'peek', label: 'Peek detent', min: 0.4, max: 0.9, step: 0.02, value: 0.72 },
           { key: 'elastic', label: 'Rubber-band past top', min: 0, max: 0.4, step: 0.02, value: 0.12 },

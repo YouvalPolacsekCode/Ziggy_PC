@@ -273,7 +273,7 @@ export default function Experimental() {
       <Demo id="rewind" title="Rewind the day" purpose="Scrub time; watch the home's state replay. History as a gesture, not a chart." inZiggy={['Recent Activity card (replacement concept)', 'occupancy diagnostics history']}
         variants={[{ key: 'A', label: 'Timeline scrub', render: (p) => <RewindDay {...p} /> }]} />
 
-      <Demo id="parallax" title="Pointer parallax tiles" purpose="Desktop delight: tiles tilt toward the pointer with a glare. Decorative by admission." inZiggy={['Dashboard desktop RoomsGrid (hover only)']} stage="desktop" height={520}
+      <Demo id="parallax" title="Pointer parallax tiles" purpose="Desktop delight: tiles tilt toward the pointer with a glare. Decorative by admission." inZiggy={['Dashboard desktop RoomsGrid (hover only)']} height={520}
         variants={[{ key: 'A', label: 'Tilt + glare', render: (p) => <ParallaxTiles {...p} /> }]} />
 
       <Demo id="breeze" title="AC breeze" purpose="A running AC moves air. Three drifting lines say so without a word." inZiggy={['Devices AC card', 'Smart Climate card']}

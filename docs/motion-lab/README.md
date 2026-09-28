@@ -38,6 +38,15 @@ Dev builds always mount the lab. A production build only mounts it with
 Sections: Overview · Navigation · Cards · Devices · Rooms · Controls ·
 Feedback · Data · Page transitions · Moments · Experimental.
 
+Deciding: every demo has a **Decide** strip (Pick this / Maybe / Keep today + a
+note); the Decisions page lists them with a general Notes-to-Claude box. In the
+published artifact these save to the artifact's shared `db`
+(`decisions/<demoId>`, `notes/general`) and Claude reads them back with the
+ArtifactData tool; on the dev server or LAN they stay in the browser and
+"Copy as JSON" hands them over. Tablet and desktop frames render the real
+shell (sidebar, no bottom nav, wider grid); phone-only gestures are pinned to
+a phone frame.
+
 Review tools: per-demo **Compare** (variant A = today, beside the selected
 one), principle tags (continuity · causality · hierarchy · state · physical ·
 restraint), a spec readout (duration / bounce / easing), ★ for my pick, and

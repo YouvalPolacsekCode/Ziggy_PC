@@ -614,7 +614,7 @@ export default function PageTransitions() {
         ]}
       />
 
-      <Demo id="push" title="List → detail (push / pop)" purpose="Where did this page come from, and how do I get back?" principles={['continuity', 'physical', 'causality']} inZiggy={['AppShell.jsx [data-motion-enter]', 'motion.css zm-page-in / zm-page-back', 'morph.js']}
+      <Demo id="push" stage="fixed" activeNav="rooms" title="List → detail (push / pop)" purpose="Where did this page come from, and how do I get back?" principles={['continuity', 'physical', 'causality']} inZiggy={['AppShell.jsx [data-motion-enter]', 'motion.css zm-page-in / zm-page-back', 'morph.js']}
         knobs={[
           { key: 'duration', label: 'Duration', min: 0.2, max: 0.9, step: 0.02, value: 0.42, unit: 'ms' },
           { key: 'bounce', label: 'Bounce (C)', min: 0, max: 0.3, step: 0.02, value: 0 },
@@ -642,7 +642,7 @@ export default function PageTransitions() {
           { key: 'D', label: 'Shared axis', note: 'Material shared-axis X with asymmetric timing: the outgoing pane leaves in 90ms, the incoming one arrives over 210ms after a 90ms delay. The eye follows the arrival, so the departure only needs to be out of the way; giving it equal time would make both panes overlap and read as a double exposure. Recommended over B for exactly that reason.', spec: () => 'exit 90 ms · enter 210 ms +90 ms · 30px · height spring 400 ms', render: (p) => <TabsDemo {...p} variant="D" /> },
         ]} />
 
-      <Demo id="promote" title="Sheet → page promotion" purpose="A sheet that becomes the page should grow into it, not be replaced by it." principles={['continuity', 'causality', 'hierarchy']} inZiggy={['motion/DeviceSheet.jsx', 'SheetSurface.jsx handoff', 'App.jsx _TRAIL_MS']}
+      <Demo id="promote" stage="fixed" title="Sheet → page promotion" purpose="A sheet that becomes the page should grow into it, not be replaced by it." principles={['continuity', 'causality', 'hierarchy']} inZiggy={['motion/DeviceSheet.jsx', 'SheetSurface.jsx handoff', 'App.jsx _TRAIL_MS']}
         knobs={[{ key: 'duration', label: 'Grow duration (B)', min: 0.2, max: 0.8, step: 0.02, value: 0.42, unit: 'ms' }]}
         recommend="C"
         variants={[
@@ -651,7 +651,7 @@ export default function PageTransitions() {
           { key: 'C', label: 'Header stays, body turns the page', note: 'The sheet grows to full height, but its header row is pinned and simply becomes the page header: the grabber collapses as the back arrow fades in, and only the body crossfades through a 3px blur into the page content. Recommended: it keeps the one thing the user is reading (the title) still, and moves everything else.', tradeoff: 'Same single-tree requirement as B; plus the page body and the sheet body must share a layout so the crossfade lines up.', spec: () => 'grow spring 420 ms · grabber→arrow 180 ms · body blur crossfade 260 ms', render: (p) => <SheetPromoteC {...p} /> },
         ]} />
 
-      <Demo id="swipe-back" title="Swipe back with an under-page" purpose="The page under your thumb should reveal the page you came from, already moving." principles={['physical', 'continuity']} inZiggy={['gestures.js useSwipeBack', 'AppShell.jsx:216']}
+      <Demo id="swipe-back" stage="fixed" title="Swipe back with an under-page" purpose="The page under your thumb should reveal the page you came from, already moving." principles={['physical', 'continuity']} inZiggy={['gestures.js useSwipeBack', 'AppShell.jsx:216']}
         knobs={[{ key: 'parallax', label: 'Under-page parallax (A, C)', min: 0, max: 0.5, step: 0.05, value: 0.3 }]}
         recommend="A"
         variants={[

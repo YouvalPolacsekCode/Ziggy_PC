@@ -70,7 +70,7 @@ export function HeroCascade() {
   return (
     <div className="ml-hero">
       <div className="ml-hero__stage">
-        <Stage kind="phone" height={560}>
+        <Stage kind="fixed" height={560}>
           <div className="zl zl-page" dir={lab.dir}>
             <div className="zl-page__scroll" style={{ paddingTop: 22 }}>
               <div className="zl-caption zl-mute" style={{ textTransform: 'uppercase', letterSpacing: '.06em' }}>{t(COPY.greeting)}</div>

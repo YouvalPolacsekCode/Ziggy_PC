@@ -21,6 +21,7 @@ import { motion, LayoutGroup } from 'framer-motion'
 import { useLab } from '../LabContext'
 import { Stage } from './Stage'
 import { Knobs } from './Knobs'
+import { Decide } from './Decide'
 
 export const PRINCIPLES = {
   continuity: { label: 'Continuity', hint: 'the thing you touched is the thing that moves' },
@@ -29,6 +30,10 @@ export const PRINCIPLES = {
   state: { label: 'State', hint: 'a change is an event, not a swap' },
   physical: { label: 'Physical', hint: 'places, springs, mass, velocity' },
   restraint: { label: 'Restraint', hint: 'frequent = quiet' },
+}
+
+function sectionFromPath() {
+  try { const m = (window.location.hash || window.location.pathname).match(/\/(navigation|cards|devices|rooms|controls|feedback|data|pages|moments|experimental)\b/); return m ? m[1] : 'unknown' } catch { return 'unknown' }
 }
 
 function fmtSpec(knobs) {
@@ -40,7 +45,7 @@ function fmtSpec(knobs) {
   return parts.join(' · ')
 }
 
-export function Demo({ id, title, purpose, principles = [], inZiggy = [], variants = [], knobs = [], stage = 'phone', height, wide = false, children, recommend }) {
+export function Demo({ id, title, purpose, principles = [], inZiggy = [], variants = [], knobs = [], stage = 'phone', height, wide = false, children, recommend, section, bare = false, activeNav }) {
   const lab = useLab()
   const [variantKey, setVariantKey] = useState(variants[0]?.key)
   const [replayKey, setReplayKey] = useState(0)
@@ -69,7 +74,7 @@ export function Demo({ id, title, purpose, principles = [], inZiggy = [], varian
   const spec = variant?.spec ? variant.spec(knobValues) : fmtSpec(knobValues)
 
   const renderStage = (v, key) => (
-    <Stage kind={stage} height={height}>
+    <Stage kind={stage} height={height} bare={bare} activeNav={activeNav}>
       <div key={`${v.key}-${key}`} className="ml-stage__content" dir={lab.dir}>
         {v.render(props)}
       </div>
@@ -120,7 +125,7 @@ export function Demo({ id, title, purpose, principles = [], inZiggy = [], varian
             <div className="ml-compare__col"><div className="ml-compare__label">{variant.key} · {variant.label}</div>{renderStage(variant, replayKey)}</div>
           </div>
         ) : variant ? renderStage(variant, replayKey) : (
-          <Stage kind={stage} height={height}>
+          <Stage kind={stage} height={height} bare={bare} activeNav={activeNav}>
             <div key={replayKey} className="ml-stage__content" dir={lab.dir}>{typeof children === 'function' ? children(props) : children}</div>
           </Stage>
         )}
@@ -129,6 +134,7 @@ export function Demo({ id, title, purpose, principles = [], inZiggy = [], varian
           {variant?.tradeoff && <p className="ml-note ml-note--tradeoff"><strong>Trade-off.</strong> {variant.tradeoff}</p>}
           {spec && <div className="ml-spec"><span className="ml-spec__label">spec</span>{spec}</div>}
           {knobs.length > 0 && <Knobs knobs={knobs} values={knobValues} onChange={setKnobValues} />}
+          <Decide demoId={id} section={section || sectionFromPath()} title={title} variant={variant} knobs={knobValues} />
         </aside>
       </div>
     </section>

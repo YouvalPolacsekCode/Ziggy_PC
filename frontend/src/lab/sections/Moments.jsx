@@ -351,7 +351,7 @@ export default function Moments() {
         ]}
       />
 
-      <Demo id="onboarding-steps" title="Onboarding step advance" purpose="First run is the one time the user watches every transition. The steps should feel like a path, not a slideshow." principles={['continuity', 'physical']} inZiggy={['WebOnboarding.jsx:96-112', 'MobileOnboarding.jsx:190-208', 'onboarding/steps.jsx']}
+      <Demo id="onboarding-steps" bare title="Onboarding step advance" purpose="First run is the one time the user watches every transition. The steps should feel like a path, not a slideshow." principles={['continuity', 'physical']} inZiggy={['WebOnboarding.jsx:96-112', 'MobileOnboarding.jsx:190-208', 'onboarding/steps.jsx']}
         knobs={[{ key: 'duration', label: 'Duration', min: 0.2, max: 0.8, step: 0.02, value: 0.4, unit: 'ms' }]}
         recommend="C"
         variants={[
@@ -361,7 +361,7 @@ export default function Moments() {
           { key: 'D', label: 'Progress line writes', note: 'A thin accent line grows toward the next step first (spring), then the content rises under it. Causality: the path extends, then you walk it.', render: (p) => <OnboardingDemo {...p} variant="D" /> },
         ]} />
 
-      <Demo id="pairing" title="Pairing: searching → found" purpose="Searching should look like searching; finding should feel like a small arrival." principles={['causality', 'state']} inZiggy={['PairingWizard.jsx:727-899', 'CountdownRing']}
+      <Demo id="pairing" bare title="Pairing: searching → found" purpose="Searching should look like searching; finding should feel like a small arrival." principles={['causality', 'state']} inZiggy={['PairingWizard.jsx:727-899', 'CountdownRing']}
         recommend="B"
         variants={[
           { key: 'A', label: 'Halo + ring (today)', note: 'The countdown ring and a breathing halo; found = the number becomes a check.', render: (p) => <PairingDemo {...p} variant="A" /> },
@@ -369,7 +369,7 @@ export default function Moments() {
           { key: 'C', label: 'The tile ignites', note: 'The device is shown as the real tile it will become, dashed while searching; on found it ignites (rays flash outward) and gets its name field. Continuity into the devices list.', render: (p) => <PairingDemo {...p} variant="C" /> },
         ]} />
 
-      <Demo id="chat-thinking" title="Chat: thinking → answer" purpose="The thinking indicator should become the answer, not be replaced by it." principles={['continuity', 'causality']} inZiggy={['AIChat.jsx ThinkingBubble', 'Message entry']}
+      <Demo id="chat-thinking" activeNav="chat" title="Chat: thinking → answer" purpose="The thinking indicator should become the answer, not be replaced by it." principles={['continuity', 'causality']} inZiggy={['AIChat.jsx ThinkingBubble', 'Message entry']}
         recommend="B"
         variants={[
           { key: 'A', label: 'Dots vanish (today)', render: (p) => <ChatDemo {...p} variant="A" /> },
@@ -378,7 +378,7 @@ export default function Moments() {
           { key: 'D', label: 'Words arrive', note: 'Words fade in 50 ms apart with a 3 px blur, left to right. Reads as speech, without a per-character typewriter.', tradeoff: 'Long replies must cap the stagger (first 30 words) or the reader waits.', render: (p) => <ChatDemo {...p} variant="D" /> },
         ]} />
 
-      <Demo id="scene-run" title="Scene run: Good Night" purpose="A scene changes the whole home. The home should visibly change, in the order it happens." principles={['causality', 'hierarchy', 'state']} inZiggy={['AutomationCard Run', 'RoutineCard Run now', 'execution_result toast']}
+      <Demo id="scene-run" activeNav="actions" title="Scene run: Good Night" purpose="A scene changes the whole home. The home should visibly change, in the order it happens." principles={['causality', 'hierarchy', 'state']} inZiggy={['AutomationCard Run', 'RoutineCard Run now', 'execution_result toast']}
         knobs={[{ key: 'cascade', label: 'Cascade gap (B, C)', min: 0.05, max: 0.4, step: 0.01, value: 0.16, unit: 'ms' }]}
         recommend="B"
         variants={[
