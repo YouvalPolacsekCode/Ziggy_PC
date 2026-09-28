@@ -1,11 +1,15 @@
 # Ziggy Motion Lab
 
-**Status: Phase 2 complete. STOP POINT. Nothing here is integrated into the product.**
+**Status: Phase 2, round 2 complete (2026-09-28). STOP POINT. Nothing here is integrated into the product.**
 
 A concept board for how Ziggy should move, built as a fully isolated route at
 `/motion-lab`. Phase 1 investigated the real frontend (origin/main at e44e163);
-Phase 2 built 44 interactive concepts with 110 variants. Phase 3 (implementation)
+Phase 2 built 50 interactive concepts with 183 variants across ten sections,
+opened by a live "one tap, six consequences" cascade. Phase 3 (implementation)
 starts only when individual ideas are approved.
+
+Published copy (private): https://claude.ai/artifact/8LES8JcHSjKnK1nYHZ5Zj1
+(built from `lab.html` via `vite.lab.config.js`; hash routing, no backend).
 
 ## Run it
 
@@ -32,7 +36,13 @@ Dev builds always mount the lab. A production build only mounts it with
   job (path morphs, the orb, the breeze loop).
 
 Sections: Overview · Navigation · Cards · Devices · Rooms · Controls ·
-Feedback · Data · Page transitions · Experimental.
+Feedback · Data · Page transitions · Moments · Experimental.
+
+Review tools: per-demo **Compare** (variant A = today, beside the selected
+one), principle tags (continuity · causality · hierarchy · state · physical ·
+restraint), a spec readout (duration / bounce / easing), ★ for my pick, and
+keyboard shortcuts (1–9 variant, R replay, C compare, S speed, D dark,
+H hebrew, M reduced motion).
 
 Every demo: a phone / tablet / desktop stage in Ziggy's real palette, light and
 dark, English and Hebrew (RTL), a variant switcher, Replay, per-demo knobs

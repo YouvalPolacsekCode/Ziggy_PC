@@ -2,6 +2,7 @@
 // What the investigation found, the principle the lab follows, the proposed
 // architecture, and an index of every concept with its variants.
 import { Link } from 'react-router-dom'
+import { HeroCascade } from '../ui/HeroCascade'
 
 const FINDINGS = [
   ['A motion layer already ships', 'frontend/src/motion/ (2,665 lines): press scale, state colour crossfade + icon "ignition", enter-only page rise, 35ms stagger, disclosure fold, room tile → hero FLIP, device sheet with detents and handoff, swipe-back, scrub-to-dim, long-press, haptics. Default ON, ?motion=off is the rollback. Everything in this lab builds on it, not beside it.'],
@@ -42,23 +43,29 @@ const ARCH = [
 ]
 
 const INDEX = [
-  ['navigation', 'Navigation', ['Nav active state (5)', 'More menu (3)', 'Nav on scroll (3)', 'Sidebar highlight (3)']],
-  ['cards', 'Cards', ['Expanding card (4)', 'List insert / remove (3)', 'Re-sort (3)', 'Cross-container travel (2)']],
-  ['devices', 'Devices', ['State change origin (4)', 'Pending → confirmed / failed (4)', 'Card expand: Show controls (3)', 'Icon morphs', 'Device sheet detents']],
-  ['rooms', 'Rooms', ['Room occupancy (5)', 'Temperature change (2)', 'Long-press all lights (2)', 'Home status line (2)']],
-  ['controls', 'Controls', ['Toggle (4)', 'Power button (4)', 'Brightness (4)', 'Temperature target (4)', 'Mode segment (3)', 'Hold to delete']],
-  ['feedback', 'Feedback', ['Toast (4)', 'Connection banner (3)', 'Empty → first item (2)', 'Loading → content (3)', 'Destructive confirmation (2)']],
-  ['data', 'Data', ['Live readout (3)', 'Sparkline', 'Battery + signal', 'Confidence meter (2)', 'Counts + badges', 'Cooling progress']],
-  ['pages', 'Page transitions', ['List → detail (5)', 'Tab content (3)', 'Sheet → page (2)', 'Swipe back']],
+  ['navigation', 'Navigation', ['Nav active state (8)', 'More menu (4)', 'Nav on scroll (4)', 'Sidebar highlight (5)']],
+  ['cards', 'Cards', ['Expanding card (6)', 'List insert / remove (5)', 'Re-sort (4)', 'Cross-container travel (3)']],
+  ['devices', 'Devices', ['State change origin (6)', 'Pending → confirmed / failed (6)', 'Card expand (4)', 'Icon morphs (2)', 'Device sheet (2)']],
+  ['rooms', 'Rooms', ['Room occupancy (7)', 'Temperature change (3)', 'Long-press all lights (3)', 'Home status line (3)']],
+  ['controls', 'Controls', ['Toggle (6)', 'Power button (6)', 'Brightness (6)', 'Temperature target (6)', 'Mode segment (4)', 'Hold to delete (3)']],
+  ['feedback', 'Feedback', ['Toast (6)', 'Connection banner (4)', 'Empty → first item (3)', 'Loading → content (4)', 'Destructive confirmation (3)', 'Success moment (4)']],
+  ['data', 'Data', ['Live readout (4)', 'Sparkline', 'Battery + signal', 'Confidence meter (2)', 'Counts + badges (2)', 'Cooling progress (2)']],
+  ['pages', 'Page transitions', ['List → detail (8)', 'Tab content (4)', 'Sheet → page (3)', 'Swipe back (3)']],
+  ['moments', 'Moments', ['Onboarding steps (4)', 'Pairing (3)', 'Chat thinking → answer (4)', 'Scene run: Good Night (4)', 'Ziggy pill: system state (2)']],
   ['experimental', 'Experimental', ['Ambient home', 'Room exposure', 'Ziggy orb', 'Rewind the day', 'Parallax tiles', 'AC breeze']],
 ]
 
 export default function Overview() {
   return (
     <div className="ml-overview">
+      <h1 className="ml-thesis">
+        {['Motion', 'should', 'explain', 'the', 'change,', 'not', 'decorate', 'it.'].map((w, i) => <span key={i} className="w" style={{ animationDelay: `${i * 70}ms`, marginInlineEnd: '0.28em' }}>{w === 'explain' ? <em>{w}</em> : w}</span>)}
+      </h1>
+      <p className="ml-thesis-sub">Tap the light. One tap sets off six consequences, each explained by motion rather than announced by it. Every concept in this lab is a variation on that sentence.</p>
+      <HeroCascade />
       <div className="ml-section__intro">
-        <h2>Ziggy Motion Lab</h2>
-        <p>A concept board for how Ziggy should move. Every prototype is interactive; most have variants (A/B/C…) so a decision can be made by feel, not by description. Use the toolbar: slow it to 0.25×, switch to dark, flip to Hebrew, simulate reduced motion. Nothing here touches the product.</p>
+        <h2>How to review</h2>
+        <p>Every prototype is interactive; most have variants (A/B/C…) so a decision can be made by feel, not by description. Use <strong>Compare</strong> to put today's behaviour beside a proposal on the same stage. Use the toolbar: slow it to 0.25×, switch to dark, flip to Hebrew, simulate reduced motion. Each variant shows its spec (duration, bounce, easing) and the principles it serves. Nothing here touches the product.</p>
         <p>The starred variant (★) is the one I would pick. It is a recommendation, not a decision.</p>
       </div>
 
@@ -78,7 +85,7 @@ export default function Overview() {
         {ARCH.map(([h, b]) => <div key={h} className="ml-finding"><strong>{h}</strong><p>{b}</p></div>)}
       </div>
 
-      <h3 className="ml-h3">Index · 44 concepts · 110 variants</h3>
+      <h3 className="ml-h3">Index · 50 concepts · 183 variants</h3>
       <div className="ml-index">
         {INDEX.map(([key, label, items]) => (
           <Link key={key} to={`/${key}`} className="ml-index__card">

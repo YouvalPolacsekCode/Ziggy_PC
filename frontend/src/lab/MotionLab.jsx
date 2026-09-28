@@ -20,6 +20,7 @@ const SECTIONS = [
   { key: 'feedback', label: 'Feedback', load: () => import('./sections/Feedback') },
   { key: 'data', label: 'Data', load: () => import('./sections/Data') },
   { key: 'pages', label: 'Page transitions', load: () => import('./sections/PageTransitions') },
+  { key: 'moments', label: 'Moments', load: () => import('./sections/Moments') },
   { key: 'experimental', label: 'Experimental', load: () => import('./sections/Experimental') },
 ]
 const COMPONENTS = Object.fromEntries(SECTIONS.map(s => [s.key, lazy(s.load)]))
@@ -77,8 +78,42 @@ function Toolbar() {
   )
 }
 
+// Reviewer shortcuts: act on the demo nearest the middle of the viewport.
+// 1–9 pick a variant · R replay · C compare · S cycle speed · D theme · H direction · M reduced motion
+function useReviewerKeys(lab) {
+  useEffect(() => {
+    const nearestDemo = () => {
+      const mid = window.innerHeight / 2
+      let best = null, bestD = Infinity
+      document.querySelectorAll('.ml-demo').forEach(el => {
+        const r = el.getBoundingClientRect()
+        const d = r.top > mid ? r.top - mid : r.bottom < mid ? mid - r.bottom : 0
+        if (d < bestD) { bestD = d; best = el }
+      })
+      return best
+    }
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const tag = (e.target.tagName || '').toLowerCase()
+      if (tag === 'input' || tag === 'select' || tag === 'textarea') return
+      const k = e.key.toLowerCase()
+      if (k >= '1' && k <= '9') { const d = nearestDemo(); const v = d?.querySelectorAll('.ml-variant')[Number(k) - 1]; if (v) { v.click(); e.preventDefault() } return }
+      if (k === 'r') { const d = nearestDemo(); const b = [...(d?.querySelectorAll('.ml-demo__actions .ml-btn') || [])].find(x => x.textContent.includes('Replay')); b?.click(); return }
+      if (k === 'c') { const d = nearestDemo(); const b = [...(d?.querySelectorAll('.ml-demo__actions .ml-btn') || [])].find(x => x.textContent.includes('Compare')); b?.click(); return }
+      if (k === 's') { const i = lab.SPEEDS.indexOf(lab.speed); lab.setSpeed(lab.SPEEDS[(i + 1) % lab.SPEEDS.length]); return }
+      if (k === 'd') { lab.setTheme(lab.theme === 'dark' ? 'light' : 'dark'); return }
+      if (k === 'h') { lab.setDir(lab.dir === 'rtl' ? 'ltr' : 'rtl'); return }
+      if (k === 'm') { lab.setReduced(!lab.reduced); return }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lab])
+}
+
 function Shell() {
   const location = useLocation()
+  const lab = useLab()
+  useReviewerKeys(lab)
   useEffect(() => { window.scrollTo(0, 0) }, [location.pathname])
   return (
     <div className="ml-root">
@@ -87,6 +122,7 @@ function Shell() {
           <span className="ml-brand__mark">Z</span>
           <span className="ml-brand__name">Ziggy Motion Lab</span>
           <span className="ml-brand__sub">concept board · nothing here ships</span>
+          <span className="ml-keys" title="Keyboard: act on the demo nearest the middle of the screen">keys · 1–9 variant · R replay · C compare · S speed · D dark · H hebrew · M reduced</span>
         </div>
         <Toolbar />
       </header>
@@ -99,6 +135,7 @@ function Shell() {
       </nav>
       <main className="ml-main">
         <Suspense fallback={<div className="ml-loading">Loading section…</div>}>
+          <div key={location.pathname} className="ml-section-enter">
           <Routes>
             <Route index element={<Navigate to="/overview" replace />} />
             {SECTIONS.map(s => {
@@ -107,6 +144,7 @@ function Shell() {
             })}
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>
+          </div>
         </Suspense>
       </main>
     </div>
