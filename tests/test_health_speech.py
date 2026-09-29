@@ -60,6 +60,17 @@ def test_every_issue_code_is_nonempty_and_jargon_free(primary, lang):
     _assert_jargon_free(out)
 
 
+@pytest.mark.parametrize("lang", ["he", "en"])
+def test_twelve_offline_devices_are_not_a_device_or_two(lang):
+    """David's Home: 12 of 27 offline is under the 50% share, so the rule says DEVICES_OFFLINE,
+    and the line said 'a device or two'. The count decides the words."""
+    many = hs.summarize_health({"primary": H.ISSUE_DEVICES_OFFLINE, "devices": {"total": 27, "offline": 12}}, lang=lang)
+    few = hs.summarize_health({"primary": H.ISSUE_DEVICES_OFFLINE, "devices": {"total": 27, "offline": 2}}, lang=lang)
+    assert "12" in many and many != few
+    assert ("אחד או שניים" in few) if lang == "he" else ("device or two" in few.lower())
+    _assert_jargon_free(many)
+
+
 @pytest.mark.parametrize("outcome", ["synced", "recovered", "failed", "healing"])
 @pytest.mark.parametrize("lang", ["he", "en"])
 def test_self_heal_outcome_names_device_and_stays_clean(outcome, lang):
