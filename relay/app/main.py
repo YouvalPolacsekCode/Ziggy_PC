@@ -7,6 +7,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .observability import init_sentry
+
+# Sentry at import time so uvicorn's own startup errors are captured too.
+# No-op unless SENTRY_DSN is set (relay/app/observability.py).
+init_sentry()
+
 from .billing.admin import router as billing_admin_router
 from .billing.public import router as billing_public_router
 from .billing.webhooks import router as billing_webhooks_router
@@ -46,10 +52,16 @@ async def lifespan(app: FastAPI):
     # home stayed broken for 19 hours. Disable with ZIGGY_AUTO_REMEDIATE=0.
     from .remediator import run_remediator_loop
     remediator_task = asyncio.create_task(run_remediator_loop())
+    # Nightly encrypted DB backup to B2 at 03:00 Asia/Jerusalem. db_backup.py
+    # had a `--once` CLI and no caller; the relay is the only process that is
+    # always up, so the schedule lives here. Skips with one log line when
+    # RELAY_BACKUP_KEY / RELAY_B2_* are unset (dev, fresh app).
+    from .backup_schedule import run_nightly_backup_loop
+    backup_task = asyncio.create_task(run_nightly_backup_loop())
     try:
         yield
     finally:
-        for task in (retention_task, remediator_task):
+        for task in (retention_task, remediator_task, backup_task):
             task.cancel()
             try:
                 await task

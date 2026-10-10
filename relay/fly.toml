@@ -35,10 +35,15 @@ primary_region = 'ams'
     hard_limit = 200
     soft_limit = 100
 
-  [[services.tcp_checks]]
-    interval = '15s'
+  # HTTP check against the app's own /health (relay/app/main.py). A TCP check
+  # only proves the port is open — a wedged event loop still accepts sockets.
+  [[services.http_checks]]
+    interval = '30s'
     timeout = '5s'
     grace_period = '5s'
+    method = 'get'
+    path = '/health'
+    protocol = 'http'
 
 [[vm]]
   cpu_kind = 'shared'

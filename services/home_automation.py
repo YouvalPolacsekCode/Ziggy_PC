@@ -14,6 +14,7 @@ from core.settings_loader import settings
 from core.logger_module import log_info, log_error
 from core.debug_bus import bus, BASIC, VERBOSE, TRACE
 from services import rehearsal as _rehearsal
+from services import usage_counters as _usage
 
 DEFAULT_TIMEOUT: int = 10
 
@@ -170,6 +171,9 @@ def call_service(domain: str, service: str, data: Dict[str, Any],
             _eid = (data or {}).get("entity_id")
             if isinstance(_eid, str):
                 _record_intent(_eid, _intended_state_for(service, _eid), origin)
+            _usage_counter = _usage.counter_for_service(domain)
+            if _usage_counter:
+                _usage.bump(_usage_counter)
             log_info(f"[HA] {domain}.{service} OK | data={data}")
             bus.emit("ha", BASIC, "ha_service_ok",
                      domain=domain, service=service, duration_ms=duration_ms,
