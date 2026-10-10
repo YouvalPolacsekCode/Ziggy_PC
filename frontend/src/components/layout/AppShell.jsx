@@ -260,7 +260,14 @@ export function AppShell({ connected }) {
     enabled: motionOn && isDetail && !isChatRoute && canGoBack && !isRoomDetail,
     rtl,
     onSwipe,
-    bindKey: location.pathname,
+    // `location.key`, not the pathname: a history entry is the unit here.
+    // Two entries can share a path (a card linking to the page you are on,
+    // a back that lands on the same URL), and on a pathname the effect would
+    // not re-run for those — so the hook would neither re-bind nor run its
+    // cleanup, which is what abandons a settle whose navigation nobody is
+    // waiting for any more (see `settling` in gestures.js). Re-binding to the
+    // same node is cheap; missing a rebind is a dead gesture.
+    bindKey: location.key,
   })
 
   // Bottom-nav tuck. onDirection fires 'up' whenever the scroller is back at
@@ -331,7 +338,11 @@ export function AppShell({ connected }) {
       page.style.transition = ''
       page.style.transformOrigin = ''
     }
-  }, [location.pathname])
+    // `location.key`, like the gesture's bindKey above and for the same
+    // reason: two history entries can share a path, and the state this clears
+    // (the nav tuck, a gesture in progress, what the hook painted) belongs to
+    // the entry you are leaving, not to its URL.
+  }, [location.key])
 
   // Route-level Suspense boundary.
   //

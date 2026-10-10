@@ -100,6 +100,31 @@ describe('useSwipeBack (rubber-band edge)', () => {
     expect(onBack).toHaveBeenCalledTimes(1)
   })
 
+  // A committed settle waits 240ms before it navigates, and the app can
+  // navigate for a reason of its own inside that window (a chat card, a push
+  // notification, a redirect guard). That re-binds this hook — and the
+  // orphaned timer used to fire anyway, sending the person a second step back
+  // from wherever they had just landed.
+  it('a settle abandoned by an unbind never calls back', () => {
+    const onBack = vi.fn()
+    function Unbindable({ enabled }) {
+      const ref = React.useRef(null)
+      useSwipeBack(ref, onBack, { enabled })
+      return <div ref={ref} data-testid="page" />
+    }
+    const { getByTestId, rerender } = render(<Unbindable enabled />)
+    const page = getByTestId('page')
+    page.getBoundingClientRect = () => ({ left: 0, right: 390, width: 390, top: 0, bottom: 800 })
+    ptr('pointerdown', page, 4); ptr('pointermove', page, 300); ptr('pointerup', page, 300)
+    // ...mid-settle, something else unbinds the hook.
+    rerender(<Unbindable enabled={false} />)
+    act(() => { vi.advanceTimersByTime(600) })
+    expect(onBack).not.toHaveBeenCalled()
+    // ...and a transitionend arriving late on the detached node is just as dead.
+    page.dispatchEvent(new Event('transitionend'))
+    expect(onBack).not.toHaveBeenCalled()
+  })
+
   it('rtl: the edge is on the right and travel is negative', () => {
     const { getByTestId } = render(<Host onBack={() => {}} rtl />)
     const page = getByTestId('page')

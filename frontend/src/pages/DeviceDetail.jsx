@@ -1095,8 +1095,11 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   const subtitle = [currentRoom?.name, meta?.label].filter(Boolean).join(' · ')
 
   // Lives on BOTH tabs — hoisted so it renders once per tab without being
-  // duplicated in source. See controlsBody (after the unavailable/recovery
-  // card) and dataBody (before the identity card).
+  // duplicated in source. controlsBody renders it (after the
+  // unavailable/recovery card); the Info tab gets it at the tab switch rather
+  // than from dataBody, because a device with nothing to control renders BOTH
+  // bodies at once and two copies of a "held until morning" card with two
+  // Release buttons is a bug, not a reminder.
   const holdBanner = hold && (
     <div className="z-card" style={{ padding: 12, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -1205,10 +1208,13 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
         )}
     </>
   )
+  // NOT the banner's home. It belongs on both tabs, but only ONE of them is
+  // on screen at a time — except when there is nothing to control, where both
+  // bodies render one after the other and the banner appeared twice. So it is
+  // rendered beside this body at the tab switch below (see `hasControls`), and
+  // the no-tabs branch gets it from controlsBody alone.
   const dataBody = (
     <>
-        {holdBanner}
-
         {/* ── Diagnostics ── */}
         {/* ── Identity card ──
             Moved here from the top of the Controls tab. What it holds is what
@@ -1776,7 +1782,12 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
 
       {hasControls ? (
         <TabCrossfade tab={activeTab}>
-          {activeTab === 'controls' ? controlsBody : dataBody}
+          {/* The light-hold banner lives on both tabs. controlsBody carries
+              its own (it sits under the unavailable/recovery card there); the
+              Info tab gets it here, as its first row — which is also what
+              keeps it to ONE copy on the no-tabs branch below, where both
+              bodies render together. */}
+          {activeTab === 'controls' ? controlsBody : <>{holdBanner}{dataBody}</>}
         </TabCrossfade>
       ) : (
         <>{controlsBody}{dataBody}</>

@@ -361,6 +361,22 @@ describe('PageTransition invariants', () => {
     expect(getLastExited().node.querySelector('[data-testid="page-/"]')).not.toBeNull()
   })
 
+  // The back-dim veil lives INSIDE the entering layer (it has to: it dims the
+  // arriving page), so a navigation taken while it is still on screen cloned
+  // it into the snapshot — a 35% black sheet frozen over the page you are
+  // leaving, for the whole of the next slide.
+  it('does not clone the back-dim veil into the next snapshot', () => {
+    const { container, rerender } = render(<Scroller path="/rooms" />)
+    rerender(<Scroller path="/" back />)
+    // The veil is live on the arriving page while the back slide runs...
+    expect(container.querySelector('[data-motion-page="enter"] [data-motion-veil]')).not.toBeNull()
+    // ...and must not survive into the clone of it.
+    rerender(<Scroller path="/devices" />)
+    const exit = container.querySelector('[data-motion-page="exit"]')
+    expect(exit.querySelector('[data-motion-veil]')).toBeNull()
+    expect(exit.querySelector('[data-testid="page-/"]')).not.toBeNull()
+  })
+
   // A clone has no lifecycle, but it DOES fetch: an <img> or an <iframe> in a
   // cloned subtree is a fresh request, and Cameras renders a live MJPEG <img>
   // whose "request" is a connection that stays open. So the stream-shaped ones

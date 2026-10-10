@@ -172,6 +172,11 @@ function snapshot(layer) {
     })
     // An iframe is a whole second document: scripts, timers, its own network.
     node.querySelectorAll('iframe').forEach((el) => el.setAttribute('src', 'about:blank'))
+    // The back-dim veil is part of the SLIDE, not part of the page, but it
+    // lives inside the layer (it has to — it dims the arriving page). Cloned,
+    // it would freeze a 35% black sheet over the page being left for the whole
+    // of the next slide.
+    node.querySelectorAll('[data-motion-veil]').forEach((el) => el.remove())
   } catch { /* a snapshot is a nicety; never fail a navigation over it */ }
   return node
 }
@@ -201,6 +206,16 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, swipi
   // of navigation. `back` and `slide` are frozen with it — reading the live
   // props instead would let a re-render mid-flight change the story being
   // told (that is the bug the enterDir pin in AppShell exists for).
+  //
+  // THIS BLOCK HAS A SIDE EFFECT DURING RENDER (it clones the DOM and consumes
+  // `settled`), which is only safe because a navigation here is NOT a React
+  // transition: the app runs react-router 6 with `v7_startTransition` off, so
+  // the render that commits a route change is committed. Turn that flag on and
+  // a discarded render could take the snapshot and eat the `settled` flag
+  // without ever reaching the screen — the next navigation would then animate
+  // a page the finger had already placed. The snapshot would have to move into
+  // a layout effect (a frame late, the old DOM already gone) or the router
+  // would have to hand over the outgoing tree some other way.
   const stage = useRef({ key: pathKey, prev: null, seq: 0, back: !!back, slide: false, settledKey: null })
   if (stage.current.key !== pathKey) {
     // NOT `scrollerRef.current.scrollTop`. <main> is a column in a row flex
@@ -450,7 +465,7 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, swipi
             child slot, so dropping it leaves `children` exactly where it was
             — moving that slot would remount the whole page. */}
         {active && isBack && (
-          <motion.div aria-hidden="true" initial={{ opacity: DIM }} animate={{ opacity: 0 }} transition={t}
+          <motion.div data-motion-veil="" aria-hidden="true" initial={{ opacity: DIM }} animate={{ opacity: 0 }} transition={t}
             style={{ position: 'absolute', inset: 0, background: '#000', pointerEvents: 'none', zIndex: 1 }} />
         )}
         {children}

@@ -93,6 +93,7 @@ Kowalski's animation work:
 | `data-motion-push` | the entering page, while its entrance IS the slide | switches the quiet rise off, so only one entrance plays |
 | `data-motion-settled` | a page the finger placed (a committed swipe-back) | suppresses both entrances — it is already where it belongs |
 | `data-motion-under` + `data-motion-scrim` | the page painted beneath a swipe-back | parallax and dim, so the gesture reveals where it is going |
+| `data-motion-veil` | the dim sheet over the arriving page on a back slide | part of the slide, not of the page — so it is stripped out of the next snapshot |
 | `data-motion-tabs` / `data-motion-tab="<key>"` | a `TabCrossfade` container / each tab body | the outgoing body leaves and the incoming one arrives on the same spot, overlapping |
 | `data-nav-depth="active\|idle"` | each **bottom-nav** cell's inner span | the active tab comes forward, the others recede |
 | `data-nav-row` / `data-nav-label` | the bottom nav's tab row / each tab's label | the row's height and the labels' opacity, which the condense drives |

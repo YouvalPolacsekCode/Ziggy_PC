@@ -1,9 +1,14 @@
 /* ── Ziggy motion layer ──────────────────────────────────────────────────
  *
  * Feel only. Every rule here is a transition, an animation or a transform on
- * a transient state. Nothing sets a colour, size, radius, spacing, font or
- * layout value, so with `data-motion="off"` the app is pixel-for-pixel what
- * it was.
+ * a transient state. Nothing sets a colour, size, radius, spacing or font, so
+ * with `data-motion="off"` the app is pixel-for-pixel what it was.
+ *
+ * ONE EXCEPTION, and it is a resting layout value: `[data-nav-row]`'s height.
+ * The bottom bar's 56px row moved in here because the condense animates it
+ * (BottomNav.jsx stops emitting its own `height` when the layer is on, so
+ * exactly one file owns it at a time and the two can never disagree). With
+ * the layer off the component sets it, as it always did.
  *
  * THIS FILE EXTENDS THE HIG v2 TOKENS, IT DOES NOT COMPETE WITH THEM.
  * index.css already defines the app's motion vocabulary:

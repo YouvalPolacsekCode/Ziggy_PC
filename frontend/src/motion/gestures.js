@@ -99,6 +99,13 @@ const UNDER_DIM = 0.35
 export function useSwipeBack(ref, onBack, { enabled = true, rtl = false, onSwipe, bindKey } = {}) {
   const state = useRef(null)
   const vel = useRef(makeVelocityTracker())
+  // A settle in flight, so the unbind can take it with it. A committed settle
+  // ends by calling navigate(-1), and the 240ms it waits is long enough for
+  // the app to navigate for a reason of its own — a chat card, a push
+  // notification, a redirect. That re-binds this hook, and without this the
+  // orphaned timer still fired and sent the person a second step back from
+  // wherever they had just landed.
+  const settling = useRef(null)
 
   useEffect(() => {
     const el = ref.current
@@ -151,6 +158,7 @@ export function useSwipeBack(ref, onBack, { enabled = true, rtl = false, onSwipe
         if (finished) return
         finished = true
         clearTimeout(timer)
+        settling.current = null
         el.removeEventListener('transitionend', finish)
         el.style.transition = ''
         el.style.willChange = ''
@@ -165,6 +173,9 @@ export function useSwipeBack(ref, onBack, { enabled = true, rtl = false, onSwipe
       }
       el.addEventListener('transitionend', finish)
       timer = setTimeout(finish, ms + 80)
+      // Handed to the cleanup below, which is the only other thing allowed to
+      // end a settle — by abandoning it, never by completing it.
+      settling.current = { el, finish, cancel: () => { finished = true; clearTimeout(timer) } }
     }
 
     const down = (e) => {
@@ -231,6 +242,18 @@ export function useSwipeBack(ref, onBack, { enabled = true, rtl = false, onSwipe
       el.removeEventListener('pointermove', move)
       el.removeEventListener('pointerup', up)
       el.removeEventListener('pointercancel', up)
+      // A settle that is still running belongs to the binding that started it.
+      // Unbinding means the element it was moving is going away, so the settle
+      // is abandoned: its timer is cleared and its listener detached BEFORE
+      // `then` can run. A committed one has already navigated (finish() clears
+      // this ref first), so the only thing this can cancel is a settle whose
+      // navigation nobody asked for any more.
+      const pending = settling.current
+      if (pending) {
+        pending.cancel()
+        pending.el.removeEventListener('transitionend', pending.finish)
+        settling.current = null
+      }
       state.current = null
       el.style.transform = ''
       el.style.transition = ''
