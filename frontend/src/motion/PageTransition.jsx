@@ -93,6 +93,7 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { EASE } from '../lib/motion'
+import { effectiveScrollTop } from './gestures'
 
 export const PUSH_MS = 420
 export const POP_MS = Math.round(PUSH_MS * 0.85)
@@ -176,7 +177,12 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, swipi
   // told (that is the bug the enterDir pin in AppShell exists for).
   const stage = useRef({ key: pathKey, prev: null, seq: 0, back: !!back, slide: false, settledKey: null })
   if (stage.current.key !== pathKey) {
-    const scrollTop = scrollerRef?.current?.scrollTop || 0
+    // NOT `scrollerRef.current.scrollTop`. <main> is a column in a row flex
+    // container, so it grows to its content and its scrollTop is always 0 —
+    // the document is what scrolls (see effectiveScrollTop in gestures.js).
+    // Reading the element directly froze every snapshot at the page's top, so
+    // the overlay showed a slice the person had never been looking at.
+    const scrollTop = effectiveScrollTop(scrollerRef?.current)
     const node = snapshot(layerNodeRef.current)
     const snap = node ? { key: stage.current.key, node, scrollTop, back: !!back } : null
     // Consumed here, in the render that commits the navigation it belongs to,

@@ -223,8 +223,11 @@ describe('PageTransition invariants', () => {
     React.useEffect(() => { mounts += 1 }, [])
     return <div data-testid={`page-${name}`}>{name}</div>
   }
+  // `scrollHeight > clientHeight` is what makes this ref the SCROLLER. A bare
+  // `{ scrollTop: 40 }` is not one, and effectiveScrollTop would correctly
+  // ignore it and read the document instead (the case below this one).
   function Scroller({ path, back = false, enabled = true }) {
-    const scrollerRef = React.useRef({ scrollTop: 40 })
+    const scrollerRef = React.useRef({ scrollTop: 40, scrollHeight: 1000, clientHeight: 100 })
     return (
       <PageTransition pathKey={path} back={back} rtl={false} enabled={enabled} scrollerRef={scrollerRef}>
         <Counted name={path} />
@@ -285,6 +288,29 @@ describe('PageTransition invariants', () => {
     expect(exit.firstChild.style.transform).toBe('translateY(-40px)')
     act(() => { vi.advanceTimersByTime(PUSH_MS + 400) })
     expect(getLastExited()).toMatchObject({ key: '/', scrollTop: 40 })
+  })
+
+  // ...and in the real shell it is the DOCUMENT that scrolled, because <main>
+  // is a column in a row flex container and never exceeds its own content.
+  // Reading the element would have given 0 and shown the page's top.
+  it('freezes the overlay at the document scroll when <main> is not the scroller', () => {
+    Object.defineProperty(window, 'scrollY', { value: 40, configurable: true })
+    try {
+      function DocScroller({ path }) {
+        const scrollerRef = React.useRef({ scrollTop: 0, scrollHeight: 100, clientHeight: 100 })
+        return (
+          <PageTransition pathKey={path} back={false} rtl={false} enabled scrollerRef={scrollerRef}>
+            <Counted name={path} />
+          </PageTransition>
+        )
+      }
+      const { container, rerender } = render(<DocScroller path="/" />)
+      rerender(<DocScroller path="/rooms" />)
+      const exit = container.querySelector('[data-motion-page="exit"]')
+      expect(exit.firstChild.style.transform).toBe('translateY(-40px)')
+    } finally {
+      Object.defineProperty(window, 'scrollY', { value: 0, configurable: true })
+    }
   })
 
   // Failure mode 1, in its surviving form: a page left transformed. The

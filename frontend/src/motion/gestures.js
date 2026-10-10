@@ -304,14 +304,28 @@ export function useScrub({ value, min = 0, max = 100, onChange, onCommit, onTap,
 // whether the person is scrolling down (tuck the tab bar away) or up (bring
 // it back). Always returns at the top of the page.
 
+// WHICH ELEMENT ACTUALLY SCROLLS — and it is usually not the one you were
+// handed. AppShell's outer wrapper is a ROW flex container with
+// `min-height: var(--vh)`, so <main> (`flex-1 … overflow-y-auto`) grows to its
+// own content and `main.scrollTop` is permanently 0: the DOCUMENT scrolls.
+// Everything that read the element directly therefore read 0 for ever — the
+// bottom nav never condensed, and PageTransition's exit overlay froze the page
+// at its top instead of at the slice the person was looking at.
+//
+// Ask the element first so a layout where <main> really is the scroller
+// (a desktop column, a future shell) keeps working, and the document second.
+export function effectiveScrollTop(el) {
+  return el && el.scrollHeight > el.clientHeight + 1
+    ? el.scrollTop
+    : (window.scrollY || document.scrollingElement?.scrollTop || 0)
+}
+
 export function useScrollChrome(ref, { edge = 72, onDirection } = {}) {
   const [scrolled, setScrolled] = useState(false)
   const last = useRef(0)
 
   const onScroll = useCallback(() => {
-    const el = ref?.current
-    if (!el) return
-    const top = el.scrollTop
+    const top = effectiveScrollTop(ref?.current)
     setScrolled(top > edge)
     const delta = top - last.current
     if (Math.abs(delta) > 6) {
@@ -321,6 +335,15 @@ export function useScrollChrome(ref, { edge = 72, onDirection } = {}) {
     }
     if (top <= 0) onDirection?.('up')
   }, [ref, edge, onDirection])
+
+  // The document is the scroller in the real shell, and a document scroll
+  // never reaches an element's `onScroll`. The returned handler stays, for the
+  // case where the element genuinely scrolls — both paths go through
+  // effectiveScrollTop, so whichever fires reads the same number.
+  useEffect(() => {
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [onScroll])
 
   return { scrolled, onScroll }
 }
