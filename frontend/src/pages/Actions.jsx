@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Plus, Zap, Hand, BookOpen } from 'lucide-react'
 import { Modal } from '../components/ui/Modal'
 import { useAutomationStore } from '../stores/automationStore'
@@ -11,6 +11,8 @@ import { getSuggestionsFeed, getCircadian, saveCircadian, syncCircadian, deleteC
 import { RoutinesListPanel, RoutineWizard } from './Routines'
 import { useT } from '../lib/i18n'
 import { TabCrossfade } from '../motion/TabCrossfade'
+import { useMotionOn } from '../motion/flag'
+import { FADE_UP } from '../lib/motion'
 import TemplateCard from '../components/automations/templates/TemplateCard'
 import { useZiggyActions, AUTOMATION_ACTIONS } from '../hooks/useZiggyActions'
 import AutomationWizard from '../components/automations/wizard/AutomationWizard'
@@ -25,6 +27,29 @@ import { isStageId } from '../components/automations/bundles/recipes/motionLight
 import BlueprintsModal from '../components/automations/templates/BlueprintsModal'
 import TemplatesTab from '../components/automations/templates/TemplatesTab'
 import SuggestedTab, { suggestionToWizardData, SuggestionNudgeStrip } from '../components/automations/templates/SuggestedTab'
+
+// ── Tab bodies ────────────────────────────────────────────────────────────────
+// With the motion layer ON this is the blur crossfade (TabCrossfade). With it
+// OFF it is the structure this page had before the layer existed, exactly:
+// `AnimatePresence mode="wait"` and one `FADE_UP` motion.div per tab. The
+// crossfade replaced that fade outright, which quietly made `?motion=off`
+// render something the app never shipped — and the layer's one promise is that
+// the switch gives you yesterday's app back.
+function TabBodySwitch({ tab, motionOn, automations, routines }) {
+  if (motionOn) {
+    return <TabCrossfade tab={tab}>{tab === 'automations' ? automations : routines}</TabCrossfade>
+  }
+  return (
+    <AnimatePresence mode="wait">
+      {tab === 'automations' && (
+        <motion.div key="automations" {...FADE_UP}>{automations}</motion.div>
+      )}
+      {tab === 'routines' && (
+        <motion.div key="routines" {...FADE_UP}>{routines}</motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function Automations() {
@@ -48,6 +73,7 @@ export default function Automations() {
     }
     return s
   }, [entities])
+  const motionOn = useMotionOn()
   const [tab,               setTab]               = useState('automations')
   // Deep link from a chat card: /actions?focus=<automation config id> scrolls
   // that card into view and rings it for a moment. Local state (not the URL)
@@ -476,9 +502,8 @@ export default function Automations() {
         })}
       </div>
 
-      <TabCrossfade tab={tab}>
-        {tab === 'automations' ? (
-        <div key="automations">
+      <TabBodySwitch tab={tab} motionOn={motionOn} automations={(
+        <>
 
       {/* Habit-learned suggestions — inline nudges here, full list in the
           Suggestions inbox modal. "Later" snoozes (stays in the inbox), ✕
@@ -578,13 +603,10 @@ export default function Automations() {
         </div>
       )}
 
-        </div>
-        ) : (
-        <div key="routines">
-          <RoutinesListPanel embedded />
-        </div>
-        )}
-      </TabCrossfade>
+        </>
+      )} routines={(
+        <RoutinesListPanel embedded />
+      )} />
 
       {/* Library — OOTB curated templates + community blueprints. Relocated
           from the old Templates tab into a modal so the Automations tab stays a
