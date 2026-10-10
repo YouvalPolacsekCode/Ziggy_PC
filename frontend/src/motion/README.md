@@ -16,6 +16,10 @@ existed. Set it with **`?motion=off`**, which sticks in that browser until
 `?motion=on`. That is the rollback path, so keep it honest: see the note in
 `flag.js`.
 
+Page transitions have their own switch on top of that one: **`?pages=off`**
+(sticks the same way) drops only the page slide and keeps everything else.
+See `pages.js` and `PageTransition.jsx` for why it exists.
+
 There is deliberately no on-screen switch and no keyboard shortcut. An earlier
 build had both, plus a tuner with speed and curve dials; all of it was review
 instrumentation, and a real home is not a review. The `m` shortcut was actively
@@ -26,6 +30,7 @@ with nothing to explain why.
 src/motion/
   motion.js      easing, springs, haptics, reduced-motion, velocity helpers
   flag.js        the data-motion switch (URL → localStorage → default on)
+  pages.js       the page-transition switch (?pages=on|off → localStorage → default on)
   gestures.js    useLongPress · useSwipeBack · useScrub · useScrollChrome
   morph.js       shared-element FLIP across a route change
   pressLayer.js  delegated press + haptic feedback for the whole app
