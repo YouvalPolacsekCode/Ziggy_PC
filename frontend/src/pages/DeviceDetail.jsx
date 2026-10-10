@@ -1094,6 +1094,22 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   // missing so it never reads "· Light".
   const subtitle = [currentRoom?.name, meta?.label].filter(Boolean).join(' · ')
 
+  // Lives on BOTH tabs — hoisted so it renders once per tab without being
+  // duplicated in source. See controlsBody (after the unavailable/recovery
+  // card) and dataBody (before the identity card).
+  const holdBanner = hold && (
+    <div className="z-card" style={{ padding: 12, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p className="z-eyebrow" style={{ margin: 0 }}>{t('lightHold.held')}</p>
+        <p className="z-subhead" style={{ margin: '2px 0 0' }} dir="auto">
+          {hold.state === 'held_until_morning'
+            ? t('lightHold.untilTime', { t: hold.until_text || '06:30' })
+            : t('lightHold.untilEmpty')}
+        </p>
+      </div>
+      <Button variant="secondary" onClick={onReleaseHold}>{t('lightHold.release')}</Button>
+    </div>
+  )
   const controlsBody = (
     <>
         {/* ── Control surface ──
@@ -1129,19 +1145,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
           </div>
         )}
 
-        {hold && (
-          <div className="z-card" style={{ padding: 12, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p className="z-eyebrow" style={{ margin: 0 }}>{t('lightHold.held')}</p>
-              <p className="z-subhead" style={{ margin: '2px 0 0' }} dir="auto">
-                {hold.state === 'held_until_morning'
-                  ? t('lightHold.untilTime', { t: hold.until_text || '06:30' })
-                  : t('lightHold.untilEmpty')}
-              </p>
-            </div>
-            <Button variant="secondary" onClick={onReleaseHold}>{t('lightHold.release')}</Button>
-          </div>
-        )}
+        {holdBanner}
 
         {(
           <>
@@ -1203,6 +1207,8 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   )
   const dataBody = (
     <>
+        {holdBanner}
+
         {/* ── Diagnostics ── */}
         {/* ── Identity card ──
             Moved here from the top of the Controls tab. What it holds is what
