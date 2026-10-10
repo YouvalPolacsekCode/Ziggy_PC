@@ -24,6 +24,7 @@ function extractMatterCode(raw) {
 import {
   zigbeePermit, getHaDevices, renameHaDevice, assignDeviceToArea,
   zwaveInclude, zwaveStop, matterCommission, matterStatus, getConfigFlows,
+  getWifiBrands, configFlowStartByBrand,
 } from '../lib/api'
 import SwitcherPairingFlow from './SwitcherPairingFlow'
 import ConfigFlowRunner from './ConfigFlowRunner'
@@ -230,6 +231,12 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
   const [haUrl,       setHaUrl]       = useState('')
   const [configuringFlow, setConfiguringFlow] = useState(null)  // discovered device being set up natively
   const [flowsLoading, setFlowsLoading] = useState(false)
+  // Brand-initiated pairing. Some devices — every air conditioner sold here —
+  // never announce themselves, so they cannot appear in the discovered list no
+  // matter how often you rescan. Picking the brand is the only way in.
+  const [wifiBrands,  setWifiBrands]  = useState([])
+  const [brandBusy,   setBrandBusy]   = useState(null)   // brand key in flight
+  const [brandNotice, setBrandNotice] = useState(null)   // guidance when a start aborts
 
   const snapshotRef = useRef(new Set())
   const timerRef    = useRef(null)
@@ -474,6 +481,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
     await snapshotDevices()
     setFlowsLoading(true)
     setStep('pairing')
+    setBrandNotice(null)
     try {
       const res = await getConfigFlows(proto)
       setConfigFlows(res.flows || [])
@@ -483,7 +491,52 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
     } finally {
       setFlowsLoading(false)
     }
+    // Offered alongside the discovered list, not only when it's empty: an AC is
+    // absent from that list even when a TV or a plug is in it.
+    if (proto === 'wifi') {
+      try { setWifiBrands((await getWifiBrands()).brands || []) }
+      catch { setWifiBrands([]) }
+    }
     startDevicePoller()
+  }
+
+  // Start a flow for a brand the user named. The first step runs a LAN
+  // broadcast scan server-side, so an abort here is the normal "couldn't find
+  // it" answer and carries guidance — show it rather than mounting a runner
+  // on a flow that already ended.
+  // The backend's `detail` is English by design (it's the fallback). Known
+  // abort reasons get translated here so a Hebrew user never reads an English
+  // sentence; anything unrecognised falls back to detail rather than to a
+  // guess about the cause.
+  const ABORT_KEYS = {
+    no_devices_found:        'wizard.pairing.brandAbortNotFound',
+    single_instance_allowed: 'wizard.pairing.brandAbortAlready',
+    already_configured:      'wizard.pairing.brandAbortAlready',
+    cannot_connect:          'wizard.pairing.brandAbortCannotConnect',
+  }
+
+  const handleBrandStart = async (brand, label) => {
+    setBrandBusy(brand)
+    setBrandNotice(null)
+    try {
+      const env = await configFlowStartByBrand(brand)
+      if (env?.status === 'form' || env?.status === 'progress') {
+        setConfiguringFlow({ flow_id: env.flow_id, title: env.title || label || '', initialStep: env })
+      } else if (env?.status === 'done') {
+        try { useDeviceStore.getState().fetchAll({ force: true }) } catch {}
+        onClose?.()
+      } else {
+        const key = ABORT_KEYS[env?.reason]
+        setBrandNotice(
+          key ? t(key, { brand: label || brand })
+              : (env?.detail || env?.error || t('wizard.pairing.brandNotFound'))
+        )
+      }
+    } catch (e) {
+      setBrandNotice(e?.message || t('wizard.pairing.brandNotFound'))
+    } finally {
+      setBrandBusy(null)
+    }
   }
 
   const handleStart = async () => {
@@ -768,6 +821,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                   <ConfigFlowRunner
                     flowId={configuringFlow.flow_id}
                     title={configuringFlow.title}
+                    initialStep={configuringFlow.initialStep}
                     onDone={() => {
                       setConfiguringFlow(null)
                       try { useDeviceStore.getState().fetchAll({ force: true }) } catch {}
@@ -819,6 +873,39 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                     >
                       <RotateCcw size={18} strokeWidth={1.75} aria-hidden /> {t('wizard.refresh')}
                     </button>
+                  </div>
+                )}
+
+                {/* Pair by brand. Shown whether or not anything was discovered,
+                    because the devices that need it are never in that list. */}
+                {protocol === 'wifi' && !configuringFlow && !flowsLoading && wifiBrands.length > 0 && (
+                  <div className="w-full mt-3 pt-3 border-t border-line text-start space-y-2">
+                    <p className="text-body font-semibold text-ink">
+                      {t('wizard.pairing.brandPickTitle')}
+                    </p>
+                    <p className="text-subhead text-ink-mute">
+                      {t('wizard.pairing.brandPickHint')}
+                    </p>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {wifiBrands.map((b) => (
+                        <button
+                          key={b.brand}
+                          onClick={() => handleBrandStart(b.brand, b.label)}
+                          disabled={!!brandBusy}
+                          className="z-btn-secondary z-button disabled:opacity-60"
+                        >
+                          {brandBusy === b.brand && (
+                            <RefreshCw size={16} strokeWidth={1.75} className="animate-spin" aria-hidden />
+                          )}
+                          {b.label}
+                        </button>
+                      ))}
+                    </div>
+                    {brandNotice && (
+                      <p className="text-subhead text-ink-2 bg-surface-2 rounded-card p-3 mt-1">
+                        {brandNotice}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

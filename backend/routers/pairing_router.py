@@ -333,6 +333,61 @@ async def config_flow_step(flow_id: str, body: FlowStepBody,
     return _present_config_step(res["step"])
 
 
+class FlowStartBody(BaseModel):
+    brand: str
+
+
+@router.get("/api/pairing/wifi-brands")
+async def wifi_brands():
+    """Brands the user can pair by name when nothing was auto-discovered.
+
+    Carries no Home Assistant vocabulary — the handler behind each brand is an
+    implementation detail (see services/wifi_brands.py).
+    """
+    from services.wifi_brands import listed
+    return {"ok": True, "brands": listed()}
+
+
+@router.post("/api/pairing/config-flow/start")
+async def config_flow_start(body: FlowStartBody,
+                            _user: dict = Depends(require_role("admin"))):
+    """Start a user-sourced HA config flow for a brand the customer picked.
+
+    The discovery list above can only show devices that announce themselves.
+    Air conditioners never do: `gree` (Tadiran) declares no zeroconf/dhcp/ssdp
+    and runs its broadcast scan inside the *user* step, and `electrasmart`
+    (Electra) is cloud-polling with an SMS code. Without this route those
+    devices are unpairable — a customer rescans forever and sees nothing.
+
+    Returns the SAME envelope as the discovery path so the existing
+    ConfigFlowRunner drives the resulting flow without any special casing.
+    """
+    from services.ha_flow_driver import init_flow
+    from services.wifi_brands import abort_guidance, handler_for
+
+    handler = handler_for(body.brand)
+    if not handler:
+        # Allowlist is a boundary, not a hint: never start an arbitrary flow.
+        raise HTTPException(status_code=400, detail="Unsupported brand")
+
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/pairing/config-flow/start",
+               user=_user.get("username"), auth_added=True)
+
+    res = await init_flow(handler, source="user")
+    if not res.get("ok"):
+        return _present_config_error(res)
+
+    out = _present_config_step(res["step"])
+    if out.get("status") == "aborted":
+        # A bare reason code ("no_devices_found") is a dead end. Say what to
+        # check, naming the brand the user actually chose.
+        guidance = abort_guidance(out.get("reason") or "", body.brand)
+        if guidance:
+            out["detail"] = guidance
+    return out
+
+
 @router.post("/api/pairing/config-flow/{flow_id}/cancel")
 async def config_flow_cancel(flow_id: str,
                              _user: dict = Depends(require_role("admin"))):

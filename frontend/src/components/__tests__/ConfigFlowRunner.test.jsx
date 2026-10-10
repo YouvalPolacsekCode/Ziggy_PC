@@ -55,6 +55,28 @@ describe('ConfigFlowRunner', () => {
     expect(onGone).toHaveBeenCalledTimes(1)
   })
 
+  // Brand-initiated pairing (an AC the user picked by name) hands the runner a
+  // flow that is ALREADY at its first step. Submitting a blind empty step there
+  // would answer a form that asks for input — Electra's phone number — with
+  // nothing, and come straight back as a validation error.
+  it('renders initialStep without submitting when the flow is already started', async () => {
+    render(
+      <StrictMode>
+        <ConfigFlowRunner
+          flowId="f4"
+          title="Electra"
+          initialStep={{
+            ok: true, status: 'form', flow_id: 'f4', step_id: 'user',
+            fields: [{ name: 'phone_number', kind: 'text', label: 'Phone', required: true }],
+            errors: {},
+          }}
+        />
+      </StrictMode>
+    )
+    await waitFor(() => expect(screen.getByText('Phone')).toBeInTheDocument())
+    expect(configFlowStep).not.toHaveBeenCalled()
+  })
+
   it('renders a PIN input when HA asks for a form field', async () => {
     configFlowStep.mockResolvedValue({
       ok: true, status: 'form', flow_id: 'f3', step_id: 'pair',

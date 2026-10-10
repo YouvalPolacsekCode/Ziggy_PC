@@ -626,6 +626,17 @@ export const configFlowStep = (flowId, userInput) =>
 export const configFlowCancel = (flowId) =>
   post(`/pairing/config-flow/${encodeURIComponent(flowId)}/cancel`)
 
+// Brand-initiated pairing — the only way to reach a device that never
+// announces itself. Air conditioners are the case that forced this: a Tadiran
+// (Gree) unit is only ever scanned for once a flow is explicitly started, so
+// it can never appear in the discovered list no matter how often you rescan.
+// The returned envelope is identical to a discovered flow's, so the same
+// ConfigFlowRunner drives it. 60s matches configFlowStep: the first step runs
+// a UDP broadcast scan of the LAN.
+export const getWifiBrands = () => get('/pairing/wifi-brands')
+export const configFlowStartByBrand = (brand) =>
+  post('/pairing/config-flow/start', { brand }, { timeoutMs: 60_000 })
+
 // Switcher account — one-time credential collection. Email + token come
 // from the Switcher mobile app (Settings → My account → request token).
 // Ziggy validates + caches them so every device pairing thereafter is one-tap.
