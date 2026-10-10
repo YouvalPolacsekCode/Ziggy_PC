@@ -194,8 +194,10 @@ unstyled at rest, which is what keeps the sidebar's design untouched.
 outgoing body leaves with a 3px blur and a 4px rise while the incoming one
 arrives the same way, overlapping on the same spot (`mode="popLayout"` takes
 the leaver out of flow), and the container springs its height so nothing below
-jumps. A tab switch is a frequent interaction, so this is deliberately short.
-Under reduced motion the blur and the rise go and it is opacity only.
+jumps. The leaver is painted *over* the arriving body, so it stops taking taps
+the moment it starts leaving — otherwise a tap during the fade lands on the tab
+you just left. A tab switch is a frequent interaction, so this is deliberately
+short. Under reduced motion the blur and the rise go and it is opacity only.
 
 **Swipe back.** Drag from the leading edge on any detail page. The page tracks
 the finger, commits past 30% of the width or on a 500px/s flick, springs back
