@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { Sun, Moon, Wifi, WifiOff, Home, Grid2x2, Cpu, Zap, MessageCircle, Bell, CheckSquare, Settings, ShieldAlert } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useAuthStore } from '../../stores/authStore'
@@ -7,6 +8,8 @@ import { useFeature } from '../../stores/featuresStore'
 import { useLang, useT } from '../../lib/i18n'
 import { useMotionOn } from '../../motion/flag'
 import Logo from '../ui/Logo'
+
+const BAR_SPRING = { type: 'spring', duration: 0.4, bounce: 0.1 }
 
 const ROLE_ORDER = ['user', 'admin', 'super_admin']
 function hasRole(userRole, minRole) {
@@ -47,12 +50,11 @@ function NavItem({ to, Icon, label, inMotionGroup }) {
   )
 }
 
-// A nav group whose active surface slides between its items instead of
-// teleporting. The highlight draws EXACTLY what `.z-nav-item.active` draws —
-// var(--surface-2) on a 0.5px var(--line) border at var(--r-ctl) — and
-// motion.css suppresses the item's own background while the highlight is
-// present (data-motion-hl), so this is a hand-over, not a second surface, and
-// the resting sidebar is pixel-identical either way.
+// A nav group whose active state is a 3px accent bar on the leading edge,
+// travelling between items, instead of a filled pill. motion.css suppresses
+// the item's own background while the bar is present (data-motion-hl), so
+// the bar IS the active state with the layer on — with it off the resting
+// sidebar keeps its pill, untouched.
 function NavGroup({ items, t, motionOn, ...navProps }) {
   const location = useLocation()
   const navRef = useRef(null)
@@ -95,17 +97,18 @@ function NavGroup({ items, t, motionOn, ...navProps }) {
       {...navProps}
     >
       {motionOn && hl && (
-        <div
-          data-motion-nav-hl
+        // A 3px accent bar on the leading edge, inset 8px from the row's top
+        // and bottom. The row's own surface is handed over to nothing (see
+        // motion.css's hand-over rule): the operator chose the quiet row.
+        <motion.div
+          data-motion-nav-bar
           aria-hidden="true"
+          initial={false}
+          animate={{ y: hl.y + 8, height: Math.max(8, hl.h - 16) }}
+          transition={BAR_SPRING}
           style={{
-            position: 'absolute', left: 0, right: 0, top: 0,
-            height: hl.h,
-            transform: `translate3d(0, ${hl.y}px, 0)`,
-            background: 'var(--surface-2)',
-            border: '0.5px solid var(--line)',
-            borderRadius: 'var(--r-ctl)',
-            boxSizing: 'border-box',
+            position: 'absolute', insetInlineStart: 0, top: 0,
+            width: 3, borderRadius: 3, background: 'var(--accent)',
             pointerEvents: 'none',
           }}
         />

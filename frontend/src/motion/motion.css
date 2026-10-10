@@ -283,11 +283,9 @@
   inset-block-end: calc(var(--nav-h) - 16px + max(var(--safe-bottom), 8px) + 16px);
 }
 
-/* Sidebar: the active surface moves to the sliding highlight, which draws the
- * SAME values the active item drew (var(--surface-2) on a 0.5px var(--line)
- * border, radius 8). Handing it over rather than doubling it is what keeps
- * the resting sidebar pixel-identical. Only applies once the highlight has
- * actually been measured (data-motion-hl). */
+/* Sidebar: while the accent bar is drawn (data-motion-hl), the active item's
+ * own surface is suppressed — the bar IS the active state with the layer on.
+ * With the layer off the pill is untouched. */
 [data-motion="on"] [data-motion-nav-group][data-motion-hl="true"] .z-nav-item.active {
   background: transparent;
   border-color: transparent;
