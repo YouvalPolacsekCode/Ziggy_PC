@@ -57,39 +57,74 @@ export function useLongPress({ onLongPress, onTap, ms = 480, enabled = true } = 
 }
 
 // ── Swipe back ──────────────────────────────────────────────────────────
-// Drag from the leading edge to go back. The page follows the finger 1:1 and
-// commits past 30% of the width OR on a flick over 500px/s, which is what
-// makes a short, fast gesture feel the same as a long, slow one. Below the
-// threshold it springs home, so the gesture is always cancellable.
+// Drag from the leading edge to go back. The first 32px stretch the page's
+// leading edge (scaleX 1→1.04 from the trailing edge) — a physical peel that
+// says the gesture was recognised — and only then does the page travel, 1:1
+// with the finger, over the previous page (painted beneath at 30% parallax
+// by PageTransition). Commits past 30% of the width OR on a 500px/s flick;
+// below that it springs home, so the gesture is always cancellable.
 //
-// `ref` is the element that should move. `onBack` runs on commit.
+// `ref` is the element that moves. `onBack` runs on commit. `onSwipe` gets
+// 'start' when the page begins to move and 'end' when it settles or
+// cancels, so the host can mount the under-page only while it is needed.
+//
+// `bindKey` RE-BINDS the listeners. The element this hook moves is now
+// PageTransition's page layer, which is keyed on the route — so the node is
+// replaced on every navigation while the ref object, `onBack`, `enabled` and
+// `rtl` all stay identical. Without a signal the effect would never re-run
+// and the hook would stay bound to the detached old layer: swipe-back dead
+// from the second detail page onwards (/devices/a → /devices/b).
 
 const COMMIT_FRACTION = 0.3
 const COMMIT_VELOCITY = 500
 const EDGE = 32
+const PEEL = 32
+const PEEL_MAX = 0.04
+const UNDER_PARALLAX = 0.3
+const UNDER_DIM = 0.35
 
-export function useSwipeBack(ref, onBack, { enabled = true, rtl = false } = {}) {
+export function useSwipeBack(ref, onBack, { enabled = true, rtl = false, onSwipe, bindKey } = {}) {
   const state = useRef(null)
   const vel = useRef(makeVelocityTracker())
 
   useEffect(() => {
     const el = ref.current
-    if (!el || !enabled || !isMotionOn()) return
+    if (!el || !enabled || !isMotionOn()) return undefined
     const sign = rtl ? -1 : 1
+    const under = () => el.parentElement?.querySelector?.('[data-motion-under]') || null
+    const origin = rtl ? '0% 50%' : '100% 50%'
 
-    const paint = (dx) => {
+    // dx is kept in state, never re-parsed from the transform string: with
+    // scaleX in the same string a regex parse would swallow the scale.
+    const paint = (dx, peel) => {
       el.style.transition = 'none'
-      el.style.transform = dx ? `translate3d(${dx}px,0,0)` : ''
-      el.style.willChange = dx ? 'transform' : ''
+      el.style.transformOrigin = origin
+      el.style.transform = (dx || peel !== 1) ? `translate3d(${dx}px,0,0) scaleX(${peel})` : ''
+      el.style.willChange = (dx || peel !== 1) ? 'transform' : ''
+      const u = under()
+      if (u && state.current) {
+        const p = Math.min(1, Math.max(0, (dx * sign) / state.current.w))
+        u.style.transition = 'none'
+        u.style.transform = `translate3d(${(p - 1) * UNDER_PARALLAX * state.current.w * sign}px,0,0)`
+        const scrim = u.querySelector('[data-motion-scrim]')
+        if (scrim) scrim.style.opacity = String(UNDER_DIM * (1 - p))
+      }
     }
+    let width = 0 // the page width captured on pointerdown, for the under-page settle
     const settle = (dx, ms, then) => {
       el.style.transition = `transform ${ms}ms ${CSS_EASE.out}`
-      el.style.transform = dx ? `translate3d(${dx}px,0,0)` : 'translate3d(0,0,0)'
-      // `transitionend` can fire more than once (one event per property) and
-      // the timeout is a fallback for when it does not fire at all, so the
-      // completion MUST be idempotent. Without this guard a committed swipe
-      // called navigate(-1) twice and went back two entries — off the end of
-      // the app's history and onto a blank page.
+      el.style.transform = dx ? `translate3d(${dx}px,0,0) scaleX(1)` : 'translate3d(0,0,0) scaleX(1)'
+      const u = under()
+      if (u) {
+        u.style.transition = `transform ${ms}ms ${CSS_EASE.out}`
+        u.style.transform = dx ? 'translate3d(0,0,0)' : `translate3d(${-UNDER_PARALLAX * width * sign}px,0,0)`
+        const scrim = u.querySelector('[data-motion-scrim]')
+        if (scrim) { scrim.style.transition = `opacity ${ms}ms ${CSS_EASE.out}`; scrim.style.opacity = dx ? '0' : String(UNDER_DIM) }
+      }
+      // transitionend fires once per property and the timeout is a fallback
+      // for when it does not fire at all, so completion MUST be idempotent:
+      // a committed swipe once called navigate(-1) twice and went back two
+      // entries — off the end of the app's history and onto a blank page.
       let finished = false
       let timer = null
       const finish = () => {
@@ -99,8 +134,10 @@ export function useSwipeBack(ref, onBack, { enabled = true, rtl = false } = {}) 
         el.removeEventListener('transitionend', finish)
         el.style.transition = ''
         el.style.willChange = ''
+        el.style.transformOrigin = ''
         if (!then) el.style.transform = ''
         then?.()
+        onSwipe?.('end')
       }
       el.addEventListener('transitionend', finish)
       timer = setTimeout(finish, ms + 80)
@@ -113,26 +150,37 @@ export function useSwipeBack(ref, onBack, { enabled = true, rtl = false } = {}) 
       if (fromEdge > EDGE) return
       // Never start over something the person is actually using.
       if (e.target.closest?.('button, a, input, select, textarea, [role="slider"], [role="button"], [data-no-swipe]')) return
-      state.current = { x0: e.clientX, y0: e.clientY, locked: null, w: r.width }
+      state.current = { x0: e.clientX, y0: e.clientY, locked: null, w: r.width, dx: 0, started: false }
+      width = r.width
       vel.current.start(e.clientX)
     }
 
     const move = (e) => {
       const s = state.current
       if (!s) return
-      const dx = (e.clientX - s.x0) * sign
+      const dxRaw = (e.clientX - s.x0) * sign
       const dy = e.clientY - s.y0
       if (s.locked === null) {
-        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return
+        if (Math.abs(dxRaw) < 6 && Math.abs(dy) < 6) return
         // Direction lock: a mostly-vertical start belongs to the scroller.
-        s.locked = Math.abs(dx) > Math.abs(dy)
+        s.locked = Math.abs(dxRaw) > Math.abs(dy)
         if (!s.locked) { state.current = null; return }
         el.setPointerCapture?.(e.pointerId)
       }
+      if (!s.started) { s.started = true; onSwipe?.('start') }
       vel.current.move(e.clientX)
-      // Resist the wrong direction rather than refusing it outright.
-      const travel = dx < 0 ? dx * 0.18 : dx
-      paint(travel * sign)
+      let travel, peel
+      if (dxRaw <= 0) {
+        // Resist the wrong direction rather than refusing it outright.
+        travel = dxRaw * 0.18; peel = 1
+      } else if (dxRaw <= PEEL) {
+        travel = 0; peel = 1 + PEEL_MAX * (dxRaw / PEEL)
+      } else {
+        travel = dxRaw - PEEL
+        peel = 1 + PEEL_MAX * Math.max(0, 1 - travel / 48)
+      }
+      s.dx = travel * sign
+      paint(s.dx, Number(peel.toFixed(4)))
       e.preventDefault()
     }
 
@@ -141,7 +189,7 @@ export function useSwipeBack(ref, onBack, { enabled = true, rtl = false } = {}) 
       if (!s) return
       state.current = null
       if (s.locked !== true) return
-      const dx = (parseFloat(el.style.transform.replace(/[^-\d.]/g, '')) || 0) * sign
+      const dx = s.dx * sign
       const v = vel.current.get() * sign
       if (dx > s.w * COMMIT_FRACTION || v > COMMIT_VELOCITY) {
         settle(s.w * sign, 240, () => onBack?.())
@@ -159,10 +207,13 @@ export function useSwipeBack(ref, onBack, { enabled = true, rtl = false } = {}) 
       el.removeEventListener('pointermove', move)
       el.removeEventListener('pointerup', up)
       el.removeEventListener('pointercancel', up)
+      state.current = null
       el.style.transform = ''
       el.style.transition = ''
+      el.style.transformOrigin = ''
+      el.style.willChange = ''
     }
-  }, [ref, onBack, enabled, rtl])
+  }, [ref, onBack, enabled, rtl, onSwipe, bindKey])
 }
 
 // ── Value scrubbing ─────────────────────────────────────────────────────

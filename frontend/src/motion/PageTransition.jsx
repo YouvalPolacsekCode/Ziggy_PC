@@ -24,6 +24,17 @@
 // key change while a previous overlay is still running (the new page replaces
 // the entering layer and the stale overlay goes with it — one overlay, ever).
 //
+// ── The under-page (swipe-back) ─────────────────────────────────────────────
+//
+// `swiping` says a swipe-back is in progress. While it is, the most recently
+// exited page — the same snapshot, from getLastExited() — is painted in a
+// `[data-motion-under]` layer BENEATH the current one, so the gesture reveals
+// where it is going instead of dragging the page over a void. The gesture hook
+// (gestures.js) owns the pixels: it paints this layer's parallax and its
+// `[data-motion-scrim]` on every pointermove and settles both on release.
+// One DOM node cannot be in two places, so when the exit overlay is still
+// holding the snapshot this layer stands aside for that gesture.
+//
 // ── Why a snapshot and not the React element ────────────────────────────────
 //
 // The obvious implementation keeps the previous render's outlet element and
@@ -129,7 +140,7 @@ function snapshot(layer) {
   return node
 }
 
-export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, children }) {
+export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, swiping, pageRef, children }) {
   const sign = rtl ? -1 : 1
   const [, bump] = useReducer((x) => x + 1, 0)
 
@@ -140,10 +151,15 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, child
   // old tree is intact during that render; React tears it down afterwards.
   const enterRef = useRef(null)
   const layerNodeRef = useRef(null)
+  // `pageRef` is the third reader of the same element: the swipe-back gesture
+  // moves the page LAYER (so the under-page beside it is revealed), not
+  // <main>. Written from this one callback rather than a second ref so the
+  // three never disagree about which node is current.
   const setEnterRef = useCallback((el) => {
     enterRef.current = el
     if (el) layerNodeRef.current = el
-  }, [])
+    if (pageRef) pageRef.current = el
+  }, [pageRef])
 
   // Frozen during render, like AppShell's enterDir: a fact about the moment
   // of navigation. `back` and `slide` are frozen with it — reading the live
@@ -228,6 +244,33 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, child
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seq, active])
 
+  // ── The page beneath, while a swipe-back is in progress ──────────────
+  //
+  // Same snapshot, same reasons as the exit overlay (a clone has no
+  // lifecycle), and the same single-owner rule: a DOM node can only be in one
+  // place, so when an overlay is still holding it — `prev !== null`, i.e.
+  // `active` — this layer does not exist for that gesture and the hook simply
+  // moves the page over whatever is already there. It is also the only honest
+  // answer: the page under the finger is the one the overlay is showing.
+  const last = swiping && !active ? getLastExited() : null
+  const underRef = useRef(null)
+  const underMountRef = useRef(null)
+  useLayoutEffect(() => {
+    const host = underMountRef.current
+    const node = last?.node
+    if (!host || !node) return undefined
+    // Inert before paint, like the overlay: nothing in a page that is only
+    // being previewed under a gesture is tab-reachable. React 18 does not
+    // know the attribute, so it is set as a property.
+    const el = underRef.current
+    if (el) el.inert = true
+    host.replaceChildren(node)
+    // Cleared on the way out, which releases the node again — the overlay
+    // takes it back on the very next navigation.
+    return () => { try { host.replaceChildren() } catch { /* already gone */ } }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [swiping, last?.key])
+
   const t = isBack ? pop : push
   const enterFrom = isBack ? `${-PARALLAX * 100 * sign}%` : `${100 * sign}%`
   const exitTo = isBack ? `${100 * sign}%` : `${-PARALLAX * 100 * sign}%`
@@ -241,8 +284,32 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, child
     // swipe in progress.
     <div
       data-motion-stage=""
-      style={{ position: active ? 'relative' : undefined, overflowX: active ? 'clip' : undefined }}
+      style={{
+        position: (active || swiping) ? 'relative' : undefined,
+        overflowX: (active || swiping) ? 'clip' : undefined,
+      }}
     >
+      {last && (
+        <div
+          ref={underRef}
+          data-motion-under=""
+          aria-hidden="true"
+          style={{
+            position: 'absolute', top: 0, insetInlineStart: 0, width: '100%', height: 'var(--vh)',
+            overflow: 'hidden', pointerEvents: 'none', background: 'var(--bg)', zIndex: 0,
+            // Where the hook's own first paint puts it, so the layer cannot be
+            // seen un-parallaxed for the frame between mount and pointermove.
+            transform: `translate3d(${-PARALLAX * 100 * sign}%,0,0)`,
+            willChange: 'transform',
+          }}
+        >
+          <div style={{ transform: last.scrollTop ? `translateY(-${last.scrollTop}px)` : undefined }}>
+            <div ref={underMountRef} />
+          </div>
+          <div data-motion-scrim="" style={{ position: 'absolute', inset: 0, background: '#000', opacity: DIM, pointerEvents: 'none' }} />
+        </div>
+      )}
+
       {active && (
         <motion.div
           key={`exit-${prev.key}-${seq}`}
@@ -302,9 +369,13 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, child
           // (Devices' row menus, Cameras' full-screen view). Left standing,
           // that context would re-stack them under the bottom nav and the
           // toasts. Needed for ~420ms, then dropped.
-          position: active ? 'relative' : undefined,
+          // `swiping` is the same bargain for the length of a gesture: the
+          // under-page is absolutely positioned against the stage, and this
+          // layer needs an opaque background so the page beneath does not
+          // show through the one the finger is holding.
+          position: (active || swiping) ? 'relative' : undefined,
           zIndex: active ? (isBack ? 1 : 2) : undefined,
-          background: active ? 'var(--bg)' : undefined,
+          background: (active || swiping) ? 'var(--bg)' : undefined,
           boxShadow: active && !isBack ? edgeShadow : undefined,
           willChange: active ? 'transform' : undefined,
         }}

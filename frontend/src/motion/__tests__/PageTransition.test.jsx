@@ -6,11 +6,11 @@ import { PageTransition, PUSH_MS, getLastExited } from '../PageTransition'
 
 const Page = ({ name }) => <div data-testid={`page-${name}`}>{name}</div>
 
-function Harness({ path, back = false, enabled = true, rtl = false, tick = 0 }) {
+function Harness({ path, back = false, enabled = true, rtl = false, tick = 0, swiping = false }) {
   const scrollerRef = React.useRef({ scrollTop: 0 })
   return (
     <div data-tick={tick}>
-      <PageTransition pathKey={path} back={back} rtl={rtl} enabled={enabled} scrollerRef={scrollerRef}>
+      <PageTransition pathKey={path} back={back} rtl={rtl} enabled={enabled} scrollerRef={scrollerRef} swiping={swiping}>
         <Page name={path} />
       </PageTransition>
     </div>
@@ -84,6 +84,93 @@ describe('PageTransition', () => {
     const { container, rerender } = render(<Harness path="/" rtl />)
     rerender(<Harness path="/rooms" rtl />)
     expect(container.querySelector('[data-motion-page="enter"]').getAttribute('data-motion-dir')).toBe('-1')
+  })
+})
+
+// The under-page: what a swipe-back reveals. Same snapshot as the overlay,
+// which is exactly why only one of the two may hold it at a time.
+describe('PageTransition under-page (swipe-back)', () => {
+  // `_lastExited` is module state with a 30s TTL, so each test says outright
+  // whether a remembered page exists rather than inheriting one.
+  const forgetLastPage = () => act(() => { vi.advanceTimersByTime(31_000) })
+  beforeEach(() => vi.useFakeTimers())
+
+  it('paints the last page beneath, with a scrim, while swiping', () => {
+    const { container, rerender } = render(<Harness path="/" />)
+    rerender(<Harness path="/rooms" />)
+    act(() => { vi.advanceTimersByTime(PUSH_MS + 400) })   // overlay drops, snapshot handed over
+    rerender(<Harness path="/rooms" swiping />)
+    const under = container.querySelector('[data-motion-under]')
+    expect(under).not.toBeNull()
+    expect(under.querySelector('[data-testid="page-/"]')).not.toBeNull()
+    expect(under.querySelector('[data-motion-scrim]')).not.toBeNull()
+    expect(under.getAttribute('aria-hidden')).toBe('true')
+    expect(under.inert).toBe(true)
+    // ...and it goes when the gesture does, releasing the node again.
+    rerender(<Harness path="/rooms" />)
+    expect(container.querySelector('[data-motion-under]')).toBeNull()
+    expect(getLastExited().node.querySelector('[data-testid="page-/"]')).not.toBeNull()
+  })
+
+  it('no under-page when nothing was exited (a deep link)', () => {
+    forgetLastPage()
+    const { container } = render(<Harness path="/devices/x" swiping />)
+    expect(getLastExited()).toBeNull()
+    expect(container.querySelector('[data-motion-under]')).toBeNull()
+    expect(container.querySelector('[data-testid="page-/devices/x"]')).not.toBeNull()
+  })
+
+  // A DOM node can only be in one place. If both layers claimed the snapshot
+  // the second mount would MOVE it out of the first — the overlay would empty
+  // mid-slide.
+  it('no under-page while the exit overlay still holds the snapshot', () => {
+    const { container, rerender } = render(<Harness path="/" />)
+    rerender(<Harness path="/rooms" />)
+    act(() => { vi.advanceTimersByTime(PUSH_MS + 400) })
+    rerender(<Harness path="/devices" />)                  // a slide is running again
+    expect(getLastExited()).not.toBeNull()
+    rerender(<Harness path="/devices" swiping />)
+    expect(container.querySelector('[data-motion-under]')).toBeNull()
+    expect(container.querySelector('[data-motion-page="exit"] [data-testid="page-/rooms"]')).not.toBeNull()
+  })
+
+  // Same rule as the slide: nothing of it stands at rest. A gesture is not
+  // rest, the moment after it is.
+  it('positions and clips the stage only for the length of the gesture', () => {
+    const { container, rerender } = render(<Harness path="/" />)
+    rerender(<Harness path="/rooms" />)
+    act(() => { vi.advanceTimersByTime(PUSH_MS + 400) })
+    expect(container.querySelector('[data-motion-stage]').style.position).toBe('')
+    rerender(<Harness path="/rooms" swiping />)
+    const stage = container.querySelector('[data-motion-stage]')
+    expect(stage.style.position).toBe('relative')
+    expect(stage.style.overflowX).toBe('clip')
+    expect(container.querySelector('[data-motion-page="enter"]').style.position).toBe('relative')
+    rerender(<Harness path="/rooms" />)
+    expect(container.querySelector('[data-motion-stage]').style.position).toBe('')
+    expect(container.querySelector('[data-motion-stage]').style.overflowX).toBe('')
+    expect(container.querySelector('[data-motion-page="enter"]').style.position).toBe('')
+    expect(container.querySelector('[data-motion-page="enter"]').style.background).toBe('')
+  })
+
+  // The gesture moves the page LAYER, not <main> — so the host needs the node.
+  it('hands the page layer to the host through pageRef', () => {
+    const pageRef = React.createRef()
+    function H({ path }) {
+      const scrollerRef = React.useRef({ scrollTop: 0 })
+      return (
+        <PageTransition pathKey={path} back={false} rtl={false} enabled scrollerRef={scrollerRef} pageRef={pageRef}>
+          <Page name={path} />
+        </PageTransition>
+      )
+    }
+    const { container, rerender } = render(<H path="/" />)
+    expect(pageRef.current).toBe(container.querySelector('[data-motion-page]'))
+    rerender(<H path="/rooms" />)
+    // The layer is keyed on the route, so the node is a NEW one — and the ref
+    // must follow it, never the detached old layer.
+    expect(pageRef.current).toBe(container.querySelector('[data-motion-page="enter"]'))
+    expect(pageRef.current.querySelector('[data-testid="page-/rooms"]')).not.toBeNull()
   })
 })
 

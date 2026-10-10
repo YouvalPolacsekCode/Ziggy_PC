@@ -203,15 +203,32 @@ export function AppShell({ connected }) {
   useEffect(() => { prevPathRef.current = location.pathname }, [location.pathname])
   const slide = motionOn && pagesOn && !reduced && !roomPair
 
-  // Swipe back: the <main> scroller follows the finger from the leading edge
-  // and commits past 30% of the width or on a 500px/s flick. The hook
-  // direction-locks, refuses to start on top of a control, and springs back
-  // below the threshold, so the gesture is always cancellable.
+  // Swipe back: the page LAYER follows the finger from the leading edge —
+  // first peeling at the edge, then travelling — and commits past 30% of the
+  // width or on a 500px/s flick. The hook direction-locks, refuses to start
+  // on top of a control, and springs back below the threshold, so the gesture
+  // is always cancellable.
+  //
+  // It moves the page layer rather than the <main> scroller because the page
+  // beneath is painted as a SIBLING of that layer inside PageTransition's
+  // stage: moving the scroller would carry the under-page along with it and
+  // reveal nothing. `swiping` is what mounts that under-page, so it is state
+  // and not a ref — and `location.pathname` is the hook's rebind signal,
+  // because the layer is keyed on the route and so the node it must listen on
+  // is replaced on every navigation.
+  const pageRef = useRef(null)
+  const [swiping, setSwiping] = useState(false)
+  const onSwipe = useCallback((s) => setSwiping(s === 'start'), [])
   const onBack = useCallback(() => {
     haptic('medium')
     navigate(-1)
   }, [navigate])
-  useSwipeBack(mainRef, onBack, { enabled: motionOn && isDetail && !isChatRoute, rtl })
+  useSwipeBack(pageRef, onBack, {
+    enabled: motionOn && isDetail && !isChatRoute,
+    rtl,
+    onSwipe,
+    bindKey: location.pathname,
+  })
 
   // Bottom-nav tuck. onDirection fires 'up' whenever the scroller is back at
   // the top, so the bar always returns there.
@@ -237,18 +254,50 @@ export function AppShell({ connected }) {
     } catch { /* SSR / non-DOM */ }
   }, [location.pathname])
 
-  // Motion: land every route with the bar shown and <main> untransformed.
-  // A committed swipe-back leaves main translated off-screen (that IS the
-  // exit), and the gesture hook only clears it when it unbinds — which does
-  // not happen when one detail route replaces another. Clearing here, before
-  // paint, means the new page can never arrive off-screen.
+  // Motion: land every route with the bar shown, the gesture forgotten and
+  // nothing of it left on the page.
+  //
+  // A committed swipe-back leaves the page it moved translated off-screen
+  // (that IS the exit) and the hook only clears it when it unbinds, so this
+  // is the belt to that braces: clearing before paint means a page can never
+  // arrive off-screen. `swiping` is dropped the same way — a gesture belongs
+  // to the page it started on, and leaving it true would strand the
+  // under-page over the new route.
+  //
+  // `transform` and `will-change` are cleared on <main> — where this hook
+  // used to write, and nothing else does — but deliberately NOT on the page
+  // layer, where they have owners:
+  //
+  //   - framer-motion renders the slide's STARTING OFFSET into `transform`,
+  //     and by the time a parent layout effect runs `pageRef` already points
+  //     at the ARRIVING page. Clearing it here would paint that page at rest
+  //     for one frame and then jump it off-screen to slide in. PageTransition
+  //     owns the property and clears it itself whenever no slide is running
+  //     (its own effect guards on exactly that).
+  //   - `will-change: transform` on that layer is React-rendered for the
+  //     length of the slide; removing it imperatively would lose the hint on
+  //     every navigation, because React only writes it again when it changes.
+  //
+  // Nothing of the gesture can strand there anyway: the layer is keyed on the
+  // route, so a committed swipe's off-screen transform is unmounted with the
+  // element, and the hook re-binds on `bindKey` — clearing what it wrote on
+  // the node it wrote it to. The two properties below are nobody else's, so
+  // they are cleared as the belt to that brace.
   useLayoutEffect(() => {
     setNavTucked(false)
-    const el = mainRef.current
-    if (!el) return
-    el.style.transition = ''
-    el.style.transform = ''
-    el.style.willChange = ''
+    setSwiping(false)
+    const main = mainRef.current
+    if (main) {
+      main.style.transition = ''
+      main.style.transform = ''
+      main.style.transformOrigin = ''
+      main.style.willChange = ''
+    }
+    const page = pageRef.current
+    if (page) {
+      page.style.transition = ''
+      page.style.transformOrigin = ''
+    }
   }, [location.pathname])
 
   // Route-level Suspense boundary.
@@ -340,6 +389,8 @@ export function AppShell({ connected }) {
             rtl={rtl}
             enabled={slide}
             scrollerRef={mainRef}
+            pageRef={pageRef}
+            swiping={swiping}
           >
             {routed}
           </PageTransition>

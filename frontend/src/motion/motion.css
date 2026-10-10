@@ -404,14 +404,22 @@
 
 /* A snapshot does not animate.
  *
- * The outgoing page in a push is a cloned DOM subtree, and inserting a clone
- * re-triggers every CSS entrance it carries — the page rise, every stagger.
+ * The outgoing page in a push — and the page beneath a swipe-back, which is
+ * the same snapshot — is a cloned DOM subtree, and inserting a clone
+ * re-triggers every CSS entrance it carries: the page rise, every stagger.
  * Without this the page you are LEAVING replays its own arrival while it
  * recedes. The clone's root has the motion attributes stripped off it in JS;
- * this is the rest of its subtree. Last in the file on purpose: it ties with
- * the entrance rules on specificity and wins on order. */
+ * this is the rest of its subtree.
+ *
+ * `!important`, not order. Being last in the file only wins a tie, and the
+ * descendant rules it has to beat are not ties: `[data-motion="on"]
+ * [data-on="true"] [data-motion-icon]` (zm-ignite) and the disclosure form of
+ * zm-reveal are three selectors to this rule's two, so they outranked it and
+ * a cloned device icon still bloomed on its way out. */
 [data-motion="on"] [data-motion-page="exit"],
-[data-motion="on"] [data-motion-page="exit"] * { animation: none; }
+[data-motion="on"] [data-motion-page="exit"] * { animation: none !important; }
+[data-motion="on"] [data-motion-under],
+[data-motion="on"] [data-motion-under] * { animation: none !important; }
 
 /* A page mid-slide is a transformed ancestor; anything position:fixed inside
  * it is trapped for ≤420ms. Pages keep their fixed children out of the
