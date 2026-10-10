@@ -143,10 +143,14 @@ page transitions that black-screened this app, both of which died on a dropped
 handshake). It is a snapshot rather than the previous element re-rendered
 because that would be a second *mount* of the page you are leaving: duplicate
 ids resolving ahead of the live page's, focus stolen by `autoFocus`, and mount
-effects firing again — a POST, a camera stream, or a redirect guard calling
-`navigate()` on the way out. A clone has no lifecycle; its ids, `autofocus`
+effects firing again — a POST, or a redirect guard calling `navigate()` on the
+way out. A clone cannot run effects, focus or navigate; its ids, `autofocus`
 and motion attributes are stripped, and motion.css silences animations inside
-the overlay so the departing page does not replay its own arrival. Nothing of
+the overlay so the departing page does not replay its own arrival. What a clone
+*can* still do is fetch: a cloned `<img>` or `<iframe>` is a fresh request, and
+a camera's MJPEG `<img>` is a connection that stays open — so streaming image
+sources and iframes are neutralised explicitly (a cached still is left alone;
+it re-paints from cache, and showing it is the point). Nothing of
 the slide stands at rest: `position`, `z-index`, the shadow and the clip exist
 only while an overlay does. `?pages=off` turns off the slide alone and
 leaves the rest of the layer running; the quiet rise below is what plays

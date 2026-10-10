@@ -361,6 +361,37 @@ describe('PageTransition invariants', () => {
     expect(getLastExited().node.querySelector('[data-testid="page-/"]')).not.toBeNull()
   })
 
+  // A clone has no lifecycle, but it DOES fetch: an <img> or an <iframe> in a
+  // cloned subtree is a fresh request, and Cameras renders a live MJPEG <img>
+  // whose "request" is a connection that stays open. So the stream-shaped ones
+  // are neutralised explicitly and everything else is left alone — a cached
+  // still keeps painting, which is the whole point of showing the old page.
+  it('neutralises streams and iframes in the snapshot, and leaves still images alone', () => {
+    function Media({ path }) {
+      const scrollerRef = React.useRef({ scrollTop: 0 })
+      return (
+        <PageTransition pathKey={path} back={false} rtl={false} enabled scrollerRef={scrollerRef}>
+          <div data-testid={`page-${path}`}>
+            <img data-testid="stream" src="/api/cameras/camera.front/stream" srcSet="/api/cameras/camera.front/stream 1x" alt="" />
+            <img data-testid="still" src="/icons/a.png" alt="" />
+            <iframe data-testid="frame" title="f" src="https://example.test/x" />
+          </div>
+        </PageTransition>
+      )
+    }
+    const { container, rerender } = render(<Media path="/cameras" />)
+    rerender(<Media path="/rooms" />)
+    const exit = container.querySelector('[data-motion-page="exit"]')
+    const stream = exit.querySelector('[data-testid="stream"]')
+    expect(stream.getAttribute('src')).toMatch(/^data:image\/gif;base64,/)
+    expect(stream.hasAttribute('srcset')).toBe(false)
+    expect(exit.querySelector('[data-testid="still"]').getAttribute('src')).toBe('/icons/a.png')
+    expect(exit.querySelector('[data-testid="frame"]').getAttribute('src')).toBe('about:blank')
+    // ...and the live page is untouched.
+    const live = container.querySelector('[data-motion-page="enter"]')
+    expect(live.querySelector('[data-testid="stream"]').getAttribute('src')).toBe('/api/cameras/camera.front/stream')
+  })
+
   // Nothing of the slide stands at rest. A standing `position: relative`
   // re-parents every absolutely positioned descendant of every page, because
   // <main> is not positioned and today's wrapper is not either.

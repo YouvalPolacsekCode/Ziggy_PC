@@ -60,7 +60,11 @@
 //     redirect guard that calls `navigate()` from a mount effect would
 //     navigate the whole app on its way out.
 //
-// A clone has no lifecycle. It cannot fetch, focus, or navigate. The ids and
+// A clone has no lifecycle: it cannot run effects, focus or navigate. It CAN
+// still fetch — a cloned `<img>` or `<iframe>` is a new request, and a camera's
+// MJPEG `<img>` is a connection that stays open — so streaming media and
+// iframes are neutralised explicitly in snapshot() (a cached still is left
+// alone: it re-paints from cache, and showing it is the point). The ids and
 // `autofocus` attributes are stripped from it anyway, and the motion layer's
 // own attributes come off its root so it is not mistaken for a live layer
 // (motion.css also silences animations inside the overlay — inserting a
@@ -123,6 +127,13 @@ function rememberExited(entry) {
   _lastExitedTimer = setTimeout(() => { _lastExited = null }, LAST_EXITED_TTL_MS)
 }
 
+// A 1×1 transparent GIF: what a neutralised stream paints instead of opening
+// a second connection to the hub.
+const BLANK_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='
+// `/api/cameras/<id>/stream` is Ziggy's own MJPEG endpoint; the other two
+// catch any other long-lived image URL (an HA proxy, a vendor snapshot feed).
+const STREAM_SRC_RE = /\/api\/cameras|mjpeg|stream/i
+
 // A copy of the page layer with everything that could act on the live page
 // taken out of it. Pure DOM work: no React, no lifecycle, nothing to run.
 function snapshot(layer) {
@@ -146,6 +157,21 @@ function snapshot(layer) {
       el.muted = true
       el.pause?.()
     })
+    // An <img> in a clone is a fresh request, and for a camera that request is
+    // a CONNECTION THAT STAYS OPEN: Cameras renders a live MJPEG `<img>`, so
+    // cloning the page opened a second stream to the hub for the length of the
+    // slide (and the under-page holds the clone for the length of a gesture).
+    // Only the stream-shaped ones are blanked — a cached still re-paints from
+    // the memory cache without a network round trip, and showing it is the
+    // entire point of the overlay.
+    node.querySelectorAll('img').forEach((el) => {
+      const src = el.getAttribute('src') || ''
+      if (!STREAM_SRC_RE.test(src)) return
+      el.removeAttribute('srcset')
+      el.setAttribute('src', BLANK_PIXEL)
+    })
+    // An iframe is a whole second document: scripts, timers, its own network.
+    node.querySelectorAll('iframe').forEach((el) => el.setAttribute('src', 'about:blank'))
   } catch { /* a snapshot is a nicety; never fail a navigation over it */ }
   return node
 }
