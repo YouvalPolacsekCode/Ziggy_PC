@@ -72,7 +72,7 @@ function DepthCell({ active, motionOn, icon, label, labelStyle }) {
     return (
       <>
         {icon}
-        <span style={labelStyle}>{label}</span>
+        <span data-nav-label={motionOn ? 'true' : undefined} style={labelStyle}>{label}</span>
       </>
     )
   }
@@ -96,7 +96,7 @@ function DepthCell({ active, motionOn, icon, label, labelStyle }) {
       >
         {icon}
       </motion.span>
-      <span style={labelStyle}>{label}</span>
+      <span data-nav-label={motionOn ? 'true' : undefined} style={labelStyle}>{label}</span>
     </motion.span>
   )
 }
@@ -264,15 +264,15 @@ export function BottomNav({ connected, tucked = false }) {
     }
   }, [motionOn, rtl, lang, moreItems.length, connected])
 
-  // ── Tuck ─────────────────────────────────────────────────────────────
+  // ── Condense ─────────────────────────────────────────────────────────
   // Never while a modal or sheet is up, never while the More menu is open,
   // never while the offline strip is showing (it is the bar's own message and
   // must not walk off with it). Reduced motion is handled in motion.css,
-  // which pins the bar in place even when this says tucked — an OS setting
-  // that can flip mid-session is better answered by the media query than by a
-  // value captured at render.
+  // which pins the bar at full height even when this says condensed — an OS
+  // setting that can flip mid-session is better answered by the media query
+  // than by a value captured at render.
   const overlayOpen = useOverlayOpen(motionOn)
-  const isTucked = motionOn && tucked && !overlayOpen && !showMore && connected !== false
+  const isCondensed = motionOn && tucked && !overlayOpen && !showMore && connected !== false
 
   return (
     <>
@@ -386,10 +386,11 @@ export function BottomNav({ connected, tucked = false }) {
 
       <nav
         className="fixed bottom-0 left-0 right-0 z-30 md:hidden"
-        // Tuck hooks. The transform lives in motion.css; with the flag off
-        // neither attribute is emitted and the bar has no transition at all.
+        // Condense hooks. The height/opacity transitions live in motion.css;
+        // with the flag off neither attribute is emitted and the row has no
+        // transition at all.
         data-motion-nav={motionOn ? 'true' : undefined}
-        data-tucked={motionOn ? (isTucked ? 'true' : 'false') : undefined}
+        data-condensed={motionOn ? (isCondensed ? 'true' : 'false') : undefined}
         style={{
           // NO paddingBottom — we render an explicit safe-area floor sibling
           // below the bar (see below) so the bar's background extends all
@@ -423,11 +424,13 @@ export function BottomNav({ connected, tucked = false }) {
         }}>
           <div
             ref={gridRef}
+            data-nav-row={motionOn ? 'true' : undefined}
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
               alignItems: 'stretch',
               height: ROW_H, maxWidth: 480, margin: '0 auto', padding: '0 4px',
+              ...(motionOn ? { overflow: 'hidden' } : null),
             }}
           >
             {PRIMARY_TABS.map(p => (

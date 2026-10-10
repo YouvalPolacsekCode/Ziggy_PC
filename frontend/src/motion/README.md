@@ -92,7 +92,7 @@ Kowalski's animation work:
 | `data-motion-disclosure` | a disclosure wrapper | animates open, so nothing below jumps |
 | `data-motion-reveal` | a disclosure panel | its content fades in behind the expansion |
 | `data-motion-chevron` + `data-open` | a disclosure chevron | rotates |
-| `data-motion-nav` + `data-tucked` | the bottom nav | tucks away on scroll down |
+| `data-motion-nav` + `data-condensed` | the bottom nav | condenses to icons on scroll down |
 | `data-motion-nav-hl` | the **sidebar**'s active highlight | slides between items |
 | `data-motion-live="true"` | **UNWIRED** — nothing emits this | would breathe; see the rules above |
 | `data-scrubbing="true"` | a control mid-drag | kills the fill transition so it tracks the finger |

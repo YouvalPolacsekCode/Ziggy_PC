@@ -39,37 +39,6 @@ function historyIdx() {
   } catch { return null }
 }
 
-// ── Nav ↔ chat-bubble coupling (motion only) ──────────────────────────────
-// The floating chat bubble is not inside the nav — it is a viewport-fixed FAB
-// whose own CSS pins it to the nav's band (`calc(var(--nav-h) + …)`), and
-// chatBubble.css already notes that where there is no bottom nav the bubble
-// must not be left hovering over "60px of empty air". So when the bar tucks,
-// the bubble goes with it: they are one piece of chrome, they recede together
-// and return together on the first upward scroll.
-//
-// The alternative — sliding the bubble down to the safe-area floor — would
-// mean driving `.z-chat-bubble`'s transform from out here, and that channel
-// already has two owners (its `:active` press and its `[data-open]` swap). A
-// third writer is how a FAB ends up stranded mid-air. Opacity is the
-// vocabulary the bubble already uses to step aside, on its own token, so the
-// coupling borrows it rather than inventing one.
-//
-// Written as a sibling rule because <BottomNav> and <ChatBubble> are siblings
-// in the shell, and it is rendered only while the flag is on, so with
-// data-motion="off" neither the rule nor the <style> node exists.
-//
-// Stated positively under `no-preference` rather than as a reduced-motion
-// revert: under reduced motion the bar does not tuck at all (motion.css pins
-// it), so a revert would have to out-specify the bubble's own [data-open]
-// rule and would then drag the bubble back out from under an open chat sheet.
-const CHAT_BUBBLE_TUCK_CSS = `
-@media (prefers-reduced-motion: no-preference) {
-  [data-motion="on"] [data-motion-nav][data-tucked="true"] ~ .z-chat-bubble {
-    opacity: 0;
-    pointer-events: none;
-  }
-}`
-
 // ── Chat dock (wide screens) ──────────────────────────────────────────────────
 // When a chat card navigates to an object's page on a wide screen, the chat
 // keeps living here, beside the page, so the user can keep talking about what
@@ -343,8 +312,8 @@ export function AppShell({ connected }) {
       <BottomNav connected={connected} tucked={motionOn && navTucked} />
       {/* Phone chat surface. Fixed-position, so DOM order only matters for
           stacking ties: after the nav (z-30), before toasts (z-60) — and, with
-          motion on, for the sibling rule that tucks the bubble with the bar. */}
-      {motionOn && <style>{CHAT_BUBBLE_TUCK_CSS}</style>}
+          motion on, for the sibling rule in motion.css that rides the bubble
+          down with the bar as it condenses. */}
       <ChatBubble />
       <ChatSheet />
       <ToastContainer />

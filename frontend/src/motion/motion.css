@@ -255,15 +255,31 @@
 [data-motion="on"] [data-motion-chevron][data-open="true"] { transform: rotate(180deg); }
 
 /* ── Bottom nav ──────────────────────────────────────────────────────────
- * Tucks away as you scroll down, returns as you scroll up. The sliding
- * highlight is drawn by the component; this is only its motion. */
+ * Condenses as you scroll down (56 → 40px, labels fade, icons stay under
+ * the thumb) and restores on the first upward scroll or at the top. This is
+ * the layer's second deliberate layout animation: `height` on a FIXED
+ * element, so nothing else on the page reflows. 40px, not the lab's 38px:
+ * the icon sits centred with 8px above it rather than under the top edge
+ * (the operator asked for more room up top). */
 
-[data-motion="on"] [data-motion-nav] {
-  transition: transform 240ms var(--m-out), opacity 200ms var(--m-std);
+[data-motion="on"] [data-motion-nav] [data-nav-row] {
+  transition: height 400ms var(--m-out);
 }
-[data-motion="on"] [data-motion-nav][data-tucked="true"] {
-  transform: translate3d(0, calc(100% + 12px), 0);
+[data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-row] {
+  height: 40px;
+}
+[data-motion="on"] [data-motion-nav] [data-nav-label] {
+  transition: opacity 160ms var(--m-std);
+}
+[data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-label] {
   opacity: 0;
+}
+/* The chat bubble keeps its 16px breath above the bar as it condenses. */
+[data-motion="on"] [data-motion-nav] ~ .z-chat-bubble {
+  transition: inset-block-end 400ms var(--m-out);
+}
+[data-motion="on"] [data-motion-nav][data-condensed="true"] ~ .z-chat-bubble {
+  inset-block-end: calc(var(--nav-h) - 16px + max(var(--safe-bottom), 8px) + 16px);
 }
 
 /* Sidebar: the active surface moves to the sliding highlight, which draws the
@@ -340,7 +356,9 @@
   [data-motion="on"] [data-motion-disclosure] { --zm-stagger-from: 0ms; }
   [data-motion="on"] [data-motion-live="true"] { animation: none; opacity: 0.9; }
   [data-motion="on"] [data-pending="true"] { animation: none; opacity: 0.75; }
-  [data-motion="on"] [data-motion-nav][data-tucked="true"] { transform: none; opacity: 1; }
+  [data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-row] { height: 56px; }
+  [data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-label] { opacity: 1; }
+  [data-motion="on"] [data-motion-nav][data-condensed="true"] ~ .z-chat-bubble { inset-block-end: calc(var(--nav-h) + max(var(--safe-bottom), 8px) + 16px); }
   /* Loops that live outside this file (Tailwind's pulse, the health dot). */
   [data-motion="on"] .animate-pulse { animation: none; }
   [data-motion="on"] .z-pulse { animation: none; }
@@ -348,7 +366,9 @@
 [data-motion-reduced="true"][data-motion="on"] [data-pressing] { transform: none; }
 [data-motion-reduced="true"][data-motion="on"] [data-motion-live="true"] { animation: none; opacity: 0.9; }
 [data-motion-reduced="true"][data-motion="on"] [data-on="true"] [data-motion-icon] { animation: none; }
-[data-motion-reduced="true"][data-motion="on"] [data-motion-nav][data-tucked="true"] { transform: none; opacity: 1; }
+[data-motion-reduced="true"][data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-row] { height: 56px; }
+[data-motion-reduced="true"][data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-label] { opacity: 1; }
+[data-motion-reduced="true"][data-motion="on"] [data-motion-nav][data-condensed="true"] ~ .z-chat-bubble { inset-block-end: calc(var(--nav-h) + max(var(--safe-bottom), 8px) + 16px); }
 [data-motion-reduced="true"][data-motion="on"] [data-motion-disclosure] { transition: none; --zm-stagger-from: 0ms; }
 [data-motion-reduced="true"][data-motion="on"] .animate-pulse { animation: none; }
 [data-motion-reduced="true"][data-motion="on"] .z-pulse { animation: none; }
