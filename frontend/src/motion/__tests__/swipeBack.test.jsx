@@ -10,7 +10,9 @@ function Host({ onBack, onSwipe, rtl = false }) {
   return (
     <div data-testid="stage">
       <div data-motion-under="" data-testid="under"><div data-motion-scrim="" /></div>
-      <div ref={ref} data-testid="page" style={{ width: 390 }} />
+      <div ref={ref} data-testid="page" style={{ width: 390 }}>
+        <div data-testid="child" />
+      </div>
     </div>
   )
 }
@@ -46,7 +48,30 @@ describe('useSwipeBack (rubber-band edge)', () => {
     // synthetic move reads as a flick well over 500px/s, so this commits on
     // the 240ms curve (240+80 fallback) rather than springing home on 200.
     act(() => { vi.advanceTimersByTime(400) })
-    expect(onSwipe).toHaveBeenLastCalledWith('end')
+    expect(onSwipe).toHaveBeenLastCalledWith('end', { committed: true })
+  })
+
+  // The host keeps the under-page mounted past a committed settle (the page
+  // is off-screen by then; the under-page is the only thing left to look at)
+  // and drops it at once on a cancel. So the two ends are not the same event.
+  it('a cancelled swipe ends uncommitted, and leaves nothing behind', () => {
+    const onSwipe = vi.fn()
+    const onBack = vi.fn()
+    const { getByTestId } = render(<Host onBack={onBack} onSwipe={onSwipe} />)
+    const page = getByTestId('page')
+    page.getBoundingClientRect = () => ({ left: 0, right: 390, width: 390, top: 0, bottom: 800 })
+    // Out and then back again: short of the 30% threshold and, by the end,
+    // travelling the wrong way, so neither the distance nor the flick commits.
+    ptr('pointerdown', page, 4)
+    ptr('pointermove', page, 54); ptr('pointermove', page, 40); ptr('pointermove', page, 30)
+    ptr('pointerup', page, 30)
+    act(() => { vi.advanceTimersByTime(400) })
+    expect(onBack).not.toHaveBeenCalled()
+    expect(onSwipe).toHaveBeenLastCalledWith('end', { committed: false })
+    expect(page.style.transform).toBe('')
+    expect(page.style.transition).toBe('')
+    expect(page.style.transformOrigin).toBe('')
+    expect(page.style.willChange).toBe('')
   })
 
   it('commits once even if transitionend fires per property and the timer also fires', () => {
@@ -56,6 +81,21 @@ describe('useSwipeBack (rubber-band edge)', () => {
     page.getBoundingClientRect = () => ({ left: 0, right: 390, width: 390, top: 0, bottom: 800 })
     ptr('pointerdown', page, 4); ptr('pointermove', page, 300); ptr('pointerup', page, 300)
     page.dispatchEvent(new Event('transitionend')); page.dispatchEvent(new Event('transitionend'))
+    act(() => { vi.advanceTimersByTime(400) })
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
+  // `transitionend` bubbles. The page is full of things with transitions of
+  // their own, and one of them finishing mid-settle used to end the settle —
+  // navigating early from wherever the page had got to.
+  it('a child\'s transitionend does not end the settle', () => {
+    const onBack = vi.fn()
+    const { getByTestId } = render(<Host onBack={onBack} />)
+    const page = getByTestId('page')
+    page.getBoundingClientRect = () => ({ left: 0, right: 390, width: 390, top: 0, bottom: 800 })
+    ptr('pointerdown', page, 4); ptr('pointermove', page, 300); ptr('pointerup', page, 300)
+    getByTestId('child').dispatchEvent(new Event('transitionend', { bubbles: true }))
+    expect(onBack).not.toHaveBeenCalled()
     act(() => { vi.advanceTimersByTime(400) })
     expect(onBack).toHaveBeenCalledTimes(1)
   })
@@ -80,14 +120,24 @@ describe('useSwipeBack (rubber-band edge)', () => {
       useSwipeBack(ref, () => {}, { enabled: true, bindKey: pathKey })
       return <div data-testid="stage"><div key={pathKey} ref={ref} data-testid="page" /></div>
     }
+    const rect = () => ({ left: 0, right: 390, width: 390, top: 0, bottom: 800 })
     const { getByTestId, rerender } = render(<Rebinder pathKey="/devices/a" />)
     const first = getByTestId('page')
+    first.getBoundingClientRect = rect
+    ptr('pointerdown', first, 4); ptr('pointermove', first, 84)
+    expect(first.style.transform).toMatch(/translate3d\(48px,0,0\)/)
+
     rerender(<Rebinder pathKey="/devices/b" />)
     const second = getByTestId('page')
     expect(second).not.toBe(first)
-    second.getBoundingClientRect = () => ({ left: 0, right: 390, width: 390, top: 0, bottom: 800 })
+    second.getBoundingClientRect = rect
     ptr('pointerdown', second, 4)
     ptr('pointermove', second, 84)
     expect(second.style.transform).toMatch(/translate3d\(48px,0,0\)/)
+    // The node it let go of is left clean and deaf: the unbind clears what it
+    // painted, and an abandoned gesture on the old layer moves nothing.
+    expect(first.style.transform).toBe('')
+    ptr('pointerdown', first, 4); ptr('pointermove', first, 84)
+    expect(first.style.transform).toBe('')
   })
 })

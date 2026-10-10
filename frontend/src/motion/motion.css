@@ -166,6 +166,17 @@
  * three attribute selectors beat two, so this wins wherever it sits. */
 [data-motion="on"] [data-motion-push][data-motion-enter] { animation: none; }
 
+/* Nor does a page a finger put there.
+ *
+ * A committed swipe-back ends with the previous page already in place behind
+ * the one that was thrown off-screen. The navigation that follows must add
+ * nothing: no slide (PageTransition gives that layer no travel and no
+ * overlay) and no rise or recede either, or the page the finger just placed
+ * would animate itself in afterwards. Same two-attribute shape and the same
+ * reasoning as the rule above. `data-motion-enter` stays on the layer
+ * regardless, because morph.js looks it up. */
+[data-motion="on"] [data-motion-settled][data-motion-enter] { animation: none; }
+
 /* Back is not an arrival.
  *
  * Every navigation used to play the rise above, so returning to a page you

@@ -6,11 +6,11 @@ import { PageTransition, PUSH_MS, getLastExited } from '../PageTransition'
 
 const Page = ({ name }) => <div data-testid={`page-${name}`}>{name}</div>
 
-function Harness({ path, back = false, enabled = true, rtl = false, tick = 0, swiping = false }) {
+function Harness({ path, back = false, enabled = true, rtl = false, tick = 0, swiping = false, settled }) {
   const scrollerRef = React.useRef({ scrollTop: 0 })
   return (
     <div data-tick={tick}>
-      <PageTransition pathKey={path} back={back} rtl={rtl} enabled={enabled} scrollerRef={scrollerRef} swiping={swiping}>
+      <PageTransition pathKey={path} back={back} rtl={rtl} enabled={enabled} scrollerRef={scrollerRef} swiping={swiping} settled={settled}>
         <Page name={path} />
       </PageTransition>
     </div>
@@ -151,6 +151,46 @@ describe('PageTransition under-page (swipe-back)', () => {
     expect(container.querySelector('[data-motion-stage]').style.overflowX).toBe('')
     expect(container.querySelector('[data-motion-page="enter"]').style.position).toBe('')
     expect(container.querySelector('[data-motion-page="enter"]').style.background).toBe('')
+  })
+
+  // The remembered page is only BEHIND this one if a forward navigation put
+  // it away. Arrive here by going back and it is the page AHEAD — painting
+  // that under a back-gesture would show the wrong room.
+  it('no under-page when the remembered page is the one ahead', () => {
+    const { container, rerender } = render(<Harness path="/" />)
+    rerender(<Harness path="/rooms" />)
+    act(() => { vi.advanceTimersByTime(PUSH_MS + 400) })
+    rerender(<Harness path="/" back />)                    // ...and back again
+    act(() => { vi.advanceTimersByTime(PUSH_MS + 400) })
+    expect(getLastExited()).toMatchObject({ key: '/rooms', back: true })
+    rerender(<Harness path="/" back swiping />)
+    expect(container.querySelector('[data-motion-under]')).toBeNull()
+  })
+
+  // A committed swipe has already told the story: the finger carried the page
+  // off and brought the previous one in behind it. The navigation it asks for
+  // must add nothing, or the page the finger placed jumps back to -30% and
+  // slides in while a clone of the page it threw off slides off a second time.
+  it('a gesture-committed navigation lands at rest, once', () => {
+    const settled = { current: false }
+    const { container, rerender } = render(<Harness path="/rooms/x" settled={settled} />)
+    settled.current = true
+    rerender(<Harness path="/rooms" back settled={settled} />)
+    expect(container.querySelector('[data-motion-page="exit"]')).toBeNull()
+    const layer = container.querySelector('[data-motion-page]')
+    expect(layer.hasAttribute('data-motion-settled')).toBe(true)
+    expect(layer.hasAttribute('data-motion-push')).toBe(false)
+    expect(layer.getAttribute('data-motion-enter')).toBe('back')   // morph.js still finds it
+    expect(layer.style.transform).toBe('')
+    expect(settled.current).toBe(false)                            // consumed, once
+    // The page it threw off is still remembered, so the next swipe has one.
+    expect(getLastExited()).toMatchObject({ key: '/rooms/x' })
+    // ...and the navigation after it is an ordinary one again.
+    rerender(<Harness path="/devices" settled={settled} />)
+    expect(container.querySelector('[data-motion-page="exit"] [data-testid="page-/rooms"]')).not.toBeNull()
+    const next = container.querySelector('[data-motion-page="enter"]')
+    expect(next.hasAttribute('data-motion-settled')).toBe(false)
+    expect(next.hasAttribute('data-motion-push')).toBe(true)
   })
 
   // The gesture moves the page LAYER, not <main> — so the host needs the node.

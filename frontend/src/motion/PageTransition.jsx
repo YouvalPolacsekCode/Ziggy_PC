@@ -35,6 +35,15 @@
 // One DOM node cannot be in two places, so when the exit overlay is still
 // holding the snapshot this layer stands aside for that gesture.
 //
+// A gesture that COMMITS has already told the whole story: the finger carried
+// the page off and brought the previous one in behind it. Playing the push
+// again on the navigation that follows would tell it twice — the page the
+// finger just placed would jump back to -30% and slide in, and a clone of the
+// page it just threw off-screen would slide off a second time. So AppShell
+// hands over a `settled` ref, true for exactly that one navigation, and the
+// arriving page mounts AT REST: no overlay, no travel, and
+// `data-motion-settled` so motion.css holds the CSS entrance back too.
+//
 // ── Why a snapshot and not the React element ────────────────────────────────
 //
 // The obvious implementation keeps the previous render's outlet element and
@@ -140,7 +149,7 @@ function snapshot(layer) {
   return node
 }
 
-export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, swiping, pageRef, children }) {
+export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, swiping, pageRef, settled, children }) {
   const sign = rtl ? -1 : 1
   const [, bump] = useReducer((x) => x + 1, 0)
 
@@ -165,18 +174,25 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, swipi
   // of navigation. `back` and `slide` are frozen with it — reading the live
   // props instead would let a re-render mid-flight change the story being
   // told (that is the bug the enterDir pin in AppShell exists for).
-  const stage = useRef({ key: pathKey, prev: null, seq: 0, back: !!back, slide: false })
+  const stage = useRef({ key: pathKey, prev: null, seq: 0, back: !!back, slide: false, settledKey: null })
   if (stage.current.key !== pathKey) {
     const scrollTop = scrollerRef?.current?.scrollTop || 0
     const node = snapshot(layerNodeRef.current)
     const snap = node ? { key: stage.current.key, node, scrollTop, back: !!back } : null
+    // Consumed here, in the render that commits the navigation it belongs to,
+    // and only once: the next navigation is somebody else's.
+    const settledNav = !!settled?.current
+    if (settledNav && settled) settled.current = false
     // No snapshot is ever silently discarded. One that is still mid-slide
     // when the next navigation lands is handed over here; the one taken now
     // is handed over when its overlay drops, or at once if it will not get
     // an overlay at all (the room FLIP's routes, ?pages=off) — a swipe-back
     // needs an under-page either way.
     if (stage.current.prev) rememberExited(stage.current.prev)
-    const slide = !!(enabled && snap)
+    // A settled navigation gets no overlay — the gesture WAS the exit — but
+    // the snapshot is still handed over, because the next swipe-back needs an
+    // under-page as much as any other route does.
+    const slide = !!(enabled && snap) && !settledNav
     if (!slide && snap) rememberExited(snap)
     stage.current = {
       key: pathKey,
@@ -184,11 +200,15 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, swipi
       prev: slide ? snap : null,
       back: !!back,
       slide,
+      settledKey: settledNav ? pathKey : null,
     }
   }
-  const { prev, seq, back: isBack, slide } = stage.current
+  const { prev, seq, back: isBack, slide, settledKey } = stage.current
   // `slide` is this route's entrance; `active` is "an overlay is on screen".
   const active = slide && prev !== null
+  // This page was placed by a finger, not animated in. Frozen with the rest
+  // of the stage, so a later re-render cannot re-decide it.
+  const isSettled = settledKey === pathKey
 
   const drop = () => {
     if (!stage.current.prev) return
@@ -252,7 +272,16 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, swipi
   // `active` — this layer does not exist for that gesture and the hook simply
   // moves the page over whatever is already there. It is also the only honest
   // answer: the page under the finger is the one the overlay is showing.
-  const last = swiping && !active ? getLastExited() : null
+  //
+  // `entry.back` is the second half of the question. The remembered page is
+  // only BEHIND this one if a forward navigation put it away; if we arrived
+  // here by going back — including the committed swipe that just landed —
+  // then the remembered page is the one AHEAD, and painting it under a
+  // back-gesture would show the wrong room entirely. (It is also what keeps
+  // the settled landing clean: for that one frame `swiping` is still true,
+  // and the freshly remembered page is the one the finger just threw off.)
+  const remembered = swiping && !active ? getLastExited() : null
+  const last = remembered && !remembered.back ? remembered : null
   const underRef = useRef(null)
   const underMountRef = useRef(null)
   useLayoutEffect(() => {
@@ -356,8 +385,13 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, swipi
         // motion, the room FLIP's routes), where the CSS enter is the whole
         // animation and must run exactly as it did before.
         data-motion-push={slide ? '' : undefined}
+        // Placed by a finger: this page is already where it belongs, so it
+        // must not travel AND must not rise. `data-motion-push` is the wrong
+        // marker for it (there is no push to prefer over the CSS enter), so
+        // motion.css keys the suppression on this one instead.
+        data-motion-settled={isSettled ? '' : undefined}
         data-motion-dir={sign}
-        initial={slide ? { x: enterFrom } : false}
+        initial={(slide && !isSettled) ? { x: enterFrom } : false}
         animate={{ x: 0 }}
         transition={t}
         style={{

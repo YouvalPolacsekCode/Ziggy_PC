@@ -65,8 +65,18 @@ export function useLongPress({ onLongPress, onTap, ms = 480, enabled = true } = 
 // below that it springs home, so the gesture is always cancellable.
 //
 // `ref` is the element that moves. `onBack` runs on commit. `onSwipe` gets
-// 'start' when the page begins to move and 'end' when it settles or
-// cancels, so the host can mount the under-page only while it is needed.
+// 'start' when the page begins to move and `('end', { committed })` when it
+// settles or cancels, so the host can mount the under-page only while it is
+// needed — and keep it mounted past a COMMITTED settle, which ends with the
+// page off-screen and the under-page the only thing left to look at, until
+// the navigation it asked for lands.
+//
+// THE HOST MUST ONLY ENABLE THIS WHEN THERE IS AN ENTRY TO GO BACK TO. A
+// committed swipe deliberately leaves the page off-screen — that IS the exit
+// — and relies on the navigation replacing it. `onBack` that does nothing
+// (navigate(-1) on the first entry of the session: a deep link, a shared
+// URL, the PWA start URL) leaves a blank content area with no way back. The
+// hook cannot tell; AppShell gates `enabled` on the history index.
 //
 // `bindKey` RE-BINDS the listeners. The element this hook moves is now
 // PageTransition's page layer, which is keyed on the route — so the node is
@@ -125,9 +135,16 @@ export function useSwipeBack(ref, onBack, { enabled = true, rtl = false, onSwipe
       // for when it does not fire at all, so completion MUST be idempotent:
       // a committed swipe once called navigate(-1) twice and went back two
       // entries — off the end of the app's history and onto a blank page.
+      //
+      // It must also be the RIGHT element's event. `transitionend` bubbles,
+      // and the page is full of things with transitions of their own — a
+      // toggle finishing its 200ms flip inside the page would otherwise end
+      // the settle early and snap the page wherever it had got to. The
+      // timeout path calls finish() with no event.
       let finished = false
       let timer = null
-      const finish = () => {
+      const finish = (e) => {
+        if (e && e.target !== el) return
         if (finished) return
         finished = true
         clearTimeout(timer)
@@ -137,7 +154,11 @@ export function useSwipeBack(ref, onBack, { enabled = true, rtl = false, onSwipe
         el.style.transformOrigin = ''
         if (!then) el.style.transform = ''
         then?.()
-        onSwipe?.('end')
+        // `committed` says whether the page is now off-screen waiting for a
+        // navigation, or back where it started. The host needs the two apart:
+        // dropping the under-page on a committed end would show a hole for
+        // the frame between here and the route change.
+        onSwipe?.('end', { committed: !!then })
       }
       el.addEventListener('transitionend', finish)
       timer = setTimeout(finish, ms + 80)

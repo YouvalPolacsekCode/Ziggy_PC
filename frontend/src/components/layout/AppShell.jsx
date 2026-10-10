@@ -216,15 +216,39 @@ export function AppShell({ connected }) {
   // and not a ref — and `location.pathname` is the hook's rebind signal,
   // because the layer is keyed on the route and so the node it must listen on
   // is replaced on every navigation.
+  //
+  // THE GESTURE NEEDS AN ENTRY TO GO BACK TO. A committed swipe leaves the
+  // page off-screen on purpose — that IS the exit — and relies on the
+  // navigation to replace it. On the FIRST entry of the session there is no
+  // navigation: a deep link, a shared URL or the PWA start URL can land
+  // directly on /devices/abc, where `isDetail` is true, `navigate(-1)` does
+  // nothing, the route never changes and so nothing ever clears the
+  // transform. The page is gone and there is no way back to it. The history
+  // index is the same signal the direction pin uses; `null` (a foreign entry,
+  // a browser that dropped the state) counts as "cannot", because a gesture
+  // that might not come back is worse than one that is not offered.
+  const canGoBack = historyIdx() > 0
   const pageRef = useRef(null)
   const [swiping, setSwiping] = useState(false)
-  const onSwipe = useCallback((s) => setSwiping(s === 'start'), [])
+  // A committed swipe keeps the under-page mounted until the route change
+  // lands (the page it moved is off-screen by then, so dropping it would show
+  // a hole); the per-route layout effect below is what clears `swiping` in
+  // that case. A cancelled one is over the moment it settles.
+  const onSwipe = useCallback((state, info) => {
+    if (state === 'start') setSwiping(true)
+    else if (!info?.committed) setSwiping(false)
+  }, [])
+  // ...and it tells PageTransition not to animate the arrival it is about to
+  // ask for. A ref, not state: it must be readable during the render that
+  // commits the navigation, which is the same render that consumes it.
+  const gestureBackRef = useRef(false)
   const onBack = useCallback(() => {
     haptic('medium')
+    gestureBackRef.current = true
     navigate(-1)
   }, [navigate])
   useSwipeBack(pageRef, onBack, {
-    enabled: motionOn && isDetail && !isChatRoute,
+    enabled: motionOn && isDetail && !isChatRoute && canGoBack,
     rtl,
     onSwipe,
     bindKey: location.pathname,
@@ -391,6 +415,7 @@ export function AppShell({ connected }) {
             scrollerRef={mainRef}
             pageRef={pageRef}
             swiping={swiping}
+            settled={gestureBackRef}
           >
             {routed}
           </PageTransition>
