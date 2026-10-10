@@ -87,7 +87,9 @@ Kowalski's animation work:
 | `data-on="true\|false"` | a device/room tile root | on-state arrives in 220ms, leaves in 160ms |
 | `data-motion-icon` | the icon box inside such a tile | ignition pop, 6% overshoot |
 | `data-pending="true"` | a control with a command in flight | breathes until the hub answers |
-| `data-motion-enter` | routed page content | quiet rise on navigation |
+| `data-motion-enter` | routed page content | quiet rise on navigation — the fallback when the push is skipped |
+| `data-motion-page="enter\|exit\|current"` | the layers inside the page stage | names the incoming page, the outgoing overlay, and a page arriving without a slide |
+| `data-motion-push` | the entering page, while its entrance IS the slide | switches the quiet rise off, so only one entrance plays |
 | `data-motion-stagger` | a grid or list container | children arrive 35ms apart, capped at 8 |
 | `data-motion-disclosure` | a disclosure wrapper | animates open, so nothing below jumps |
 | `data-motion-reveal` | a disclosure panel | its content fades in behind the expansion |
@@ -118,6 +120,21 @@ text fading in behind the motion. Implemented as a FLIP, not framer-motion's
 `layoutId`, because AppShell already carries a comment about two exit-handshake
 page transitions that black-screened the app. A FLIP has no handshake: if the
 origin is missing or stale, the page simply renders as it does today.
+
+**Page push.** Going somewhere new, the page slides in from the inline-end
+edge over the one you were on, which recedes 30% the other way and dims to 35%
+behind a shadow on the incoming edge — so the page you left is visibly still
+there, behind the one you asked for. Coming back is the same movement run
+backwards and 15% faster, on the strong ease-out, because a return is not an
+arrival. `src/motion/PageTransition.jsx`, and it is deliberately not an
+`AnimatePresence`: the entering page is a plain keyed mount, the outgoing one
+is the previous render's element frozen into an inert absolute overlay that a
+watchdog timer drops, so there is no handshake to lose (AppShell's comment
+records the two page transitions that black-screened this app, both of which
+died on a dropped handshake). `?pages=off` turns off the slide alone and
+leaves the rest of the layer running; the quiet rise below is what plays
+instead. Skipped on the first load, under reduced motion, and on navigations
+into or out of a room's page, where the morph is the movement.
 
 **Swipe back.** Drag from the leading edge on any detail page. The page tracks
 the finger, commits past 30% of the width or on a 500px/s flick, springs back

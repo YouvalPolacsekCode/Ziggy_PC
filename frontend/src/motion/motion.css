@@ -138,7 +138,14 @@
 /* ── Page enter ──────────────────────────────────────────────────────────
  * A quiet rise, no exit animation. There is deliberately no exit handshake
  * here: AppShell's own comment records two attempts at an exit-based page
- * transition that black-screened the app when the handshake was dropped. */
+ * transition that black-screened the app when the handshake was dropped.
+ *
+ * This is now the FALLBACK entrance. A navigation normally plays the iOS
+ * push in src/motion/PageTransition.jsx instead; the rise below is what
+ * arrives when that is skipped — the first load of the app, `?pages=off`,
+ * reduced motion, and navigations into or out of a room's own page, where
+ * the shared-element FLIP in morph.js is the movement. Exactly one of the
+ * two ever plays on a given entrance (see the push rule below). */
 
 [data-motion="on"] [data-motion-enter] {
   animation: zm-page-in var(--m-dur-page) var(--m-glide) backwards;
@@ -147,6 +154,17 @@
   from { opacity: 0; transform: translate3d(0, 8px, 0); }
   to   { opacity: 1; transform: none; }
 }
+
+/* A pushed page does not ALSO rise.
+ *
+ * The entering layer keeps `data-motion-enter` while it slides, because
+ * morph.js locates the page wrapper with `closest('[data-motion-enter]')`.
+ * But a CSS animation outranks an inline style in the cascade, so the rise
+ * above would own `transform` for its whole duration and framer's slide
+ * would be invisible underneath it — the page would rise 8px and then jump.
+ * `data-motion-push` marks the one element whose entrance is the push, and
+ * three attribute selectors beat two, so this wins wherever it sits. */
+[data-motion="on"] [data-motion-push][data-motion-enter] { animation: none; }
 
 /* Back is not an arrival.
  *
@@ -383,3 +401,14 @@
 
 [data-motion="on"] :focus-visible { transition: none !important; }
 [data-motion="on"] [data-pressing] :is([style*="position: fixed"], .fixed) { transform: none; }
+
+/* A page mid-slide is a transformed ancestor; anything position:fixed inside
+ * it is trapped for ≤420ms. Pages keep their fixed children out of the
+ * routed tree (toasts, nav, bubble, dialogs are siblings or portals).
+ *
+ * Not all of them do, in fact: Devices' row menus and Cameras' full-screen
+ * view are `position: fixed` inside the page. They are fine — a menu cannot
+ * be open on a page that is only now arriving — but it is why
+ * PageTransition lifts `z-index` and the stage's `overflow-x: clip` ONLY
+ * while a slide is actually running. A standing stacking context around the
+ * routed page would re-stack a z-index:9999 menu under the bottom nav. */

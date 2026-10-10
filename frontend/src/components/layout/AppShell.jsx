@@ -1,5 +1,9 @@
-import { Suspense, useCallback, useLayoutEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate, Outlet } from 'react-router-dom'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+// useOutlet, not <Outlet/>: it hands back the very element <Outlet/> would
+// render, and having the element in hand is what lets PageTransition freeze
+// the previous render's page and paint it as the outgoing layer.
+import { useLocation, useNavigate, useOutlet } from 'react-router-dom'
+import { useReducedMotion } from 'framer-motion'
 import { X, Maximize2 } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { BottomNav } from './BottomNav'
@@ -10,6 +14,8 @@ import { useChatStore, CHAT_DOCK_QUERY } from '../../stores/chatStore'
 import { useMediaQuery } from '../../wall/useMediaQuery'
 import { useIsRTL, useT } from '../../lib/i18n'
 import { useMotionOn } from '../../motion/flag'
+import { usePagesOn } from '../../motion/pages'
+import { PageTransition } from '../../motion/PageTransition'
 import { useScrollChrome, useSwipeBack } from '../../motion/gestures'
 import { haptic } from '../../motion/motion'
 import AIChat from '../../pages/AIChat'
@@ -23,6 +29,11 @@ const CHAT_DOCK_W = 400
 // Routes that are "one level in" — the ones where a back gesture has an
 // obvious meaning. Everything else keeps the plain behaviour.
 const DETAIL_RE = /^\/(?:rooms|devices|remote|ir-walk|settings)\/[^/]+/
+
+// A room's own page. The shared-element morph in morph.js owns every
+// navigation into and out of it, in both directions, so the page slide stands
+// aside for that one route pair (see `slide` below).
+const ROOM_DETAIL_RE = /^\/rooms\/[^/]+$/
 
 // Which way through history a navigation went.
 //
@@ -174,6 +185,27 @@ export function AppShell({ connected }) {
   }
   const enterBack = enterDir.current.back
 
+  // ── Does this navigation slide? ──────────────────────────────────────
+  // The page push (PageTransition) is the richer answer to the same question
+  // the enter wrapper answers, so exactly one of them plays:
+  //
+  //   - `?pages=off` drops the slide and keeps the rest of the layer. It is
+  //     a separate switch from `?motion=off` on purpose: two earlier page
+  //     transitions black-screened this app, and the one piece of the layer
+  //     that has done that before gets its own rollback.
+  //   - Reduced motion means no travel, which is all a push is.
+  //   - The room FLIP (morph.js) owns navigations into and out of
+  //     /rooms/:id; a slide over the top of it would be two stories about
+  //     one movement. `prevPathRef` is updated in an effect, so during the
+  //     render that commits a navigation it still holds where we came from —
+  //     which is what makes BOTH directions of that pair detectable here.
+  const pagesOn = usePagesOn()
+  const reduced = useReducedMotion()
+  const prevPathRef = useRef(location.pathname)
+  const roomPair = ROOM_DETAIL_RE.test(location.pathname) || ROOM_DETAIL_RE.test(prevPathRef.current)
+  useEffect(() => { prevPathRef.current = location.pathname }, [location.pathname])
+  const slide = motionOn && pagesOn && !reduced && !roomPair
+
   // Swipe back: the <main> scroller follows the finger from the leading edge
   // and commits past 30% of the width or on a 500px/s flick. The hook
   // direction-locks, refuses to start on top of a control, and springs back
@@ -231,10 +263,20 @@ export function AppShell({ connected }) {
   // landed. That was the flicker. React resolves to the nearest boundary, so
   // this one keeps the shell painted and swaps only the content area. The
   // fallback holds height rather than collapsing so nothing reflows on land.
+  //
+  // A cached page (the outgoing overlay in PageTransition) gets its OWN
+  // Suspense + ErrorBoundary, so an error or a late chunk in the page on its
+  // way out can never reach the one coming in.
+  const renderPage = useCallback((el, key) => (
+    <Suspense fallback={<div aria-hidden style={{ minHeight: '60vh' }} />}>
+      <ErrorBoundary label={`route-exit:${key}`} key={key} fullHeight={false}>{el}</ErrorBoundary>
+    </Suspense>
+  ), [])
+  const outlet = useOutlet()
   const routed = (
     <Suspense fallback={<div aria-hidden style={{ minHeight: '60vh' }} />}>
       <ErrorBoundary label={`route:${location.pathname}`} key={location.pathname} fullHeight={false}>
-        <Outlet />
+        {outlet}
       </ErrorBoundary>
     </Suspense>
   )
@@ -272,7 +314,7 @@ export function AppShell({ connected }) {
             useNetworkStatus (navigator.onLine + WS). */}
         <ConnectionStatus />
 
-        {/* No page-transition wrapper.
+        {/* Page transition — the record of how this went wrong twice.
             Two prior attempts at a transition both failed:
               - mode="wait" + motion.div: AnimatePresence's exit→enter
                 handshake can be dropped if the parent re-renders mid-
@@ -283,25 +325,34 @@ export function AppShell({ connected }) {
                 render simultaneously as siblings in normal flow, stacking
                 vertically. The new page lands below the viewport, the old
                 fades out, and the visible area goes blank.
-            Pages just snap in — 0.15s of animation isn't worth a recurring
-            black-screen failure mode. ErrorBoundary keyed on pathname still
-            resets per-route.
+            For a long time pages just snapped in — 0.15s of animation isn't
+            worth a recurring black-screen failure mode.
 
-            The motion layer does NOT reintroduce one. The enter below is a
-            keyed CSS animation on a wrapper that mounts with the new route —
-            no AnimatePresence, no exit, no handshake that can be dropped, and
-            nothing that can leave a page stuck at opacity: 0. With the flag
-            off the wrapper is not rendered at all.
-
-            The attribute carries the direction. It stays `data-motion-enter`
-            with a VALUE rather than becoming a second attribute because
-            morph.js does `el.closest('[data-motion-enter]')` to cancel the
-            page enter when a shared-element morph runs — that lookup has to
-            keep finding the wrapper in both directions. Forward renders the
-            literal `true` a bare JSX data attribute has always produced, so
-            a PUSH is byte-for-byte the DOM it was. */}
+            The motion layer's page slide lives in
+            `src/motion/PageTransition.jsx`, which avoids both failures by
+            construction (no AnimatePresence; the outgoing page is a frozen
+            element in an absolute, inert overlay dropped by a timer).
+            `?pages=off` turns only the slide off. The `data-motion-enter`
+            attribute still carries the direction on the entering layer
+            because `morph.js` looks it up — it does
+            `el.closest('[data-motion-enter]')` to cancel the page enter when
+            a shared-element morph runs, and that lookup has to keep finding
+            the wrapper in both directions. When the slide is skipped (first
+            load, `?pages=off`, reduced motion, the room FLIP's routes) that
+            attribute is all there is, and motion.css's keyed CSS enter plays
+            exactly as it did before. ErrorBoundary keyed on pathname still
+            resets per-route. */}
         {motionOn ? (
-          <div data-motion-enter={enterBack ? 'back' : true} key={location.pathname}>{routed}</div>
+          <PageTransition
+            pathKey={location.pathname}
+            back={enterBack}
+            rtl={rtl}
+            enabled={slide}
+            scrollerRef={mainRef}
+            renderPage={renderPage}
+          >
+            {routed}
+          </PageTransition>
         ) : routed}
       </main>
 
