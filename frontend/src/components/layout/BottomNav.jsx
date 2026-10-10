@@ -186,25 +186,6 @@ export function BottomNav({ connected, tucked = false }) {
   const rtl = useIsRTL()
   const motionOn = useMotionOn()
   const [showMore, setShowMore] = useState(false)
-  // 'closing' keeps the popover mounted for its retract; the timeout below
-  // is what unmounts it. NO AnimatePresence: framer's exit cycle stalled on
-  // cold start once (the /devices chunk blocked the thread mid-animation and
-  // left the backdrop stuck over the viewport). A state + a timer cannot fail
-  // to complete.
-  const [closing, setClosing] = useState(false)
-  const closeTimer = useRef(null)
-  const FAN_OUT_MS = 120 + 30 * 2 + 40 // last item's exit delay + its duration + slack
-  const requestClose = useCallback(() => {
-    if (!motionOn) { setShowMore(false); return }
-    setClosing(true)
-    clearTimeout(closeTimer.current)
-    closeTimer.current = setTimeout(() => { setShowMore(false); setClosing(false) }, FAN_OUT_MS)
-  }, [motionOn])
-  // Force-close on any route change — synchronously, skipping the retract.
-  // Defensive, as before: whatever the animation state, a navigation must
-  // never leave a backdrop over the new page.
-  useEffect(() => { clearTimeout(closeTimer.current); setShowMore(false); setClosing(false) }, [location.pathname])
-  useEffect(() => () => clearTimeout(closeTimer.current), [])
 
   const taskTrackingEnabled = useFeature('task_tracking')
   const moreItems = [
@@ -215,6 +196,44 @@ export function BottomNav({ connected, tucked = false }) {
     // tool reachable from Settings; keeping it out declutters the nav.
   ]
   const isMoreActive = moreItems.some(n => location.pathname.startsWith(n.to))
+
+  // 'closing' keeps the popover mounted for its retract; the timeout below
+  // is what unmounts it. NO AnimatePresence: framer's exit cycle stalled on
+  // cold start once (the /devices chunk blocked the thread mid-animation and
+  // left the backdrop stuck over the viewport). A state + a timer cannot fail
+  // to complete.
+  const [closing, setClosing] = useState(false)
+  // `closing` itself is stale inside the closure requestClose was created
+  // with (it never changes identity across the retract), so the idempotency
+  // check below reads this ref instead — kept in sync everywhere closing is
+  // set.
+  const closingRef = useRef(false)
+  const closeTimer = useRef(null)
+  // Scales with the item count: last item's exit delay (30ms per item ahead
+  // of it) + its own 120ms duration + slack.
+  const FAN_OUT_MS = 120 + 30 * (moreItems.length - 1) + 40
+  const requestClose = useCallback(() => {
+    if (!motionOn) { setShowMore(false); return }
+    if (closingRef.current) return // already retracting — don't restart the timer
+    closingRef.current = true
+    setClosing(true)
+    clearTimeout(closeTimer.current)
+    closeTimer.current = setTimeout(() => {
+      closingRef.current = false
+      setShowMore(false)
+      setClosing(false)
+    }, FAN_OUT_MS)
+  }, [motionOn, FAN_OUT_MS])
+  // Force-close on any route change — synchronously, skipping the retract.
+  // Defensive, as before: whatever the animation state, a navigation must
+  // never leave a backdrop over the new page.
+  useEffect(() => {
+    closingRef.current = false
+    clearTimeout(closeTimer.current)
+    setShowMore(false)
+    setClosing(false)
+  }, [location.pathname])
+  useEffect(() => () => clearTimeout(closeTimer.current), [])
 
   // ── Measurement ──────────────────────────────────────────────────────
   // One consumer: the More menu's transform-origin, so it grows out of the
@@ -273,8 +292,15 @@ export function BottomNav({ connected, tucked = false }) {
               initial={{ opacity: 0 }}
               animate={{ opacity: closing ? 0 : 1 }}
               transition={{ duration: closing ? 0.12 : 0.16 }}
-              style={{ background: 'var(--scrim)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
-              onClick={requestClose}
+              style={{
+                background: 'var(--scrim)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+                // While retracting, let taps fall through to whatever is under
+                // the backdrop — the More tab included, so tapping it again
+                // mid-retract reopens the menu instead of just re-triggering
+                // the (already in-flight) close.
+                pointerEvents: closing ? 'none' : undefined,
+              }}
+              onClick={closing ? undefined : requestClose}
             />
           ) : (
             <div
@@ -409,7 +435,7 @@ export function BottomNav({ connected, tucked = false }) {
             ))}
             <MoreTab
               active={isMoreActive}
-              onClick={() => { if (motionOn) haptic('light'); clearTimeout(closeTimer.current); setClosing(false); setShowMore(true) }}
+              onClick={() => { if (motionOn) haptic('light'); closingRef.current = false; clearTimeout(closeTimer.current); setClosing(false); setShowMore(true) }}
               expanded={showMore}
               label={t('nav.more')}
               motionOn={motionOn}
