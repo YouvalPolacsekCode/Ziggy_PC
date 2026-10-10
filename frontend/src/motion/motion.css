@@ -359,9 +359,40 @@
  * Not "no motion": colour and opacity still carry meaning, because removing
  * them would remove information. What goes is travel, scale, and every loop.
  * Honours the OS setting directly as well as our own mirrored attribute, so
- * it is right even before the JS has run. */
+ * it is right even before the JS has run.
+ *
+ * Two parts, and both are needed: a BOUNDED clamp that catches everything
+ * this file does not name (see the note on it below), and the named rules
+ * that say what each of the layer's own movements becomes. */
 
 @media (prefers-reduced-motion: reduce) {
+  /* A BOUNDED CLAMP, AND WHY IT IS BACK.
+   *
+   * index.css's global clamp was scoped to `html:not([data-motion="on"])` so
+   * that this file could own the policy with the layer on. That was right for
+   * every rule this file NAMES and wrong for everything it does not: a
+   * transition written inline by a component, a `@keyframes` loop in a page's
+   * own CSS, anything a dependency animates. With the layer ON those were
+   * suddenly unclamped under reduced motion — the one combination nobody
+   * looks at by hand.
+   *
+   * So the clamp returns, bounded rather than absolute. `.01ms` would flatten
+   * the layer's own 160–220ms colour and opacity work, which reduced motion
+   * is supposed to KEEP; capping duration at 160ms and loops at one
+   * repetition removes the travel and the repetition and leaves the
+   * information. The named rules below still apply on top of it: a declaration
+   * this clamp does not set (animation-name, transform, opacity) is untouched. */
+  [data-motion="on"] *,
+  [data-motion="on"] *::before,
+  [data-motion="on"] *::after {
+    transition-duration: 160ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  /* ...except the one loop that means "still working". A spinner stopped after
+   * one turn does not read as calmer, it reads as a hung app — and unlike a
+   * decorative pulse, nothing else on screen carries that information. */
+  [data-motion="on"] .z-spin { animation-iteration-count: infinite !important; }
+
   [data-motion="on"] [data-pressing] { transform: none; }
   [data-motion="on"] [data-on="true"] [data-motion-icon] { animation: none; }
   /* `[data-motion-enter="back"]` is listed explicitly, not left to the
@@ -391,6 +422,16 @@
   [data-motion="on"] .animate-pulse { animation: none; }
   [data-motion="on"] .z-pulse { animation: none; }
 }
+/* The attribute form of everything above, for an OS setting that flips
+   mid-session (the media query answers before the JS has run; this answers
+   after it). The bounded clamp is mirrored first, same reasoning. */
+[data-motion-reduced="true"][data-motion="on"] *,
+[data-motion-reduced="true"][data-motion="on"] *::before,
+[data-motion-reduced="true"][data-motion="on"] *::after {
+  transition-duration: 160ms !important;
+  animation-iteration-count: 1 !important;
+}
+[data-motion-reduced="true"][data-motion="on"] .z-spin { animation-iteration-count: infinite !important; }
 [data-motion-reduced="true"][data-motion="on"] [data-pressing] { transform: none; }
 [data-motion-reduced="true"][data-motion="on"] [data-motion-live="true"] { animation: none; opacity: 0.9; }
 [data-motion-reduced="true"][data-motion="on"] [data-on="true"] [data-motion-icon] { animation: none; }
