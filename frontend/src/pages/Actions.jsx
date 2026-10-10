@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence } from 'framer-motion'
 import { Plus, Zap, Hand, BookOpen } from 'lucide-react'
 import { Modal } from '../components/ui/Modal'
 import { useAutomationStore } from '../stores/automationStore'
@@ -10,7 +10,7 @@ import { useDeviceStore } from '../stores/deviceStore'
 import { getSuggestionsFeed, getCircadian, saveCircadian, syncCircadian, deleteCircadian, deleteSmartRoom, getClimate, toggleClimate, syncClimate, deleteClimate, getAutomationTemplates } from '../lib/api'
 import { RoutinesListPanel, RoutineWizard } from './Routines'
 import { useT } from '../lib/i18n'
-import { FADE_UP } from '../lib/motion'
+import { TabCrossfade } from '../motion/TabCrossfade'
 import TemplateCard from '../components/automations/templates/TemplateCard'
 import { useZiggyActions, AUTOMATION_ACTIONS } from '../hooks/useZiggyActions'
 import AutomationWizard from '../components/automations/wizard/AutomationWizard'
@@ -476,11 +476,9 @@ export default function Automations() {
         })}
       </div>
 
-      <AnimatePresence mode="wait">
-
-      {/* ─── Automations tab ─── */}
-      {tab === 'automations' && (
-        <motion.div key="automations" {...FADE_UP}>
+      <TabCrossfade tab={tab}>
+        {tab === 'automations' ? (
+        <div key="automations">
 
       {/* Habit-learned suggestions — inline nudges here, full list in the
           Suggestions inbox modal. "Later" snoozes (stays in the inbox), ✕
@@ -580,17 +578,13 @@ export default function Automations() {
         </div>
       )}
 
-        </motion.div>
-      )}
-
-      {/* ─── Routines tab ─── */}
-      {tab === 'routines' && (
-        <motion.div key="routines" {...FADE_UP}>
+        </div>
+        ) : (
+        <div key="routines">
           <RoutinesListPanel embedded />
-        </motion.div>
-      )}
-
-      </AnimatePresence>
+        </div>
+        )}
+      </TabCrossfade>
 
       {/* Library — OOTB curated templates + community blueprints. Relocated
           from the old Templates tab into a modal so the Automations tab stays a
