@@ -247,8 +247,17 @@ export function AppShell({ connected }) {
     gestureBackRef.current = true
     navigate(-1)
   }, [navigate])
+  // NOT ON A ROOM'S OWN PAGE. The shared-element FLIP in morph.js owns every
+  // navigation into and out of /rooms/:id — which is why `slide` stands aside
+  // for that pair above. A gesture-committed exit there would be followed by
+  // the morph's return animation playing from a page that is no longer on
+  // screen: the finger has already carried it off, and the FLIP would measure
+  // and animate an element inside a layer that is being unmounted. The two
+  // cannot both narrate the same movement, so the one that was designed for
+  // that route keeps it.
+  const isRoomDetail = ROOM_DETAIL_RE.test(location.pathname)
   useSwipeBack(pageRef, onBack, {
-    enabled: motionOn && isDetail && !isChatRoute && canGoBack,
+    enabled: motionOn && isDetail && !isChatRoute && canGoBack && !isRoomDetail,
     rtl,
     onSwipe,
     bindKey: location.pathname,
