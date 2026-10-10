@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Bell, CheckSquare, MoreHorizontal, Settings, WifiOff } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useAuthStore } from '../../stores/authStore'
@@ -7,7 +7,7 @@ import { useFeature } from '../../stores/featuresStore'
 import { useIsRTL, useLang, useT } from '../../lib/i18n'
 import { useMotionOn } from '../../motion/flag'
 import { haptic } from '../../motion/motion'
-import { EASE, DUR } from '../../lib/motion'
+import { EASE } from '../../lib/motion'
 // Shell line icons live in ZIcon.jsx so the floating chat bubble can reuse
 // the same "Ziggy" sparkle without importing this file's stores.
 import { ZIcon } from './ZIcon'
@@ -167,6 +167,16 @@ function useOverlayOpen(enabled) {
   return open
 }
 
+const FAN_SPRING = { type: 'spring', duration: 0.32, bounce: 0.12 }
+const FAN_STAGGER = 0.04
+const MORE_ITEM = (active) => ({
+  background: active ? 'var(--surface-2)' : 'transparent',
+  border: active ? '0.5px solid var(--line)' : '0.5px solid transparent',
+  cursor: 'pointer', borderRadius: 'var(--r-card)', minHeight: 64,
+  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
+  padding: '12px 8px', fontFamily: 'inherit',
+})
+
 export function BottomNav({ connected, tucked = false }) {
   const location = useLocation()
   const navigate = useNavigate()
@@ -176,12 +186,25 @@ export function BottomNav({ connected, tucked = false }) {
   const rtl = useIsRTL()
   const motionOn = useMotionOn()
   const [showMore, setShowMore] = useState(false)
-
-  // Force-close the More menu on any route change. Defensive against
-  // framer-motion's AnimatePresence stalling its exit cycle when a heavy
-  // lazy route (e.g. /devices) mounts mid-animation — without this, the
-  // backdrop can get stuck over the whole viewport, blocking taps.
-  useEffect(() => { setShowMore(false) }, [location.pathname])
+  // 'closing' keeps the popover mounted for its retract; the timeout below
+  // is what unmounts it. NO AnimatePresence: framer's exit cycle stalled on
+  // cold start once (the /devices chunk blocked the thread mid-animation and
+  // left the backdrop stuck over the viewport). A state + a timer cannot fail
+  // to complete.
+  const [closing, setClosing] = useState(false)
+  const closeTimer = useRef(null)
+  const FAN_OUT_MS = 120 + 30 * 2 + 40 // last item's exit delay + its duration + slack
+  const requestClose = useCallback(() => {
+    if (!motionOn) { setShowMore(false); return }
+    setClosing(true)
+    clearTimeout(closeTimer.current)
+    closeTimer.current = setTimeout(() => { setShowMore(false); setClosing(false) }, FAN_OUT_MS)
+  }, [motionOn])
+  // Force-close on any route change — synchronously, skipping the retract.
+  // Defensive, as before: whatever the animation state, a navigation must
+  // never leave a backdrop over the new page.
+  useEffect(() => { clearTimeout(closeTimer.current); setShowMore(false); setClosing(false) }, [location.pathname])
+  useEffect(() => () => clearTimeout(closeTimer.current), [])
 
   const taskTrackingEnabled = useFeature('task_tracking')
   const moreItems = [
@@ -243,15 +266,27 @@ export function BottomNav({ connected, tucked = false }) {
           that can fail to complete. */}
       {showMore && (
         <>
-          <div
-            className="fixed inset-0 z-40 md:hidden"
-            data-motion-more-backdrop={motionOn ? 'true' : undefined}
-            style={{ background: 'var(--scrim)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
-            onClick={() => setShowMore(false)}
-          />
+          {motionOn ? (
+            <motion.div
+              className="fixed inset-0 z-40 md:hidden"
+              data-motion-more-backdrop="true"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: closing ? 0 : 1 }}
+              transition={{ duration: closing ? 0.12 : 0.16 }}
+              style={{ background: 'var(--scrim)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+              onClick={requestClose}
+            />
+          ) : (
+            <div
+              className="fixed inset-0 z-40 md:hidden"
+              style={{ background: 'var(--scrim)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+              onClick={requestClose}
+            />
+          )}
           <div
             className="fixed left-0 right-0 z-50 md:hidden"
             data-motion-more={motionOn ? 'true' : undefined}
+            data-closing={motionOn && closing ? 'true' : undefined}
             style={{
               // Mirror the bottom-nav's gesture-bar floor so the popover
               // sits the same distance above the bar on both 3-button and
@@ -273,34 +308,52 @@ export function BottomNav({ connected, tucked = false }) {
             }}
           >
             {!motionOn && <style>{`@keyframes ziggy-sheet-in { from { transform: translateY(12px); opacity: 0 } to { transform: none; opacity: 1 } }`}</style>}
-            <div style={{
-              background: 'var(--surface)', border: '0.5px solid var(--line)',
-              borderRadius: 'var(--r-sheet)', boxShadow: 'var(--shadow-lg)',
-              padding: 8, display: 'grid',
-              gridTemplateColumns: `repeat(${moreItems.length}, 1fr)`, gap: 8,
-            }}>
-              {moreItems.map(({ to, Icon, label }) => {
-                const active = location.pathname.startsWith(to)
-                return (
-                  <button
-                    key={to}
-                    onClick={() => { setShowMore(false); navigate(to) }}
-                    style={{
-                      background: active ? 'var(--surface-2)' : 'transparent',
-                      border: active ? '0.5px solid var(--line)' : '0.5px solid transparent',
-                      cursor: 'pointer', borderRadius: 'var(--r-card)', minHeight: 64,
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
-                      padding: '12px 8px', fontFamily: 'inherit',
-                    }}
-                  >
-                    <Icon size={24} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
-                    <span style={{ fontSize: 12, fontWeight: active ? 600 : 500, color: active ? 'var(--ink)' : 'var(--ink-mute)' }}>
-                      {label}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
+            {!motionOn ? (
+              <div style={{
+                background: 'var(--surface)', border: '0.5px solid var(--line)',
+                borderRadius: 'var(--r-sheet)', boxShadow: 'var(--shadow-lg)',
+                padding: 8, display: 'grid',
+                gridTemplateColumns: `repeat(${moreItems.length}, 1fr)`, gap: 8,
+              }}>
+                {moreItems.map(({ to, Icon, label }) => {
+                  const active = location.pathname.startsWith(to)
+                  return (
+                    <button key={to} onClick={() => { requestClose(); navigate(to) }} style={MORE_ITEM(active)}>
+                      <Icon size={24} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
+                      <span style={{ fontSize: 12, fontWeight: active ? 600 : 500, color: active ? 'var(--ink)' : 'var(--ink-mute)' }}>{label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${moreItems.length}, 1fr)`, gap: 8 }}>
+                {moreItems.map(({ to, Icon, label }, i) => {
+                  const active = location.pathname.startsWith(to)
+                  const n = moreItems.length
+                  const order = n - 1 - i             // 0 = nearest the More tab (last in DOM, both directions)
+                  return (
+                    <motion.button
+                      key={to}
+                      data-fan-item={order}
+                      initial={{ opacity: 0, y: 16, scale: 0.9 }}
+                      animate={closing
+                        ? { opacity: 0, y: 12, scale: 0.9, transition: { duration: 0.12, delay: i * 0.03 } }
+                        : { opacity: 1, y: 0, scale: 1, transition: { ...FAN_SPRING, delay: order * FAN_STAGGER } }}
+                      onClick={() => { requestClose(); navigate(to) }}
+                      style={{
+                        ...MORE_ITEM(active),
+                        background: active ? 'var(--surface-2)' : 'var(--surface)',
+                        border: '0.5px solid var(--line)', boxShadow: 'var(--shadow-md)',
+                        transformOrigin: '50% 100%',
+                      }}
+                    >
+                      <Icon size={24} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
+                      <span style={{ fontSize: 12, fontWeight: active ? 600 : 500, color: active ? 'var(--ink)' : 'var(--ink-mute)' }}>{label}</span>
+                    </motion.button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </>
       )}
@@ -356,7 +409,7 @@ export function BottomNav({ connected, tucked = false }) {
             ))}
             <MoreTab
               active={isMoreActive}
-              onClick={() => { if (motionOn) haptic('light'); setShowMore(true) }}
+              onClick={() => { if (motionOn) haptic('light'); clearTimeout(closeTimer.current); setClosing(false); setShowMore(true) }}
               expanded={showMore}
               label={t('nav.more')}
               motionOn={motionOn}

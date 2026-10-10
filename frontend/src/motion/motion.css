@@ -280,23 +280,9 @@
 }
 
 /* ── More menu ───────────────────────────────────────────────────────────
- * Enter only. The popover stays a plain conditional (see BottomNav's comment
- * about AnimatePresence stalling and trapping taps), so there is no exit
- * animation and no unmount to wait on — both elements still disappear the
- * frame showMore flips to false. transform-origin is set inline, at the
- * measured centre of the More tab, so the menu grows out of the thing you
- * pressed. */
-
-[data-motion="on"] [data-motion-more] {
-  animation: zm-more-in 200ms var(--m-out) backwards;
-}
-@keyframes zm-more-in {
-  from { opacity: 0; transform: scale(0.96); }
-  to   { opacity: 1; transform: none; }
-}
-[data-motion="on"] [data-motion-more-backdrop] {
-  animation: zm-fade-in 160ms var(--m-std) backwards;
-}
+ * The fan-out is driven by framer in BottomNav.jsx (per-item springs with a
+ * stagger, retract in reverse). Still no AnimatePresence: the retract is a
+ * `closing` state plus a timer. Nothing to do here except reduced motion. */
 
 /* ── Sheets and modals ───────────────────────────────────────────────────
  * The drawer curve on the way in, faster and plainer on the way out. */
@@ -355,7 +341,6 @@
   [data-motion="on"] [data-motion-live="true"] { animation: none; opacity: 0.9; }
   [data-motion="on"] [data-pending="true"] { animation: none; opacity: 0.75; }
   [data-motion="on"] [data-motion-nav][data-tucked="true"] { transform: none; opacity: 1; }
-  [data-motion="on"] [data-motion-more] { animation: zm-fade-in 140ms var(--m-out) backwards; }
   /* Loops that live outside this file (Tailwind's pulse, the health dot). */
   [data-motion="on"] .animate-pulse { animation: none; }
   [data-motion="on"] .z-pulse { animation: none; }
