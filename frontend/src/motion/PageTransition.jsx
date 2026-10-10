@@ -3,12 +3,13 @@
 //
 //   1. There is NO AnimatePresence and NO exit→enter handshake. The entering
 //      page is a plain mount with initial→animate. The outgoing page is a
-//      frozen React element (the previous render's outlet) painted in an
-//      inert overlay, and the overlay is removed by onAnimationComplete OR
-//      a watchdog timer — whichever fires first. A dropped callback cannot
-//      strand anything.
+//      DOM SNAPSHOT — `cloneNode(true)` of the page layer, taken during the
+//      render that commits the navigation, while the old tree is still on
+//      screen — painted in an inert overlay, and the overlay is removed by
+//      onAnimationComplete OR a watchdog timer, whichever fires first. A
+//      dropped callback cannot strand anything.
 //   2. The two pages never share normal flow. The entering page is in flow
-//      (so the scroller's height is the new page's); the outgoing page is
+//      (so the scroller's height is the new page's); the snapshot is
 //      position:absolute inside a relative stage with overflow-x clipped,
 //      its content translated up by the scroll position it was at, so the
 //      slice the person was looking at stays put while it recedes.
@@ -23,6 +24,28 @@
 // key change while a previous overlay is still running (the new page replaces
 // the entering layer and the stale overlay goes with it — one overlay, ever).
 //
+// ── Why a snapshot and not the React element ────────────────────────────────
+//
+// The obvious implementation keeps the previous render's outlet element and
+// renders it again inside the overlay. That is not a copy of the old page, it
+// is a SECOND INSTANCE of it, mounted fresh, and it misbehaves in ways that
+// reach the page the person is actually looking at:
+//
+//   - duplicate `id`s, with the dying copy first in DOM order, so
+//     `getElementById`, `label[for]` and every `aria-*` idref in the live
+//     page resolve into the overlay;
+//   - focus theft, from mount effects and `autoFocus` running before the
+//     overlay can be made inert;
+//   - mount side effects firing twice: POSTs, camera/MJPEG streams, and a
+//     redirect guard that calls `navigate()` from a mount effect would
+//     navigate the whole app on its way out.
+//
+// A clone has no lifecycle. It cannot fetch, focus, or navigate. The ids and
+// `autofocus` attributes are stripped from it anyway, and the motion layer's
+// own attributes come off its root so it is not mistaken for a live layer
+// (motion.css also silences animations inside the overlay — inserting a
+// cloned node would otherwise replay every CSS entrance it carries).
+//
 // ── Two invariants this file is built around ────────────────────────────────
 //
 // ONE ELEMENT PER PATH. The page layer is a single `motion.div` keyed on
@@ -33,6 +56,13 @@
 // mount, and `animate` never changes: travel or no travel is decided when the
 // route arrives and cannot be re-decided by a later re-render.
 //
+// NOTHING OF THE SLIDE STANDS AT REST. `position`, `z-index`, `background`,
+// the edge shadow, `will-change` and the stage's `overflow-x: clip` exist
+// only while an overlay is on screen. A standing `position: relative` would
+// change the containing block of every absolutely positioned descendant of
+// every page (<main> is not positioned), and a standing stacking context
+// would re-stack a page's own `position: fixed` menu under the bottom nav.
+//
 // `data-motion-page` NAMES THE LAYER, NOT A LIVE ANIMATION. It is "enter"
 // whenever the slide is enabled (that is the layer a push enters on, the one
 // gestures and CSS target) and "current" when it is not. It does not flip
@@ -40,7 +70,7 @@
 // replaced. `[data-motion-page="exit"]` is the overlay, and only exists while
 // one is running.
 
-import { useEffect, useLayoutEffect, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { EASE } from '../lib/motion'
 
@@ -54,56 +84,91 @@ const LAST_EXITED_TTL_MS = 30_000
 const push = { duration: PUSH_MS / 1000, ease: EASE.drawer }
 const pop = { duration: POP_MS / 1000, ease: EASE.out }
 
-// The most recently dropped overlay, kept briefly so a swipe-back can show
-// the page beneath (gestures.js). Module-level on purpose: there is one
-// shell. Cleared after LAST_EXITED_TTL_MS so a stale page never resurfaces.
+// The most recently exited page, as a detached DOM node, kept briefly so a
+// swipe-back can show the page beneath (gestures.js). Module-level on
+// purpose: there is one shell. Cleared after LAST_EXITED_TTL_MS so a stale
+// page never resurfaces.
+//
+// Handed over exactly once per navigation, and only when nothing else is
+// using the node: at the moment the overlay drops it, or immediately if there
+// was no overlay to show it in (the FLIP routes, ?pages=off). Two owners of
+// one DOM node would mean the second mount MOVES it out of the first.
 let _lastExited = null
 let _lastExitedTimer = null
 export function getLastExited() { return _lastExited }
-// The name Task 9 consumes. Deliberately NOT reactive: it is read once, at
-// the start of a gesture, and a component that re-rendered on it would be
-// re-rendering on a 30s timer for nothing.
-export const useLastExited = getLastExited
 function rememberExited(entry) {
   _lastExited = entry
   clearTimeout(_lastExitedTimer)
   _lastExitedTimer = setTimeout(() => { _lastExited = null }, LAST_EXITED_TTL_MS)
 }
 
-export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, renderPage, children }) {
+// A copy of the page layer with everything that could act on the live page
+// taken out of it. Pure DOM work: no React, no lifecycle, nothing to run.
+function snapshot(layer) {
+  if (!layer || typeof layer.cloneNode !== 'function') return null
+  let node
+  try { node = layer.cloneNode(true) } catch { return null }
+  try {
+    // The root is no longer a page layer, and must not be read as one — by a
+    // querySelector, by motion.css, or by morph.js's closest() lookup. Its
+    // inline style is the slide it was in the middle of, which is over.
+    for (const a of ['id', 'style', 'data-motion-page', 'data-motion-enter', 'data-motion-push', 'data-motion-dir']) {
+      node.removeAttribute(a)
+    }
+    // Duplicate ids are the dangerous half: the overlay comes FIRST in DOM
+    // order, so every idref in the live page would resolve into the copy.
+    node.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'))
+    node.querySelectorAll('[autofocus]').forEach((el) => el.removeAttribute('autofocus'))
+    // A page on its way out does not make noise or start a second stream.
+    node.querySelectorAll('video, audio').forEach((el) => {
+      el.removeAttribute('autoplay')
+      el.muted = true
+      el.pause?.()
+    })
+  } catch { /* a snapshot is a nicety; never fail a navigation over it */ }
+  return node
+}
+
+export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, children }) {
   const sign = rtl ? -1 : 1
   const [, bump] = useReducer((x) => x + 1, 0)
 
+  // Two refs for one element. `enterRef` is the live node and is nulled when
+  // React detaches it; `layerNodeRef` is only ever written with a node, so
+  // during the render that commits a navigation it still points at the
+  // outgoing layer — which is exactly what we need to clone. The DOM of the
+  // old tree is intact during that render; React tears it down afterwards.
+  const enterRef = useRef(null)
+  const layerNodeRef = useRef(null)
+  const setEnterRef = useCallback((el) => {
+    enterRef.current = el
+    if (el) layerNodeRef.current = el
+  }, [])
+
   // Frozen during render, like AppShell's enterDir: a fact about the moment
-  // of navigation. `lastChildren` is the previous render's outlet element.
-  //
-  // `back` and `slide` are frozen with it. Reading the live props instead
-  // would let a re-render mid-flight change the story being told (that is the
-  // bug the enterDir pin in AppShell exists for), and would also make the
-  // entering layer's children change shape when the overlay drops.
-  const stage = useRef({
-    key: pathKey,
-    prev: null,
-    lastChildren: children,
-    seq: 0,
-    back: !!back,
-    slide: false,
-  })
+  // of navigation. `back` and `slide` are frozen with it — reading the live
+  // props instead would let a re-render mid-flight change the story being
+  // told (that is the bug the enterDir pin in AppShell exists for).
+  const stage = useRef({ key: pathKey, prev: null, seq: 0, back: !!back, slide: false })
   if (stage.current.key !== pathKey) {
     const scrollTop = scrollerRef?.current?.scrollTop || 0
-    const prev = enabled && stage.current.lastChildren
-      ? { key: stage.current.key, el: stage.current.lastChildren, scrollTop, back: !!back }
-      : null
+    const node = snapshot(layerNodeRef.current)
+    const snap = node ? { key: stage.current.key, node, scrollTop, back: !!back } : null
+    // No snapshot is ever silently discarded. One that is still mid-slide
+    // when the next navigation lands is handed over here; the one taken now
+    // is handed over when its overlay drops, or at once if it will not get
+    // an overlay at all (the room FLIP's routes, ?pages=off) — a swipe-back
+    // needs an under-page either way.
+    if (stage.current.prev) rememberExited(stage.current.prev)
+    const slide = !!(enabled && snap)
+    if (!slide && snap) rememberExited(snap)
     stage.current = {
       key: pathKey,
       seq: stage.current.seq + 1,
-      lastChildren: children,
-      prev,
+      prev: slide ? snap : null,
       back: !!back,
-      slide: prev !== null,
+      slide,
     }
-  } else {
-    stage.current.lastChildren = children
   }
   const { prev, seq, back: isBack, slide } = stage.current
   // `slide` is this route's entrance; `active` is "an overlay is on screen".
@@ -118,7 +183,6 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, rende
 
   // Watchdog: whatever framer did or did not call, the overlay goes and the
   // entering layer is left untransformed.
-  const enterRef = useRef(null)
   useEffect(() => {
     if (!active) return undefined
     const t = setTimeout(() => {
@@ -140,14 +204,28 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, rende
     if (el) { el.style.transform = ''; el.style.opacity = '' }
   }, [pathKey, active])
 
-  // The outgoing page is inert as well as aria-hidden: aria-hidden hides it
-  // from the a11y tree but leaves its controls tabbable, and for ~420ms the
-  // keyboard could reach a button on a page that is on its way out. React 18
-  // does not know `inert`, so it is set on the node.
+  // The snapshot goes in before paint, into an empty host React owns but
+  // never fills, so React and the DOM never disagree about its children.
+  // Cleared on the way out, which also releases the node for whoever asked
+  // getLastExited() for it.
   const exitRef = useRef(null)
+  const mountRef = useRef(null)
   useLayoutEffect(() => {
+    const host = mountRef.current
+    const node = stage.current.prev?.node
+    if (!host || !node) return undefined
+    // Inert first, so nothing in the snapshot is tab-reachable even for the
+    // frame it takes to paint. aria-hidden alone leaves controls tabbable,
+    // and for ~420ms the keyboard could reach a button on a page that is on
+    // its way out. React 18 does not know the attribute, so it is set as a
+    // property. Older Android WebViews ignore `inert` entirely — there the
+    // snapshot stays tabbable for the length of the slide; it is a clone, so
+    // the worst case is a keystroke into something that is about to vanish.
     const el = exitRef.current
     if (el) el.inert = true
+    host.replaceChildren(node)
+    return () => { try { host.replaceChildren() } catch { /* already gone */ } }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seq, active])
 
   const t = isBack ? pop : push
@@ -158,10 +236,13 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, rende
   return (
     // `overflow-x: clip`, not `hidden`: hidden would force the other axis to
     // a scroll container and swallow <main>'s scrolling and sticky headers.
-    // Only while a slide runs — at rest nothing in here overflows sideways,
-    // and a standing clip is one more thing that can cut a page's own
-    // fixed-position menu off at the edge of the content column.
-    <div data-motion-stage="" style={{ position: 'relative', overflowX: active ? 'clip' : undefined }}>
+    // Positioned and clipped only while a slide runs (see the header note on
+    // what must not stand at rest). Task 9 extends that condition to a
+    // swipe in progress.
+    <div
+      data-motion-stage=""
+      style={{ position: active ? 'relative' : undefined, overflowX: active ? 'clip' : undefined }}
+    >
       {active && (
         <motion.div
           key={`exit-${prev.key}-${seq}`}
@@ -179,7 +260,7 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, rende
           }}
         >
           <div style={{ transform: prev.scrollTop ? `translateY(-${prev.scrollTop}px)` : undefined }}>
-            {renderPage(prev.el, prev.key)}
+            <div ref={mountRef} />
           </div>
           {!isBack && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: DIM }} transition={t}
@@ -190,7 +271,7 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, rende
 
       <motion.div
         key={pathKey}
-        ref={enterRef}
+        ref={setEnterRef}
         data-motion-page={enabled ? 'enter' : 'current'}
         data-motion-enter={isBack ? 'back' : 'true'}
         // Says "this page's entrance IS the push", and is the hook motion.css
@@ -213,26 +294,25 @@ export function PageTransition({ pathKey, back, rtl, enabled, scrollerRef, rende
         animate={{ x: 0 }}
         transition={t}
         style={{
-          position: 'relative',
-          // Everything below is lifted ONLY while an overlay is on screen.
-          //
-          // The z-index is the one that matters: `position: relative` alone
-          // changes nothing about how a page's own `position: fixed` menu
-          // paints, but relative + z-index is a stacking context, and this
-          // app's pages really do render fixed menus at z-index 9999 inside
-          // the routed tree (Devices' row menus, Cameras' full-screen view).
-          // Left standing, that context would re-stack them under the bottom
-          // nav and the toasts. It is needed for ~420ms and then dropped.
+          // Nothing here outlives the overlay. The z-index is the one that
+          // matters most: `position: relative` alone changes nothing about
+          // how a page's own `position: fixed` menu paints, but relative +
+          // z-index is a stacking context, and this app's pages really do
+          // render fixed menus at z-index 9999 inside the routed tree
+          // (Devices' row menus, Cameras' full-screen view). Left standing,
+          // that context would re-stack them under the bottom nav and the
+          // toasts. Needed for ~420ms, then dropped.
+          position: active ? 'relative' : undefined,
           zIndex: active ? (isBack ? 1 : 2) : undefined,
           background: active ? 'var(--bg)' : undefined,
           boxShadow: active && !isBack ? edgeShadow : undefined,
           willChange: active ? 'transform' : undefined,
         }}
       >
-        {/* Mounted for the life of a back entrance, never conditionally
-            removed: unmounting it would shift `children` up a slot and
-            remount the whole page. Forward entrances don't render it. */}
-        {slide && isBack && (
+        {/* The incoming page dims back up on the way to the front. In its own
+            child slot, so dropping it leaves `children` exactly where it was
+            — moving that slot would remount the whole page. */}
+        {active && isBack && (
           <motion.div aria-hidden="true" initial={{ opacity: DIM }} animate={{ opacity: 0 }} transition={t}
             style={{ position: 'absolute', inset: 0, background: '#000', pointerEvents: 'none', zIndex: 1 }} />
         )}

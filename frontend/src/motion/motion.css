@@ -402,6 +402,17 @@
 [data-motion="on"] :focus-visible { transition: none !important; }
 [data-motion="on"] [data-pressing] :is([style*="position: fixed"], .fixed) { transform: none; }
 
+/* A snapshot does not animate.
+ *
+ * The outgoing page in a push is a cloned DOM subtree, and inserting a clone
+ * re-triggers every CSS entrance it carries — the page rise, every stagger.
+ * Without this the page you are LEAVING replays its own arrival while it
+ * recedes. The clone's root has the motion attributes stripped off it in JS;
+ * this is the rest of its subtree. Last in the file on purpose: it ties with
+ * the entrance rules on specificity and wins on order. */
+[data-motion="on"] [data-motion-page="exit"],
+[data-motion="on"] [data-motion-page="exit"] * { animation: none; }
+
 /* A page mid-slide is a transformed ancestor; anything position:fixed inside
  * it is trapped for ≤420ms. Pages keep their fixed children out of the
  * routed tree (toasts, nav, bubble, dialogs are siblings or portals).
@@ -409,6 +420,8 @@
  * Not all of them do, in fact: Devices' row menus and Cameras' full-screen
  * view are `position: fixed` inside the page. They are fine — a menu cannot
  * be open on a page that is only now arriving — but it is why
- * PageTransition lifts `z-index` and the stage's `overflow-x: clip` ONLY
- * while a slide is actually running. A standing stacking context around the
- * routed page would re-stack a z-index:9999 menu under the bottom nav. */
+ * PageTransition lifts `position`, `z-index` and the stage's
+ * `overflow-x: clip` ONLY while a slide is actually running. A standing
+ * stacking context around the routed page would re-stack a z-index:9999
+ * menu under the bottom nav, and a standing `position: relative` would
+ * re-parent every absolutely positioned descendant of every page. */

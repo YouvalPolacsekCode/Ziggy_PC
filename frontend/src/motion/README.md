@@ -128,10 +128,19 @@ there, behind the one you asked for. Coming back is the same movement run
 backwards and 15% faster, on the strong ease-out, because a return is not an
 arrival. `src/motion/PageTransition.jsx`, and it is deliberately not an
 `AnimatePresence`: the entering page is a plain keyed mount, the outgoing one
-is the previous render's element frozen into an inert absolute overlay that a
-watchdog timer drops, so there is no handshake to lose (AppShell's comment
-records the two page transitions that black-screened this app, both of which
-died on a dropped handshake). `?pages=off` turns off the slide alone and
+is a **DOM snapshot** — `cloneNode(true)` of the page layer, taken while it is
+still on screen — painted in an inert absolute overlay that a watchdog timer
+drops, so there is no handshake to lose (AppShell's comment records the two
+page transitions that black-screened this app, both of which died on a dropped
+handshake). It is a snapshot rather than the previous element re-rendered
+because that would be a second *mount* of the page you are leaving: duplicate
+ids resolving ahead of the live page's, focus stolen by `autoFocus`, and mount
+effects firing again — a POST, a camera stream, or a redirect guard calling
+`navigate()` on the way out. A clone has no lifecycle; its ids, `autofocus`
+and motion attributes are stripped, and motion.css silences animations inside
+the overlay so the departing page does not replay its own arrival. Nothing of
+the slide stands at rest: `position`, `z-index`, the shadow and the clip exist
+only while an overlay does. `?pages=off` turns off the slide alone and
 leaves the rest of the layer running; the quiet rise below is what plays
 instead. Skipped on the first load, under reduced motion, and on navigations
 into or out of a room's page, where the morph is the movement.

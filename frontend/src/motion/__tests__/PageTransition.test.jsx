@@ -4,14 +4,13 @@ import { render, act } from '@testing-library/react'
 
 import { PageTransition, PUSH_MS, getLastExited } from '../PageTransition'
 
-const renderPage = (el, key) => <Suspense key={key} fallback={<div data-testid="fallback" />}>{el}</Suspense>
 const Page = ({ name }) => <div data-testid={`page-${name}`}>{name}</div>
 
 function Harness({ path, back = false, enabled = true, rtl = false, tick = 0 }) {
   const scrollerRef = React.useRef({ scrollTop: 0 })
   return (
     <div data-tick={tick}>
-      <PageTransition pathKey={path} back={back} rtl={rtl} enabled={enabled} scrollerRef={scrollerRef} renderPage={renderPage}>
+      <PageTransition pathKey={path} back={back} rtl={rtl} enabled={enabled} scrollerRef={scrollerRef}>
         <Page name={path} />
       </PageTransition>
     </div>
@@ -62,7 +61,7 @@ describe('PageTransition', () => {
     function H({ path }) {
       const scrollerRef = React.useRef({ scrollTop: 0 })
       return (
-        <PageTransition pathKey={path} back={false} rtl={false} enabled scrollerRef={scrollerRef} renderPage={renderPage}>
+        <PageTransition pathKey={path} back={false} rtl={false} enabled scrollerRef={scrollerRef}>
           <Suspense fallback={<div data-testid="fallback" />}>{path === '/lazy' ? <Lazy /> : <Page name={path} />}</Suspense>
         </PageTransition>
       )
@@ -100,7 +99,7 @@ describe('PageTransition invariants', () => {
   function Scroller({ path, back = false, enabled = true }) {
     const scrollerRef = React.useRef({ scrollTop: 40 })
     return (
-      <PageTransition pathKey={path} back={back} rtl={false} enabled={enabled} scrollerRef={scrollerRef} renderPage={renderPage}>
+      <PageTransition pathKey={path} back={back} rtl={false} enabled={enabled} scrollerRef={scrollerRef}>
         <Counted name={path} />
       </PageTransition>
     )
@@ -171,6 +170,67 @@ describe('PageTransition invariants', () => {
     const el = container.querySelector('[data-motion-page="current"]')
     expect(el.style.transform === '' || el.style.transform === 'none').toBe(true)
     expect(el.style.opacity === '' || el.style.opacity === '1').toBe(true)
+  })
+
+  // The outgoing page is a DOM snapshot. Were it the previous render's
+  // element rendered again, it would be a SECOND MOUNT of that page: its
+  // effects would re-run (a POST, a camera stream, a redirect guard calling
+  // navigate() would navigate the app on its way out), its ids would
+  // duplicate — with the copy FIRST in DOM order, so every idref in the live
+  // page resolves into the dying one — and its autoFocus would steal focus.
+  it('overlays a snapshot, not a second instance of the page', () => {
+    function Rich({ path }) {
+      const scrollerRef = React.useRef({ scrollTop: 0 })
+      return (
+        <PageTransition pathKey={path} back={false} rtl={false} enabled scrollerRef={scrollerRef}>
+          <div data-testid={`page-${path}`}>
+            <Counted name={path} />
+            <label htmlFor="field-x">x</label>
+            <input id="field-x" autoFocus />
+          </div>
+        </PageTransition>
+      )
+    }
+    const { container, rerender } = render(<Rich path="/" />)
+    expect(mounts).toBe(1)
+    rerender(<Rich path="/rooms" />)
+    const exit = container.querySelector('[data-motion-page="exit"]')
+    expect(exit.querySelector('[data-testid="page-/"]')).not.toBeNull()  // it IS the old page
+    expect(mounts).toBe(2)                                              // ...mounted twice, not three times
+    expect(exit.querySelectorAll('[id]').length).toBe(0)
+    expect(exit.querySelectorAll('[autofocus]').length).toBe(0)
+    // The clone's root is no longer a page layer: nothing may read it as one.
+    expect(container.querySelectorAll('[data-motion-page]').length).toBe(2)
+    expect(exit.querySelectorAll('[data-motion-enter], [data-motion-push]').length).toBe(0)
+    // The live page keeps its own id, and it is the only one.
+    expect(container.querySelectorAll('#field-x').length).toBe(1)
+    act(() => { vi.advanceTimersByTime(PUSH_MS + 400) })
+    expect(getLastExited().node.querySelector('[data-testid="page-/"]')).not.toBeNull()
+  })
+
+  // Nothing of the slide stands at rest. A standing `position: relative`
+  // re-parents every absolutely positioned descendant of every page, because
+  // <main> is not positioned and today's wrapper is not either.
+  it('is unpositioned at rest, on both the stage and the page layer', () => {
+    const { container, rerender } = render(<Scroller path="/" />)
+    expect(container.querySelector('[data-motion-stage]').style.position).toBe('')
+    expect(container.querySelector('[data-motion-page]').style.position).toBe('')
+    rerender(<Scroller path="/rooms" />)
+    expect(container.querySelector('[data-motion-stage]').style.position).toBe('relative')
+    act(() => { vi.advanceTimersByTime(PUSH_MS + 400) })
+    expect(container.querySelector('[data-motion-stage]').style.position).toBe('')
+    expect(container.querySelector('[data-motion-page="enter"]').style.position).toBe('')
+  })
+
+  // With the slide off, the push marker must not appear — it is what tells
+  // motion.css to suppress the CSS enter, which is the only entrance left.
+  it('never marks a page as pushed while the slide is off', () => {
+    const { container, rerender } = render(<Scroller path="/" enabled={false} />)
+    rerender(<Scroller path="/rooms" enabled={false} />)
+    expect(container.querySelector('[data-motion-push]')).toBeNull()
+    expect(container.querySelector('[data-motion-page="current"][data-motion-enter]')).not.toBeNull()
+    // ...and the snapshot still exists, so a swipe-back has an under-page.
+    expect(getLastExited().node.querySelector('[data-testid="page-/"]')).not.toBeNull()
   })
 
   // The stage is pinned during render, which React's dev StrictMode renders

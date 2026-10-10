@@ -1,8 +1,5 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-// useOutlet, not <Outlet/>: it hands back the very element <Outlet/> would
-// render, and having the element in hand is what lets PageTransition freeze
-// the previous render's page and paint it as the outgoing layer.
-import { useLocation, useNavigate, useOutlet } from 'react-router-dom'
+import { useLocation, useNavigate, Outlet } from 'react-router-dom'
 import { useReducedMotion } from 'framer-motion'
 import { X, Maximize2 } from 'lucide-react'
 import { Sidebar } from './Sidebar'
@@ -264,19 +261,13 @@ export function AppShell({ connected }) {
   // this one keeps the shell painted and swaps only the content area. The
   // fallback holds height rather than collapsing so nothing reflows on land.
   //
-  // A cached page (the outgoing overlay in PageTransition) gets its OWN
-  // Suspense + ErrorBoundary, so an error or a late chunk in the page on its
-  // way out can never reach the one coming in.
-  const renderPage = useCallback((el, key) => (
-    <Suspense fallback={<div aria-hidden style={{ minHeight: '60vh' }} />}>
-      <ErrorBoundary label={`route-exit:${key}`} key={key} fullHeight={false}>{el}</ErrorBoundary>
-    </Suspense>
-  ), [])
-  const outlet = useOutlet()
+  // One boundary, one instance: the outgoing page in PageTransition is a DOM
+  // snapshot, not a second mount of this tree, so there is nothing else here
+  // that could suspend or throw.
   const routed = (
     <Suspense fallback={<div aria-hidden style={{ minHeight: '60vh' }} />}>
       <ErrorBoundary label={`route:${location.pathname}`} key={location.pathname} fullHeight={false}>
-        {outlet}
+        <Outlet />
       </ErrorBoundary>
     </Suspense>
   )
@@ -330,8 +321,8 @@ export function AppShell({ connected }) {
 
             The motion layer's page slide lives in
             `src/motion/PageTransition.jsx`, which avoids both failures by
-            construction (no AnimatePresence; the outgoing page is a frozen
-            element in an absolute, inert overlay dropped by a timer).
+            construction (no AnimatePresence; the outgoing page is a DOM
+            snapshot in an absolute, inert overlay dropped by a timer).
             `?pages=off` turns only the slide off. The `data-motion-enter`
             attribute still carries the direction on the entering layer
             because `morph.js` looks it up — it does
@@ -349,7 +340,6 @@ export function AppShell({ connected }) {
             rtl={rtl}
             enabled={slide}
             scrollerRef={mainRef}
-            renderPage={renderPage}
           >
             {routed}
           </PageTransition>
