@@ -11,8 +11,9 @@
 // `effectiveScrollTop` asks the element first and the document second, so a
 // genuinely scrolling <main> (desktop, or a future layout) keeps working.
 import React from 'react'
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, act } from '@testing-library/react'
+import { setMotion } from '../flag'
 import { effectiveScrollTop, useScrollChrome } from '../gestures'
 
 // jsdom defines `scrollY` as an own accessor on window, so a plain assignment
@@ -43,6 +44,7 @@ describe('effectiveScrollTop', () => {
 })
 
 describe('useScrollChrome', () => {
+  beforeEach(() => setMotion(true))
   afterEach(() => setWindowScroll(0))
 
   function Chrome({ onDirection, elRef }) {
@@ -80,6 +82,16 @@ describe('useScrollChrome', () => {
     Object.defineProperty(main, 'scrollTop', { value: 300, configurable: true })
     act(() => { main.dispatchEvent(new Event('scroll')) })
     expect(dirs).toContain('down')
+  })
+
+  it('is a no-op with the layer off, like every other hook in the file', () => {
+    setMotion(false)
+    const dirs = []
+    const { getByTestId } = render(<Chrome onDirection={(d) => dirs.push(d)} />)
+    setWindowScroll(200)
+    act(() => { window.dispatchEvent(new Event('scroll')) })
+    expect(dirs).toEqual([])
+    expect(getByTestId('main').getAttribute('data-scrolled')).toBe('false')
   })
 
   it('detaches its window listener on unmount', () => {

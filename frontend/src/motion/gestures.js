@@ -348,6 +348,11 @@ export function useScrollChrome(ref, { edge = 72, onDirection } = {}) {
   const last = useRef(0)
 
   const onScroll = useCallback(() => {
+    // Like every other hook in this file: a no-op with the layer off. It
+    // matters more here than it looks, because this one now listens on
+    // `window` — without the guard, `?motion=off` would still re-render the
+    // shell on every scroll to answer a question nothing is asking.
+    if (!isMotionOn()) return
     const top = effectiveScrollTop(ref?.current)
     setScrolled(top > edge)
     const delta = top - last.current
