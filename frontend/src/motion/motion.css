@@ -265,9 +265,6 @@
   transform: translate3d(0, calc(100% + 12px), 0);
   opacity: 0;
 }
-[data-motion="on"] [data-motion-nav-hl] {
-  transition: transform 320ms var(--m-out), width 320ms var(--m-out), height 320ms var(--m-out), opacity 200ms var(--m-std);
-}
 
 /* Sidebar: the active surface moves to the sliding highlight, which draws the
  * SAME values the active item drew (var(--surface-2) on a 0.5px var(--line)
@@ -358,8 +355,6 @@
   [data-motion="on"] [data-motion-live="true"] { animation: none; opacity: 0.9; }
   [data-motion="on"] [data-pending="true"] { animation: none; opacity: 0.75; }
   [data-motion="on"] [data-motion-nav][data-tucked="true"] { transform: none; opacity: 1; }
-  /* The highlight still marks the active tab, it just stops travelling. */
-  [data-motion="on"] [data-motion-nav-hl] { transition: opacity 160ms var(--m-std); }
   [data-motion="on"] [data-motion-more] { animation: zm-fade-in 140ms var(--m-out) backwards; }
   /* Loops that live outside this file (Tailwind's pulse, the health dot). */
   [data-motion="on"] .animate-pulse { animation: none; }
@@ -369,7 +364,6 @@
 [data-motion-reduced="true"][data-motion="on"] [data-motion-live="true"] { animation: none; opacity: 0.9; }
 [data-motion-reduced="true"][data-motion="on"] [data-on="true"] [data-motion-icon] { animation: none; }
 [data-motion-reduced="true"][data-motion="on"] [data-motion-nav][data-tucked="true"] { transform: none; opacity: 1; }
-[data-motion-reduced="true"][data-motion="on"] [data-motion-nav-hl] { transition: opacity 160ms var(--m-std); }
 [data-motion-reduced="true"][data-motion="on"] [data-motion-disclosure] { transition: none; --zm-stagger-from: 0ms; }
 [data-motion-reduced="true"][data-motion="on"] .animate-pulse { animation: none; }
 [data-motion-reduced="true"][data-motion="on"] .z-pulse { animation: none; }

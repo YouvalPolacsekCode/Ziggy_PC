@@ -1,11 +1,13 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Bell, CheckSquare, MoreHorizontal, Settings, WifiOff } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { useAuthStore } from '../../stores/authStore'
 import { useFeature } from '../../stores/featuresStore'
 import { useIsRTL, useLang, useT } from '../../lib/i18n'
 import { useMotionOn } from '../../motion/flag'
 import { haptic } from '../../motion/motion'
+import { EASE, DUR } from '../../lib/motion'
 // Shell line icons live in ZIcon.jsx so the floating chat bubble can reuse
 // the same "Ziggy" sparkle without importing this file's stores.
 import { ZIcon } from './ZIcon'
@@ -58,9 +60,51 @@ const TAB_CELL = {
   WebkitTapHighlightColor: 'transparent',
 }
 
+// Depth: the active tab comes forward, the others recede. There is no
+// travelling object — hierarchy is stated in z, not x — so the bar keeps its
+// resting design exactly (no pill, see the note that used to live here about
+// NAV_HL_SURFACE). The shadow is a tween: a bouncy spring would push the blur
+// radius below zero, which the browser rejects.
+const DEPTH_SPRING = { type: 'spring', duration: 0.45, bounce: 0.18 }
+const DEPTH_SHADOW = { duration: 0.24, ease: EASE.out }
+function DepthCell({ active, motionOn, icon, label, labelStyle }) {
+  if (!motionOn) {
+    return (
+      <>
+        {icon}
+        <span style={labelStyle}>{label}</span>
+      </>
+    )
+  }
+  return (
+    <motion.span
+      data-nav-depth={active ? 'active' : 'idle'}
+      initial={false}
+      animate={{ scale: active ? 1 : 0.94, opacity: active ? 1 : 0.65 }}
+      transition={DEPTH_SPRING}
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 0, maxWidth: '100%' }}
+    >
+      <motion.span
+        initial={false}
+        animate={{
+          scale: active ? 1.16 : 1,
+          y: active ? -2 : 0,
+          filter: active ? 'drop-shadow(0 4px 5px rgba(0,0,0,.22))' : 'drop-shadow(0 0px 0px rgba(0,0,0,0))',
+        }}
+        transition={{ ...DEPTH_SPRING, filter: DEPTH_SHADOW }}
+        style={{ display: 'grid' }}
+      >
+        {icon}
+      </motion.span>
+      <span style={labelStyle}>{label}</span>
+    </motion.span>
+  )
+}
+
 function Tab({ to, name, label, motionOn }) {
   const location = useLocation()
   const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
+  const labelStyle = { ...TAB_LABEL, fontWeight: active ? 600 : 500, color: active ? 'var(--ink)' : 'var(--ink-mute)' }
   return (
     <NavLink
       to={to}
@@ -71,19 +115,19 @@ function Tab({ to, name, label, motionOn }) {
       onClick={motionOn ? () => haptic('light') : undefined}
       data-motion-nav-cell={motionOn ? 'true' : undefined}
     >
-      <ZIcon name={name} size={26} stroke={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
-      <span style={{
-        ...TAB_LABEL,
-        fontWeight: active ? 600 : 500,
-        color: active ? 'var(--ink)' : 'var(--ink-mute)',
-      }}>
-        {label}
-      </span>
+      <DepthCell
+        active={active}
+        motionOn={motionOn}
+        icon={<ZIcon name={name} size={26} stroke={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />}
+        label={label}
+        labelStyle={labelStyle}
+      />
     </NavLink>
   )
 }
 
 function MoreTab({ active, onClick, expanded, label, motionOn, cellRef }) {
+  const labelStyle = { ...TAB_LABEL, fontWeight: active ? 600 : 500, color: active ? 'var(--ink)' : 'var(--ink-mute)' }
   return (
     <button
       ref={cellRef}
@@ -94,14 +138,13 @@ function MoreTab({ active, onClick, expanded, label, motionOn, cellRef }) {
       data-motion-nav-cell={motionOn ? 'true' : undefined}
       style={{ ...TAB_CELL, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
     >
-      <MoreHorizontal size={26} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />
-      <span style={{
-        ...TAB_LABEL,
-        fontWeight: active ? 600 : 500,
-        color: active ? 'var(--ink)' : 'var(--ink-mute)',
-      }}>
-        {label}
-      </span>
+      <DepthCell
+        active={active}
+        motionOn={motionOn}
+        icon={<MoreHorizontal size={26} strokeWidth={active ? 2 : 1.6} color={active ? 'var(--ink)' : 'var(--ink-mute)'} />}
+        label={label}
+        labelStyle={labelStyle}
+      />
     </button>
   )
 }
@@ -123,21 +166,6 @@ function useOverlayOpen(enabled) {
   }, [enabled])
   return open
 }
-
-// ── On the sliding tab highlight ─────────────────────────────────────────
-// The sidebar gets one (see Sidebar.jsx) because `.z-nav-item.active` already
-// DRAWS a surface — var(--surface-2) on a 0.5px var(--line) border at
-// var(--r-ctl) — so the highlight can take that exact surface over and
-// travel with it, leaving the resting sidebar pixel-identical.
-//
-// This bar has no such surface. In this design an active tab is an ink-weight
-// icon and an ink label on the bare glass; there is nothing behind it (see
-// Tab above). A travelling pill here would therefore not be a hand-over, it
-// would be a new resting surface — a design change, which this layer does not
-// make. So the bar keeps its own active treatment and the highlight is not
-// drawn. Set NAV_HL_SURFACE to 'var(--surface-2)' to opt the bar into the
-// sidebar's treatment; the measurement below already has the geometry.
-const NAV_HL_SURFACE = null
 
 export function BottomNav({ connected, tucked = false }) {
   const location = useLocation()
@@ -166,47 +194,21 @@ export function BottomNav({ connected, tucked = false }) {
   const isMoreActive = moreItems.some(n => location.pathname.startsWith(n.to))
 
   // ── Measurement ──────────────────────────────────────────────────────
-  // Two consumers: the More menu's transform-origin (so it grows out of the
-  // tab you pressed) and, if NAV_HL_SURFACE is ever given a value, the
-  // travelling highlight's rectangle. Re-measured on resize, orientation
-  // change and language change — RTL reverses which cell is where, and a
-  // longer label re-flows the row.
+  // One consumer: the More menu's transform-origin, so it grows out of the
+  // tab you pressed. Re-measured on resize, orientation change and language
+  // change — RTL reverses which cell is where, and a longer label re-flows
+  // the row.
   const gridRef = useRef(null)
   const moreCellRef = useRef(null)
-  const [hl, setHl] = useState(null)          // { x, y, w, h } in grid coords
   const [moreOriginX, setMoreOriginX] = useState(null)
 
-  const activeIndex = (() => {
-    const i = PRIMARY_TABS.findIndex(p => (
-      p.to === '/' ? location.pathname === '/' : location.pathname.startsWith(p.to)
-    ))
-    if (i !== -1) return i
-    if (isMoreActive) return PRIMARY_TABS.length
-    return -1                                  // a route with no tab — hide it
-  })()
-
   useLayoutEffect(() => {
-    if (!motionOn) { setHl(null); setMoreOriginX(null); return }
+    if (!motionOn) { setMoreOriginX(null); return }
     const measure = () => {
       const grid = gridRef.current
       if (!grid) return
       const more = moreCellRef.current
       if (more) setMoreOriginX(more.offsetLeft + more.offsetWidth / 2 + grid.getBoundingClientRect().left)
-      // Nothing draws the highlight in this design (see NAV_HL_SURFACE), so
-      // measuring it would only cost a second render pass per navigation.
-      if (!NAV_HL_SURFACE) return
-      // Query by attribute rather than child index — the highlight itself is
-      // a child of the grid, so positional indexing would be off by one.
-      const cell = grid.querySelectorAll('[data-motion-nav-cell]')[activeIndex]
-      if (activeIndex < 0 || !cell) { setHl(null); return }
-      // offsetLeft is physical, so this is already correct in RTL, where the
-      // grid reverses the cell order.
-      setHl({
-        x: cell.offsetLeft,
-        y: cell.offsetTop,
-        w: cell.offsetWidth,
-        h: cell.offsetHeight,
-      })
     }
     measure()
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
@@ -218,7 +220,7 @@ export function BottomNav({ connected, tucked = false }) {
       window.removeEventListener('resize', measure)
       window.removeEventListener('orientationchange', measure)
     }
-  }, [motionOn, activeIndex, rtl, lang, moreItems.length, connected])
+  }, [motionOn, rtl, lang, moreItems.length, connected])
 
   // ── Tuck ─────────────────────────────────────────────────────────────
   // Never while a modal or sheet is up, never while the More menu is open,
@@ -347,26 +349,8 @@ export function BottomNav({ connected, tucked = false }) {
               gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
               alignItems: 'stretch',
               height: ROW_H, maxWidth: 480, margin: '0 auto', padding: '0 4px',
-              // Containing block for the highlight only. Nothing moves.
-              ...(motionOn && NAV_HL_SURFACE ? { position: 'relative' } : null),
             }}
           >
-            {motionOn && NAV_HL_SURFACE && hl && (
-              <div
-                data-motion-nav-hl
-                aria-hidden="true"
-                style={{
-                  position: 'absolute', left: 0, top: 0,
-                  width: hl.w, height: hl.h,
-                  transform: `translate3d(${hl.x}px, ${hl.y}px, 0)`,
-                  background: NAV_HL_SURFACE,
-                  border: '0.5px solid var(--line)',
-                  borderRadius: 'var(--r-ctl)',
-                  boxSizing: 'border-box',
-                  pointerEvents: 'none',
-                }}
-              />
-            )}
             {PRIMARY_TABS.map(p => (
               <Tab key={p.to} to={p.to} name={p.name} label={t(p.labelKey)} motionOn={motionOn} />
             ))}
