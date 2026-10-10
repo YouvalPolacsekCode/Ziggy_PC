@@ -21,6 +21,7 @@ describe('BottomNav condense', () => {
     expect(nav.hasAttribute('data-tucked')).toBe(false)
     expect(container.querySelector('[data-nav-row]')).not.toBeNull()
     expect(container.querySelectorAll('[data-nav-label]').length).toBe(5)
+    expect(container.querySelector('[data-nav-row]').style.height).toBe('')
   })
   it('offline strip pins the bar open', () => {
     const { container } = mount(true, { tucked: true, connected: false })
@@ -32,5 +33,7 @@ describe('BottomNav condense', () => {
     expect(nav.hasAttribute('data-condensed')).toBe(false)
     expect(nav.hasAttribute('data-motion-nav')).toBe(false)
     expect(container.querySelector('[data-nav-row]')).toBeNull()
+    const grid = container.querySelector('nav div[style*="grid"]')
+    expect(grid.style.height).toBe('56px')
   })
 })

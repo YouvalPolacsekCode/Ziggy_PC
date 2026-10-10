@@ -429,7 +429,8 @@ export function BottomNav({ connected, tucked = false }) {
               display: 'grid',
               gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
               alignItems: 'stretch',
-              height: ROW_H, maxWidth: 480, margin: '0 auto', padding: '0 4px',
+              maxWidth: 480, margin: '0 auto', padding: '0 4px',
+              ...(motionOn ? null : { height: ROW_H }),
               ...(motionOn ? { overflow: 'hidden' } : null),
             }}
           >

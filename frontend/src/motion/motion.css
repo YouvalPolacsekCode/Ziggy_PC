@@ -263,6 +263,7 @@
  * (the operator asked for more room up top). */
 
 [data-motion="on"] [data-motion-nav] [data-nav-row] {
+  height: 56px;
   transition: height 400ms var(--m-out);
 }
 [data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-row] {
