@@ -125,6 +125,29 @@ describe('useSwipeBack (rubber-band edge)', () => {
     expect(onBack).not.toHaveBeenCalled()
   })
 
+  // A committed swipe leaves the page off-screen for the 240ms it waits for
+  // its navigation, and an off-screen page reports a NEGATIVE distance from
+  // the edge — which passes the edge guard. So a second finger could start a
+  // gesture inside that window, and the first settle's finish() would null the
+  // second's registration while the two fought over one inline transform.
+  it('a second gesture cannot start while a settle is pending', () => {
+    const onSwipe = vi.fn()
+    const onBack = vi.fn()
+    const { getByTestId } = render(<Host onBack={onBack} onSwipe={onSwipe} />)
+    const page = getByTestId('page')
+    page.getBoundingClientRect = () => ({ left: 0, right: 390, width: 390, top: 0, bottom: 800 })
+    ptr('pointerdown', page, 4); ptr('pointermove', page, 300); ptr('pointerup', page, 300)
+    onSwipe.mockClear()
+    // Mid-settle, with the page off-screen: left is now negative, so the edge
+    // guard alone would have let this through.
+    page.getBoundingClientRect = () => ({ left: -390, right: 0, width: 390, top: 0, bottom: 800 })
+    ptr('pointerdown', page, 4); ptr('pointermove', page, 84)
+    expect(onSwipe).not.toHaveBeenCalledWith('start')
+    // ...and the first settle still finishes exactly once.
+    act(() => { vi.advanceTimersByTime(400) })
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
   it('rtl: the edge is on the right and travel is negative', () => {
     const { getByTestId } = render(<Host onBack={() => {}} rtl />)
     const page = getByTestId('page')

@@ -11,7 +11,7 @@
 // `effectiveScrollTop` asks the element first and the document second, so a
 // genuinely scrolling <main> (desktop, or a future layout) keeps working.
 import React from 'react'
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, act } from '@testing-library/react'
 import { setMotion } from '../flag'
 import { effectiveScrollTop, useScrollChrome } from '../gestures'
@@ -44,8 +44,16 @@ describe('effectiveScrollTop', () => {
 })
 
 describe('useScrollChrome', () => {
-  beforeEach(() => setMotion(true))
-  afterEach(() => setWindowScroll(0))
+  // The window listener is coalesced to one read per frame, so these tests run
+  // the frame synchronously rather than waiting for one: what they are about
+  // is WHICH number is read and WHEN a direction is reported, not the clock.
+  // The two tests that are about the frame itself install their own stub.
+  let rafSpy
+  beforeEach(() => {
+    setMotion(true)
+    rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { cb(0); return 1 })
+  })
+  afterEach(() => { rafSpy.mockRestore(); setWindowScroll(0) })
 
   function Chrome({ onDirection, elRef }) {
     const ref = React.useRef(null)
@@ -92,6 +100,38 @@ describe('useScrollChrome', () => {
     act(() => { window.dispatchEvent(new Event('scroll')) })
     expect(dirs).toEqual([])
     expect(getByTestId('main').getAttribute('data-scrolled')).toBe('false')
+  })
+
+  // A flick delivers far more scroll events than the screen has frames, and
+  // each read touches layout and can set state. One read per frame.
+  it('coalesces a burst of scroll events into one read per frame', () => {
+    const reads = []
+    let queued = null
+    rafSpy.mockImplementation((cb) => { if (!queued) queued = cb; return 7 })
+    render(<Chrome onDirection={(d) => reads.push(d)} />)
+    setWindowScroll(200)
+    act(() => { for (let i = 0; i < 20; i++) window.dispatchEvent(new Event('scroll')) })
+    // 20 events, ONE frame requested...
+    expect(rafSpy).toHaveBeenCalledTimes(1)
+    expect(reads).toEqual([])
+    // ...and the read happens when that frame runs.
+    act(() => { queued(0) })
+    expect(reads).toEqual(['down'])
+    // The lock is released with the frame, so the next burst gets its own.
+    act(() => { window.dispatchEvent(new Event('scroll')) })
+    expect(rafSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('cancels a queued frame on unmount, so it cannot land on a dead hook', () => {
+    rafSpy.mockImplementation(() => 42)
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    try {
+      const { unmount } = render(<Chrome onDirection={() => {}} />)
+      setWindowScroll(200)
+      act(() => { window.dispatchEvent(new Event('scroll')) })
+      unmount()
+      expect(cancel).toHaveBeenCalledWith(42)
+    } finally { cancel.mockRestore() }
   })
 
   it('detaches its window listener on unmount', () => {

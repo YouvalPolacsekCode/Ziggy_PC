@@ -726,12 +726,17 @@ html, body, #root {
 
    With the layer ON, src/motion/motion.css owns reduced motion ("reduce, not
    remove": colour and opacity stay, travel/scale/blur/loops go) — AND carries
-   its own bounded version of this clamp, scoped under [data-motion="on"],
-   capping transitions at 160ms and loops at one repetition. That half is not
-   optional: scoping this rule out of the layer's tree left everything the
-   layer does not name by hand — inline component transitions, a page's own
-   @keyframes, a dependency's animation — running at full speed under the OS
-   setting. Change one of the two and change the other. */
+   its own copy of this clamp, scoped under [data-motion="on"]: transitions to
+   .01ms and loops to one pass, but NOT animation-duration, so the layer's own
+   140–160ms fade entrances survive. The duration has to be imperceptible
+   rather than merely short, because every element's transition-property is
+   `all`: a non-zero universal duration invents transitions on elements that
+   had none.
+
+   That half is not optional: scoping this rule out of the layer's tree left
+   everything the layer does not name by hand — inline component transitions,
+   a page's own @keyframes, a dependency's animation — running at full speed
+   under the OS setting. Change one of the two and change the other. */
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion="on"]) *, html:not([data-motion="on"]) *::before, html:not([data-motion="on"]) *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }

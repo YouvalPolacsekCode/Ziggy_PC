@@ -86,15 +86,24 @@ function DepthCell({ active, motionOn, icon, label, labelStyle }) {
     <motion.span
       data-nav-depth={active ? 'active' : 'idle'}
       initial={false}
+      // The reduced target NAMES the resting values rather than leaving them
+      // out. A key that is simply absent is a key framer stops writing, so an
+      // OS setting flipped mid-session would leave the last scale and lift it
+      // wrote standing inline for ever.
       animate={reduced
-        ? { opacity: active ? 1 : 0.65 }
+        ? { opacity: active ? 1 : 0.65, scale: 1 }
         : { scale: active ? 1 : 0.94, opacity: active ? 1 : 0.65 }}
       transition={reduced ? DEPTH_FADE : DEPTH_SPRING}
       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 0, maxWidth: '100%' }}
     >
       <motion.span
         initial={false}
-        animate={reduced ? { opacity: 1 } : {
+        // Same reasoning as the cell above, and note the filter: the resting
+        // value is a zero drop-shadow, NOT `none` — `none` cannot interpolate
+        // from a shadow string, so framer would snap or drop it.
+        animate={reduced ? {
+          opacity: 1, scale: 1, y: 0, filter: 'drop-shadow(0 0px 0px rgba(0,0,0,0))',
+        } : {
           scale: active ? 1.16 : 1,
           y: active ? -2 : 0,
           filter: active ? 'drop-shadow(0 4px 5px rgba(0,0,0,.22))' : 'drop-shadow(0 0px 0px rgba(0,0,0,0))',
@@ -376,13 +385,17 @@ export function BottomNav({ connected, tucked = false }) {
                       // only fade. No travel, no scale, and no stagger either —
                       // a stagger is a fan-out told in time, and there is no
                       // fan to tell. The retract stays faster than the arrival.
-                      initial={reduced ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.9 }}
+                      // The reduced targets name y and scale at rest for the
+                      // same reason as DepthCell: an omitted key is one framer
+                      // stops writing, so a mid-session flip of the OS setting
+                      // would strand the last travel it wrote.
+                      initial={reduced ? { opacity: 0, y: 0, scale: 1 } : { opacity: 0, y: 16, scale: 0.9 }}
                       animate={closing
                         ? (reduced
-                          ? { opacity: 0, transition: { duration: 0.12 } }
+                          ? { opacity: 0, y: 0, scale: 1, transition: { duration: 0.12 } }
                           : { opacity: 0, y: 12, scale: 0.9, transition: { duration: 0.12, delay: i * 0.03 } })
                         : (reduced
-                          ? { opacity: 1, transition: { duration: 0.16 } }
+                          ? { opacity: 1, y: 0, scale: 1, transition: { duration: 0.16 } }
                           : { opacity: 1, y: 0, scale: 1, transition: { ...FAN_SPRING, delay: order * FAN_STAGGER } })}
                       onClick={() => { requestClose(); navigate(to) }}
                       style={{

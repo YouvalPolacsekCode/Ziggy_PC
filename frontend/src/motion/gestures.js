@@ -180,6 +180,14 @@ export function useSwipeBack(ref, onBack, { enabled = true, rtl = false, onSwipe
 
     const down = (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return
+      // NOT WHILE A SETTLE IS RUNNING. A committed swipe leaves the page
+      // off-screen for 240ms waiting for its navigation, and an off-screen
+      // page makes `fromEdge` negative — which passes the edge guard below, so
+      // a second gesture could start inside that window. The first settle's
+      // finish() then nulled the second's registration and the two fought over
+      // the same inline transform. One gesture per settle; the route change is
+      // what re-opens the element to a finger.
+      if (settling.current) return
       const r = el.getBoundingClientRect()
       const fromEdge = rtl ? r.right - e.clientX : e.clientX - r.left
       if (fromEdge > EDGE) return
@@ -368,9 +376,35 @@ export function useScrollChrome(ref, { edge = 72, onDirection } = {}) {
   // never reaches an element's `onScroll`. The returned handler stays, for the
   // case where the element genuinely scrolls — both paths go through
   // effectiveScrollTop, so whichever fires reads the same number.
+  //
+  // COALESCED TO ONE READ PER FRAME. A window scroll listener fires far more
+  // often than the screen refreshes (a flick can deliver dozens of events in
+  // a frame on iOS), and each call reads layout and can set React state. One
+  // rAF per frame is the whole throttle: the pending frame is the lock, and it
+  // is cancelled on unmount so a queued callback cannot land on a dead hook.
+  // The LOCK is the boolean, not the frame id: a callback that runs before
+  // `requestAnimationFrame` has returned (a synchronous polyfill, a test stub)
+  // would otherwise have its release overwritten by the id assignment and the
+  // hook would go deaf after one frame. The id is kept only to cancel with.
+  const pending = useRef(false)
+  const frameId = useRef(0)
   useEffect(() => {
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
+    const onWindowScroll = () => {
+      if (pending.current) return
+      pending.current = true
+      frameId.current = requestAnimationFrame(() => {
+        pending.current = false
+        frameId.current = 0
+        onScroll()
+      })
+    }
+    window.addEventListener('scroll', onWindowScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onWindowScroll)
+      if (frameId.current) cancelAnimationFrame(frameId.current)
+      frameId.current = 0
+      pending.current = false
+    }
   }, [onScroll])
 
   return { scrolled, onScroll }

@@ -366,12 +366,13 @@
  * Honours the OS setting directly as well as our own mirrored attribute, so
  * it is right even before the JS has run.
  *
- * Two parts, and both are needed: a BOUNDED clamp that catches everything
- * this file does not name (see the note on it below), and the named rules
- * that say what each of the layer's own movements becomes. */
+ * Two parts, and both are needed: a clamp that catches everything this file
+ * does not name — transitions to .01ms, loops to one pass, animation DURATION
+ * left alone (see the note on it below) — and the named rules that say what
+ * each of the layer's own movements becomes. */
 
 @media (prefers-reduced-motion: reduce) {
-  /* A BOUNDED CLAMP, AND WHY IT IS BACK.
+  /* THE CLAMP, AND WHY IT IS BACK.
    *
    * index.css's global clamp was scoped to `html:not([data-motion="on"])` so
    * that this file could own the policy with the layer on. That was right for
@@ -381,16 +382,22 @@
    * suddenly unclamped under reduced motion — the one combination nobody
    * looks at by hand.
    *
-   * So the clamp returns, bounded rather than absolute. `.01ms` would flatten
-   * the layer's own 160–220ms colour and opacity work, which reduced motion
-   * is supposed to KEEP; capping duration at 160ms and loops at one
-   * repetition removes the travel and the repetition and leaves the
-   * information. The named rules below still apply on top of it: a declaration
-   * this clamp does not set (animation-name, transform, opacity) is untouched. */
+   * `.01ms`, NOT a "gentle" 160ms. A universal `transition-duration` does not
+   * only shorten the transitions that exist; every element's initial
+   * `transition-property` is `all`, so a non-zero duration here CREATES a
+   * transition on everything — tiles slide into place, and framer's per-frame
+   * inline writes to transform and opacity smear into each other instead of
+   * being applied. Imperceptible is the only safe universal value, which is
+   * what the old global clamp always said.
+   *
+   * `animation-duration` is deliberately NOT clamped: the named rules below
+   * replace this layer's travel with `zm-fade-in` at 140–160ms, and that is
+   * the "keep colour and opacity" half of reduced motion. Only the iteration
+   * count is capped here, which is what stops a loop nobody named. */
   [data-motion="on"] *,
   [data-motion="on"] *::before,
   [data-motion="on"] *::after {
-    transition-duration: 160ms !important;
+    transition-duration: .01ms !important;
     animation-iteration-count: 1 !important;
   }
   /* ...except the one loop that means "still working". A spinner stopped after
@@ -429,11 +436,13 @@
 }
 /* The attribute form of everything above, for an OS setting that flips
    mid-session (the media query answers before the JS has run; this answers
-   after it). The bounded clamp is mirrored first, same reasoning. */
+   after it). The clamp is mirrored first, same reasoning and the same .01ms —
+   a non-zero universal transition-duration would invent transitions on
+   elements that have none. */
 [data-motion-reduced="true"][data-motion="on"] *,
 [data-motion-reduced="true"][data-motion="on"] *::before,
 [data-motion-reduced="true"][data-motion="on"] *::after {
-  transition-duration: 160ms !important;
+  transition-duration: .01ms !important;
   animation-iteration-count: 1 !important;
 }
 [data-motion-reduced="true"][data-motion="on"] .z-spin { animation-iteration-count: infinite !important; }

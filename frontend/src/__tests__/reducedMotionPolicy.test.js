@@ -27,14 +27,33 @@ describe('reduced motion policy', () => {
   // written inline by a component, a `@keyframes` loop in a page's own CSS,
   // every third-party animation. With the layer on, those were suddenly
   // unclamped under reduced motion — which is the one combination nobody
-  // tests by hand. So the clamp comes back BOUNDED: it caps duration and
-  // iteration count instead of flattening everything to .01ms, which leaves
-  // the layer's named rules (160–220ms fades, colour) intact.
-  it('the layer re-clamps whatever it does not name', () => {
-    expect(LAYER).toMatch(/\[data-motion="on"\] \*,[\s\S]{0,160}?transition-duration: 160ms !important/)
+  // tests by hand. So the clamp comes back.
+  //
+  // IMPERCEPTIBLE, NOT MERELY SHORT. A universal `transition-duration` does
+  // not only shorten the transitions that exist: every element's
+  // `transition-property` is `all`, so a non-zero value CREATES one on
+  // everything — tiles slide into place and framer's per-frame inline writes
+  // to transform/opacity smear. `.01ms` is the only safe universal value, and
+  // it is what the old global clamp always used.
+  it('the layer re-clamps whatever it does not name, imperceptibly', () => {
+    expect(LAYER).toMatch(/\[data-motion="on"\] \*,[\s\S]{0,160}?transition-duration: \.01ms !important/)
     expect(LAYER).toMatch(/\[data-motion="on"\] \*,[\s\S]{0,200}?animation-iteration-count: 1 !important/)
     expect(LAYER).toContain('[data-motion="on"] *::before')
     expect(LAYER).toContain('[data-motion="on"] *::after')
+    // A non-zero universal transition-duration must never come back: every
+    // `!important` transition-duration in the file is one of the two clamps.
+    const important = LAYER.match(/transition-duration: [^;]+ !important/g) || []
+    expect(important.length).toBe(2)
+    expect(new Set(important)).toEqual(new Set(['transition-duration: .01ms !important']))
+  })
+
+  // ...and `animation-duration` is deliberately NOT in the clamp: the named
+  // rules replace this layer's travel with zm-fade-in at 140–160ms, which is
+  // the "keep colour and opacity" half of the policy.
+  it('leaves animation-duration to the named rules', () => {
+    const clamp = LAYER.slice(LAYER.indexOf('[data-motion="on"] *,'))
+    expect(clamp.slice(0, 400)).not.toMatch(/animation-duration/)
+    expect(LAYER).toMatch(/animation: zm-fade-in 1[46]0ms/)
   })
 
   // A frozen spinner does not read as "calmer", it reads as "stuck". The one
@@ -47,8 +66,8 @@ describe('reduced motion policy', () => {
   // Both halves of the policy, always: the media query answers before the JS
   // has run, the mirrored attribute answers an OS setting that flips
   // mid-session.
-  it('mirrors the bounded clamp onto the attribute form', () => {
-    expect(LAYER).toMatch(/\[data-motion-reduced="true"\]\[data-motion="on"\] \*,[\s\S]{0,200}?transition-duration: 160ms !important/)
+  it('mirrors the clamp onto the attribute form', () => {
+    expect(LAYER).toMatch(/\[data-motion-reduced="true"\]\[data-motion="on"\] \*,[\s\S]{0,200}?transition-duration: \.01ms !important/)
     expect(LAYER).toMatch(/\[data-motion-reduced="true"\]\[data-motion="on"\] \*,[\s\S]{0,260}?animation-iteration-count: 1 !important/)
   })
 
