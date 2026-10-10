@@ -17,39 +17,8 @@
 //   - everything is interruptible and cancellable
 //   - reduced motion keeps colour/opacity and drops travel, scale and loops
 
-export const EASE = {
-  out: [0.23, 1, 0.32, 1],       // strong ease-out — small moves, presses, chips
-  glide: [0.33, 0.68, 0.15, 1],  // large surfaces: keeps speed through the middle
-  inOut: [0.77, 0, 0.175, 1],    // on-screen movement, morphs
-  drawer: [0.32, 0.72, 0, 1],    // iOS sheet curve
-  std: [0.4, 0, 0.2, 1],         // hover, colour
-}
-
-export const CSS_EASE = {
-  out: 'cubic-bezier(0.23, 1, 0.32, 1)',
-  glide: 'cubic-bezier(0.33, 0.68, 0.15, 1)',
-  inOut: 'cubic-bezier(0.77, 0, 0.175, 1)',
-  drawer: 'cubic-bezier(0.32, 0.72, 0, 1)',
-  std: 'cubic-bezier(0.4, 0, 0.2, 1)',
-}
-
-export const DUR = {
-  press: 0.12,
-  tap: 0.16,
-  small: 0.2,
-  ui: 0.26,
-  sheet: 0.36,
-  page: 0.42,
-}
-
-// Apple-style perceptual springs: duration + bounce, interruptible by nature.
-export const SPRING = {
-  snappy: { type: 'spring', duration: 0.32, bounce: 0.08 },
-  gentle: { type: 'spring', duration: 0.5, bounce: 0.12 },
-  calm: { type: 'spring', duration: 0.7, bounce: 0 },
-  press: { type: 'spring', duration: 0.18, bounce: 0 },
-  detent: { type: 'spring', stiffness: 520, damping: 34, mass: 0.9 },
-}
+import { EASE, CSS_EASE, DUR, SPRING } from '../lib/motion'
+export { EASE, CSS_EASE, DUR, SPRING }
 
 // ── Reduced motion ─────────────────────────────────────────────────────
 // One source of truth, live: the OS setting can change while the app is open.
@@ -57,30 +26,18 @@ export const SPRING = {
 let _reduced = typeof window !== 'undefined' && window.matchMedia
   ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
   : false
-const _reducedSubs = new Set()
 
 if (typeof window !== 'undefined' && window.matchMedia) {
   const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
   const onChange = (e) => {
     _reduced = e.matches
     document.documentElement.setAttribute('data-motion-reduced', e.matches ? 'true' : 'false')
-    _reducedSubs.forEach((fn) => fn(e.matches))
   }
   mq.addEventListener?.('change', onChange)
   document.documentElement.setAttribute('data-motion-reduced', _reduced ? 'true' : 'false')
 }
 
 export const isReduced = () => _reduced
-export function onReducedChange(fn) {
-  _reducedSubs.add(fn)
-  return () => _reducedSubs.delete(fn)
-}
-
-// A transition that degrades correctly: travel and scale vanish, timing stays
-// short, opacity survives.
-export function safe(transition, reducedTransition = { duration: 0.15 }) {
-  return _reduced ? reducedTransition : transition
-}
 
 // ── Haptics ────────────────────────────────────────────────────────────
 // Named after the HIG's feedback generators so the meaning is consistent:

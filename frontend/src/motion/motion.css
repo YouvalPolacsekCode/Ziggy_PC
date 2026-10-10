@@ -23,17 +23,11 @@
 
 [data-motion="on"] {
   /* Aliases onto the app's own tokens: one vocabulary, not two. */
-  --m-std:   var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
-  --m-out:   var(--ease-enter, cubic-bezier(0.16, 1, 0.3, 1));
-
-  /* What HIG v2 has no token for: movement across a distance. A strong
-   * ease-out covers ~90% of its travel in the first third of its duration —
-   * right for a 4px press, and on a 400px hero it reads as a snap followed by
-   * a crawl, which is what "not smooth" usually means. The glide keeps speed
-   * through the middle so a large surface reads as one continuous movement. */
-  --m-glide: cubic-bezier(0.33, 0.68, 0.15, 1);
-  --m-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  --m-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --m-std:    var(--ease-standard);
+  --m-out:    var(--ease-out-strong);
+  --m-glide:  cubic-bezier(0.33, 0.68, 0.15, 1);
+  --m-in-out: var(--ease-in-out);
+  --m-drawer: var(--ease-drawer);
 
   /* Durations scale with distance. --m-scale is a single multiplier over every
      duration below; it stays at 1 and exists so the layer's overall pace can be

@@ -26,7 +26,7 @@ with nothing to explain why.
 src/motion/
   motion.js      easing, springs, haptics, reduced-motion, velocity helpers
   flag.js        the data-motion switch (URL → localStorage → default on)
-  gestures.js    useLongPress · useSwipeBack · useSheetDetents · useScrub · useScrollChrome
+  gestures.js    useLongPress · useSwipeBack · useScrub · useScrollChrome
   morph.js       shared-element FLIP across a route change
   pressLayer.js  delegated press + haptic feedback for the whole app
   SheetSurface.jsx  one surface, two frames: bottom sheet / docked right panel

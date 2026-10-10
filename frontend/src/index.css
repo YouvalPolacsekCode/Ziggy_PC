@@ -93,10 +93,16 @@ html, body, #root {
   --r-sheet: 24px;   /* sheets, modals, popovers */
 
   --dur-press: 120ms;   /* hover / press feedback */
+  --dur-fast:  160ms;   /* a glyph, a chip, a toggle knob */
   --dur-state: 200ms;   /* a value changing in place */
-  --dur-enter: 240ms;   /* something appearing or leaving */
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-enter:    cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-base:  260ms;   /* something appearing or leaving */
+  --dur-enter: 260ms;   /* alias of --dur-base (older rules) */
+  --dur-slow:  400ms;   /* movement across a distance */
+  --ease-standard:   cubic-bezier(0.2, 0, 0, 1);
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-enter:      cubic-bezier(0.23, 1, 0.32, 1); /* alias of --ease-out-strong */
+  --ease-in-out:     cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer:     cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @media (min-width: 1024px) {

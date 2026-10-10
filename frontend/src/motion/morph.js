@@ -324,11 +324,3 @@ export function useMorphTarget(key, { contentRef, followRef, duration = 560, ret
 export function useMorphReturn(key, { contentRef, duration = 460 } = {}) {
   return useMorphTarget(key, { contentRef, duration, returning: true })
 }
-
-// Page enter: a quiet rise for the rest of the destination, so the morphing
-// element leads and the page follows. CSS-only, no exit animation, so there
-// is no handshake that can fail and strand a blank screen.
-export function pageEnterProps(delay = 40) {
-  if (!isMotionOn() || isReduced()) return {}
-  return { 'data-motion-enter': 'true', style: { animationDelay: `${delay}ms` } }
-}

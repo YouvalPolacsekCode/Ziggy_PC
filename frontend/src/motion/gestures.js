@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isMotionOn } from './flag'
-import { CSS_EASE, clamp, haptic, isReduced, makeVelocityTracker, nearest, project } from './motion'
+import { CSS_EASE, clamp, haptic, makeVelocityTracker } from './motion'
 
 // ── Long-press vs tap ───────────────────────────────────────────────────
 // A press that travels more than 8px is neither: it is a scroll or a scrub.
@@ -163,101 +163,6 @@ export function useSwipeBack(ref, onBack, { enabled = true, rtl = false } = {}) 
       el.style.transition = ''
     }
   }, [ref, onBack, enabled, rtl])
-}
-
-// ── Sheet detents ───────────────────────────────────────────────────────
-// Drag a sheet by its header. Two detents plus dismiss, velocity-projected
-// snapping, rubber-band resistance past the top, and a flick rule so a fast
-// short flick dismisses like a slow long drag. Body drags only count when the
-// body is already scrolled to the top, otherwise the scroller owns the
-// gesture.
-
-const FLICK = 900
-
-export function useSheetDetents({ sheetRef, bodyRef, onClose, detents = [0.5, 1], enabled = true }) {
-  const [detent, setDetent] = useState(detents.length - 1)
-  const drag = useRef(null)
-  const vel = useRef(makeVelocityTracker())
-  const geom = useRef({ H: 0, stops: [], dismiss: 0 })
-
-  const measure = useCallback(() => {
-    const el = sheetRef.current
-    if (!el) return
-    const H = el.offsetHeight
-    const parentH = el.offsetParent?.offsetHeight || window.innerHeight
-    geom.current = {
-      H,
-      // y offset for each detent, largest detent first (y grows downward)
-      stops: detents.map((f) => Math.max(0, H - Math.round(parentH * f))).sort((a, b) => a - b),
-      dismiss: H,
-    }
-  }, [sheetRef, detents])
-
-  useEffect(() => { measure() })
-
-  const place = useCallback((y, animated = true) => {
-    const el = sheetRef.current
-    if (!el) return
-    el.style.transition = animated && !isReduced() ? `transform 360ms ${CSS_EASE.drawer}` : 'none'
-    el.style.transform = `translate3d(0,${y}px,0)`
-  }, [sheetRef])
-
-  const goTo = useCallback((y) => {
-    const { stops, dismiss } = geom.current
-    if (y >= dismiss) { place(dismiss); setTimeout(() => onClose?.(), 240); return }
-    const idx = stops.indexOf(y)
-    if (idx !== -1 && idx !== detent) { haptic('medium'); setDetent(idx) }
-    place(y)
-  }, [place, onClose, detent])
-
-  const onPointerDown = useCallback((e, fromBody = false) => {
-    if (!enabled || !isMotionOn()) return
-    if (e.pointerType === 'mouse' && e.button !== 0) return
-    if (fromBody) {
-      if ((bodyRef?.current?.scrollTop || 0) > 0) return
-      if (e.target.closest('button, input, a, select, textarea, [role="slider"], [data-no-swipe]')) return
-    }
-    measure()
-    const el = sheetRef.current
-    const cur = parseFloat((el.style.transform || '').replace(/[^-\d.]/g, '')) || 0
-    drag.current = { y0: e.clientY, base: cur, fromBody }
-    vel.current.start(e.clientY)
-    el.style.transition = 'none'
-    e.currentTarget.setPointerCapture?.(e.pointerId)
-  }, [enabled, bodyRef, measure, sheetRef])
-
-  const onPointerMove = useCallback((e) => {
-    const d = drag.current
-    if (!d) return
-    vel.current.move(e.clientY)
-    const dy = e.clientY - d.y0
-    if (d.fromBody && dy < 0) return
-    let y = d.base + dy
-    if (y < 0) y *= 0.12 // rubber band above the largest detent
-    sheetRef.current.style.transform = `translate3d(0,${y}px,0)`
-  }, [sheetRef])
-
-  const onPointerUp = useCallback(() => {
-    const d = drag.current
-    if (!d) return
-    drag.current = null
-    const el = sheetRef.current
-    const y = parseFloat((el.style.transform || '').replace(/[^-\d.]/g, '')) || 0
-    const v = vel.current.get()
-    const { stops, dismiss } = geom.current
-    if (v > FLICK) return goTo(dismiss)
-    if (v < -FLICK) return goTo(stops[0])
-    goTo(nearest(project(y, v), [...stops, dismiss]))
-  }, [goTo, sheetRef])
-
-  const headerHandlers = enabled && isMotionOn() ? {
-    onPointerDown: (e) => onPointerDown(e, false), onPointerMove, onPointerUp, onPointerCancel: onPointerUp,
-  } : {}
-  const bodyHandlers = enabled && isMotionOn() ? {
-    onPointerDown: (e) => onPointerDown(e, true), onPointerMove, onPointerUp, onPointerCancel: onPointerUp,
-  } : {}
-
-  return { detent, detentCount: detents.length, headerHandlers, bodyHandlers, goTo, measure, place }
 }
 
 // ── Value scrubbing ─────────────────────────────────────────────────────
