@@ -1,6 +1,15 @@
 # Ziggy Motion Lab
 
-**Status: Phase 2, round 2 complete (2026-09-28). STOP POINT. Nothing here is integrated into the product.**
+**Status: Phase 2, round 2 complete (2026-09-28). STOP POINT. Nothing *in the lab itself* is integrated into the product.**
+
+Phase A (navigation + pages) implemented on `feat/motion-lab` — see
+`docs/superpowers/plans/2026-10-10-motion-a-foundation-nav-pages.md`. The picks
+that were taken out of the lab and built for real are bottom-nav tab depth,
+the More-menu fan-out, condense-on-scroll, the sidebar accent bar, the iOS page
+push with its swipe-back peel, and the tab-body blur crossfade. They live in
+`frontend/src/motion/`, gated on `<html data-motion="on">` with `?pages=off` as
+a second, narrower kill switch for the page slide alone — not in `src/lab/`,
+which remains a throwaway concept board.
 
 A concept board for how Ziggy should move, built as a fully isolated route at
 `/motion-lab`. Phase 1 investigated the real frontend (origin/main at e44e163);

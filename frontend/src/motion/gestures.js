@@ -1,6 +1,9 @@
-// The gesture engines: swipe-back, sheet detents, value scrubbing, long-press
-// and scroll chrome. All pointer-based (one code path for mouse and touch),
-// all pointer-captured, all interruptible, all no-ops when the flag is off.
+// The gesture engines: long-press, swipe-back, value scrubbing and scroll
+// chrome — `useLongPress`, `useSwipeBack`, `useScrub`, `useScrollChrome`, in
+// that order below. (Sheet detents are NOT here; they live in
+// `SheetSurface.jsx` with the surface they move.) All pointer-based (one code
+// path for mouse and touch), all pointer-captured, all interruptible, all
+// no-ops when the flag is off.
 //
 // None of these change how anything LOOKS. They change what your finger can
 // do and how the result arrives.

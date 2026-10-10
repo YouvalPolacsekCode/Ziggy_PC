@@ -7,9 +7,9 @@
  *
  * THIS FILE EXTENDS THE HIG v2 TOKENS, IT DOES NOT COMPETE WITH THEM.
  * index.css already defines the app's motion vocabulary:
- *     --dur-press 120ms · --dur-state 200ms · --dur-enter 240ms
+ *     --dur-press 120ms · --dur-state 200ms · --dur-enter 260ms
  *     --ease-standard cubic-bezier(0.2, 0, 0, 1)
- *     --ease-enter    cubic-bezier(0.16, 1, 0.3, 1)
+ *     --ease-enter    cubic-bezier(0.23, 1, 0.32, 1)  (= --ease-out-strong)
  * Those stay authoritative for everything they already cover: hover, press,
  * a value changing in place, something appearing. This layer adds only what
  * that vocabulary has no word for — gesture-driven surfaces and movement
@@ -36,7 +36,7 @@
      someone's house. */
   --m-scale: 1;
   --m-dur-press: calc(var(--dur-press, 120ms) * var(--m-scale));
-  --m-dur-ui:    calc(var(--dur-enter, 240ms) * var(--m-scale));
+  --m-dur-ui:    calc(var(--dur-enter, 260ms) * var(--m-scale));
   --m-dur-page:  calc(340ms * var(--m-scale));
   /* Going back undoes a move you already made, so it is never slower than the
      move it undoes — the same entrance:exit ratio the state and disclosure
