@@ -26,6 +26,14 @@ describe('BottomNav depth active state', () => {
     expect(active.length).toBe(1)
     expect(active[0].closest('a')?.getAttribute('href')).toBe('/rooms')
   })
+  // The contrast to BottomNav.reducedMotion.test.jsx: with full motion the
+  // depth really is a transform, which is what makes "no transform" there a
+  // meaningful assertion rather than a tautology.
+  it('motion on, full motion: the active icon carries the depth transform', () => {
+    const { container } = mount('/rooms', true)
+    const iconBox = container.querySelector('[data-nav-depth="active"] span')
+    expect(iconBox.style.transform).toContain('scale(1.16)')
+  })
   it('motion on: the More cell participates', () => {
     const { container } = mount('/settings', true)
     const active = container.querySelector('[data-nav-depth="active"]')

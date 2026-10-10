@@ -1,7 +1,7 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Bell, CheckSquare, MoreHorizontal, Settings, WifiOff } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { useAuthStore } from '../../stores/authStore'
 import { useFeature } from '../../stores/featuresStore'
 import { useIsRTL, useLang, useT } from '../../lib/i18n'
@@ -67,7 +67,13 @@ const TAB_CELL = {
 // radius below zero, which the browser rejects.
 const DEPTH_SPRING = { type: 'spring', duration: 0.45, bounce: 0.18 }
 const DEPTH_SHADOW = { duration: 0.24, ease: EASE.out }
+// Reduced motion keeps the information and drops the movement: which tab you
+// are on is still said in opacity, and the scale, the 2px lift and the drop
+// shadow go. It has to be decided HERE and not in motion.css — these are
+// framer inline styles, and an inline transform outranks any stylesheet rule.
+const DEPTH_FADE = { duration: 0.16, ease: EASE.out }
 function DepthCell({ active, motionOn, icon, label, labelStyle }) {
+  const reduced = useReducedMotion()
   if (!motionOn) {
     return (
       <>
@@ -80,18 +86,20 @@ function DepthCell({ active, motionOn, icon, label, labelStyle }) {
     <motion.span
       data-nav-depth={active ? 'active' : 'idle'}
       initial={false}
-      animate={{ scale: active ? 1 : 0.94, opacity: active ? 1 : 0.65 }}
-      transition={DEPTH_SPRING}
+      animate={reduced
+        ? { opacity: active ? 1 : 0.65 }
+        : { scale: active ? 1 : 0.94, opacity: active ? 1 : 0.65 }}
+      transition={reduced ? DEPTH_FADE : DEPTH_SPRING}
       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 0, maxWidth: '100%' }}
     >
       <motion.span
         initial={false}
-        animate={{
+        animate={reduced ? { opacity: 1 } : {
           scale: active ? 1.16 : 1,
           y: active ? -2 : 0,
           filter: active ? 'drop-shadow(0 4px 5px rgba(0,0,0,.22))' : 'drop-shadow(0 0px 0px rgba(0,0,0,0))',
         }}
-        transition={{ ...DEPTH_SPRING, filter: DEPTH_SHADOW }}
+        transition={reduced ? DEPTH_FADE : { ...DEPTH_SPRING, filter: DEPTH_SHADOW }}
         style={{ display: 'grid' }}
       >
         {icon}
@@ -185,6 +193,9 @@ export function BottomNav({ connected, tucked = false }) {
   const lang = useLang()
   const rtl = useIsRTL()
   const motionOn = useMotionOn()
+  // The fan-out is framer inline styles, so reduced motion is answered here
+  // rather than in motion.css (see DEPTH_FADE above for the same reason).
+  const reduced = useReducedMotion()
   const [showMore, setShowMore] = useState(false)
 
   const taskTrackingEnabled = useFeature('task_tracking')
@@ -361,10 +372,18 @@ export function BottomNav({ connected, tucked = false }) {
                     <motion.button
                       key={to}
                       data-fan-item={order}
-                      initial={{ opacity: 0, y: 16, scale: 0.9 }}
+                      // Reduced motion: the items appear where they belong and
+                      // only fade. No travel, no scale, and no stagger either —
+                      // a stagger is a fan-out told in time, and there is no
+                      // fan to tell. The retract stays faster than the arrival.
+                      initial={reduced ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.9 }}
                       animate={closing
-                        ? { opacity: 0, y: 12, scale: 0.9, transition: { duration: 0.12, delay: i * 0.03 } }
-                        : { opacity: 1, y: 0, scale: 1, transition: { ...FAN_SPRING, delay: order * FAN_STAGGER } }}
+                        ? (reduced
+                          ? { opacity: 0, transition: { duration: 0.12 } }
+                          : { opacity: 0, y: 12, scale: 0.9, transition: { duration: 0.12, delay: i * 0.03 } })
+                        : (reduced
+                          ? { opacity: 1, transition: { duration: 0.16 } }
+                          : { opacity: 1, y: 0, scale: 1, transition: { ...FAN_SPRING, delay: order * FAN_STAGGER } })}
                       onClick={() => { requestClose(); navigate(to) }}
                       style={{
                         ...MORE_ITEM(active),
