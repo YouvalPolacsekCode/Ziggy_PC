@@ -721,8 +721,12 @@ html, body, #root {
 .z-button:active:not(:disabled) { transform: scale(.98); }
 .z-button:disabled { opacity: .45; cursor: not-allowed; }
 @media (pointer: coarse) { .z-button { min-height: 40px; } }
+/* Reduced motion with the motion LAYER OFF: the old global clamp, unchanged,
+   so `?motion=off` under the OS setting is exactly what it was. With the
+   layer on, src/motion/motion.css owns reduced motion ("reduce, not
+   remove": colour and opacity stay, travel/scale/blur/loops go). */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  html:not([data-motion="on"]) *, html:not([data-motion="on"]) *::before, html:not([data-motion="on"]) *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 
 .z-chat-conversation, .z-chat-composer { width: 100%; max-width: var(--page-max-w-narrow); margin-inline: auto; }

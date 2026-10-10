@@ -361,6 +361,9 @@
   /* The highlight still marks the active tab, it just stops travelling. */
   [data-motion="on"] [data-motion-nav-hl] { transition: opacity 160ms var(--m-std); }
   [data-motion="on"] [data-motion-more] { animation: zm-fade-in 140ms var(--m-out) backwards; }
+  /* Loops that live outside this file (Tailwind's pulse, the health dot). */
+  [data-motion="on"] .animate-pulse { animation: none; }
+  [data-motion="on"] .z-pulse { animation: none; }
 }
 [data-motion-reduced="true"][data-motion="on"] [data-pressing] { transform: none; }
 [data-motion-reduced="true"][data-motion="on"] [data-motion-live="true"] { animation: none; opacity: 0.9; }
@@ -368,6 +371,8 @@
 [data-motion-reduced="true"][data-motion="on"] [data-motion-nav][data-tucked="true"] { transform: none; opacity: 1; }
 [data-motion-reduced="true"][data-motion="on"] [data-motion-nav-hl] { transition: opacity 160ms var(--m-std); }
 [data-motion-reduced="true"][data-motion="on"] [data-motion-disclosure] { transition: none; --zm-stagger-from: 0ms; }
+[data-motion-reduced="true"][data-motion="on"] .animate-pulse { animation: none; }
+[data-motion-reduced="true"][data-motion="on"] .z-pulse { animation: none; }
 
 @keyframes zm-fade-in {
   from { opacity: 0; }
