@@ -1,5 +1,6 @@
-import { Suspense, useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, Outlet } from 'react-router-dom'
+import { useReducedMotion } from 'framer-motion'
 import { X, Maximize2 } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { BottomNav } from './BottomNav'
@@ -10,6 +11,8 @@ import { useChatStore, CHAT_DOCK_QUERY } from '../../stores/chatStore'
 import { useMediaQuery } from '../../wall/useMediaQuery'
 import { useIsRTL, useT } from '../../lib/i18n'
 import { useMotionOn } from '../../motion/flag'
+import { usePagesOn } from '../../motion/pages'
+import { PageTransition } from '../../motion/PageTransition'
 import { useScrollChrome, useSwipeBack } from '../../motion/gestures'
 import { haptic } from '../../motion/motion'
 import AIChat from '../../pages/AIChat'
@@ -23,6 +26,11 @@ const CHAT_DOCK_W = 400
 // Routes that are "one level in" — the ones where a back gesture has an
 // obvious meaning. Everything else keeps the plain behaviour.
 const DETAIL_RE = /^\/(?:rooms|devices|remote|ir-walk|settings)\/[^/]+/
+
+// A room's own page. The shared-element morph in morph.js owns every
+// navigation into and out of it, in both directions, so the page slide stands
+// aside for that one route pair (see `slide` below).
+const ROOM_DETAIL_RE = /^\/rooms\/[^/]+$/
 
 // Which way through history a navigation went.
 //
@@ -38,37 +46,6 @@ function historyIdx() {
     return typeof i === 'number' ? i : null
   } catch { return null }
 }
-
-// ── Nav ↔ chat-bubble coupling (motion only) ──────────────────────────────
-// The floating chat bubble is not inside the nav — it is a viewport-fixed FAB
-// whose own CSS pins it to the nav's band (`calc(var(--nav-h) + …)`), and
-// chatBubble.css already notes that where there is no bottom nav the bubble
-// must not be left hovering over "60px of empty air". So when the bar tucks,
-// the bubble goes with it: they are one piece of chrome, they recede together
-// and return together on the first upward scroll.
-//
-// The alternative — sliding the bubble down to the safe-area floor — would
-// mean driving `.z-chat-bubble`'s transform from out here, and that channel
-// already has two owners (its `:active` press and its `[data-open]` swap). A
-// third writer is how a FAB ends up stranded mid-air. Opacity is the
-// vocabulary the bubble already uses to step aside, on its own token, so the
-// coupling borrows it rather than inventing one.
-//
-// Written as a sibling rule because <BottomNav> and <ChatBubble> are siblings
-// in the shell, and it is rendered only while the flag is on, so with
-// data-motion="off" neither the rule nor the <style> node exists.
-//
-// Stated positively under `no-preference` rather than as a reduced-motion
-// revert: under reduced motion the bar does not tuck at all (motion.css pins
-// it), so a revert would have to out-specify the bubble's own [data-open]
-// rule and would then drag the bubble back out from under an open chat sheet.
-const CHAT_BUBBLE_TUCK_CSS = `
-@media (prefers-reduced-motion: no-preference) {
-  [data-motion="on"] [data-motion-nav][data-tucked="true"] ~ .z-chat-bubble {
-    opacity: 0;
-    pointer-events: none;
-  }
-}`
 
 // ── Chat dock (wide screens) ──────────────────────────────────────────────────
 // When a chat card navigates to an object's page on a wide screen, the chat
@@ -205,15 +182,93 @@ export function AppShell({ connected }) {
   }
   const enterBack = enterDir.current.back
 
-  // Swipe back: the <main> scroller follows the finger from the leading edge
-  // and commits past 30% of the width or on a 500px/s flick. The hook
-  // direction-locks, refuses to start on top of a control, and springs back
-  // below the threshold, so the gesture is always cancellable.
+  // ── Does this navigation slide? ──────────────────────────────────────
+  // The page push (PageTransition) is the richer answer to the same question
+  // the enter wrapper answers, so exactly one of them plays:
+  //
+  //   - `?pages=off` drops the slide and keeps the rest of the layer. It is
+  //     a separate switch from `?motion=off` on purpose: two earlier page
+  //     transitions black-screened this app, and the one piece of the layer
+  //     that has done that before gets its own rollback.
+  //   - Reduced motion means no travel, which is all a push is.
+  //   - The room FLIP (morph.js) owns navigations into and out of
+  //     /rooms/:id; a slide over the top of it would be two stories about
+  //     one movement. `prevPathRef` is updated in an effect, so during the
+  //     render that commits a navigation it still holds where we came from —
+  //     which is what makes BOTH directions of that pair detectable here.
+  const pagesOn = usePagesOn()
+  const reduced = useReducedMotion()
+  const prevPathRef = useRef(location.pathname)
+  const roomPair = ROOM_DETAIL_RE.test(location.pathname) || ROOM_DETAIL_RE.test(prevPathRef.current)
+  useEffect(() => { prevPathRef.current = location.pathname }, [location.pathname])
+  const slide = motionOn && pagesOn && !reduced && !roomPair
+
+  // Swipe back: the page LAYER follows the finger from the leading edge —
+  // first peeling at the edge, then travelling — and commits past 30% of the
+  // width or on a 500px/s flick. The hook direction-locks, refuses to start
+  // on top of a control, and springs back below the threshold, so the gesture
+  // is always cancellable.
+  //
+  // It moves the page layer rather than the <main> scroller because the page
+  // beneath is painted as a SIBLING of that layer inside PageTransition's
+  // stage: moving the scroller would carry the under-page along with it and
+  // reveal nothing. `swiping` is what mounts that under-page, so it is state
+  // and not a ref — and `location.pathname` is the hook's rebind signal,
+  // because the layer is keyed on the route and so the node it must listen on
+  // is replaced on every navigation.
+  //
+  // THE GESTURE NEEDS AN ENTRY TO GO BACK TO. A committed swipe leaves the
+  // page off-screen on purpose — that IS the exit — and relies on the
+  // navigation to replace it. On the FIRST entry of the session there is no
+  // navigation: a deep link, a shared URL or the PWA start URL can land
+  // directly on /devices/abc, where `isDetail` is true, `navigate(-1)` does
+  // nothing, the route never changes and so nothing ever clears the
+  // transform. The page is gone and there is no way back to it. The history
+  // index is the same signal the direction pin uses; `null` (a foreign entry,
+  // a browser that dropped the state) counts as "cannot", because a gesture
+  // that might not come back is worse than one that is not offered.
+  const canGoBack = historyIdx() > 0
+  const pageRef = useRef(null)
+  const [swiping, setSwiping] = useState(false)
+  // A committed swipe keeps the under-page mounted until the route change
+  // lands (the page it moved is off-screen by then, so dropping it would show
+  // a hole); the per-route layout effect below is what clears `swiping` in
+  // that case. A cancelled one is over the moment it settles.
+  const onSwipe = useCallback((state, info) => {
+    if (state === 'start') setSwiping(true)
+    else if (!info?.committed) setSwiping(false)
+  }, [])
+  // ...and it tells PageTransition not to animate the arrival it is about to
+  // ask for. A ref, not state: it must be readable during the render that
+  // commits the navigation, which is the same render that consumes it.
+  const gestureBackRef = useRef(false)
   const onBack = useCallback(() => {
     haptic('medium')
+    gestureBackRef.current = true
     navigate(-1)
   }, [navigate])
-  useSwipeBack(mainRef, onBack, { enabled: motionOn && isDetail && !isChatRoute, rtl })
+  // NOT ON A ROOM'S OWN PAGE. The shared-element FLIP in morph.js owns every
+  // navigation into and out of /rooms/:id — which is why `slide` stands aside
+  // for that pair above. A gesture-committed exit there would be followed by
+  // the morph's return animation playing from a page that is no longer on
+  // screen: the finger has already carried it off, and the FLIP would measure
+  // and animate an element inside a layer that is being unmounted. The two
+  // cannot both narrate the same movement, so the one that was designed for
+  // that route keeps it.
+  const isRoomDetail = ROOM_DETAIL_RE.test(location.pathname)
+  useSwipeBack(pageRef, onBack, {
+    enabled: motionOn && isDetail && !isChatRoute && canGoBack && !isRoomDetail,
+    rtl,
+    onSwipe,
+    // `location.key`, not the pathname: a history entry is the unit here.
+    // Two entries can share a path (a card linking to the page you are on,
+    // a back that lands on the same URL), and on a pathname the effect would
+    // not re-run for those — so the hook would neither re-bind nor run its
+    // cleanup, which is what abandons a settle whose navigation nobody is
+    // waiting for any more (see `settling` in gestures.js). Re-binding to the
+    // same node is cheap; missing a rebind is a dead gesture.
+    bindKey: location.key,
+  })
 
   // Bottom-nav tuck. onDirection fires 'up' whenever the scroller is back at
   // the top, so the bar always returns there.
@@ -239,19 +294,55 @@ export function AppShell({ connected }) {
     } catch { /* SSR / non-DOM */ }
   }, [location.pathname])
 
-  // Motion: land every route with the bar shown and <main> untransformed.
-  // A committed swipe-back leaves main translated off-screen (that IS the
-  // exit), and the gesture hook only clears it when it unbinds — which does
-  // not happen when one detail route replaces another. Clearing here, before
-  // paint, means the new page can never arrive off-screen.
+  // Motion: land every route with the bar shown, the gesture forgotten and
+  // nothing of it left on the page.
+  //
+  // A committed swipe-back leaves the page it moved translated off-screen
+  // (that IS the exit) and the hook only clears it when it unbinds, so this
+  // is the belt to that braces: clearing before paint means a page can never
+  // arrive off-screen. `swiping` is dropped the same way — a gesture belongs
+  // to the page it started on, and leaving it true would strand the
+  // under-page over the new route.
+  //
+  // `transform` and `will-change` are cleared on <main> — where this hook
+  // used to write, and nothing else does — but deliberately NOT on the page
+  // layer, where they have owners:
+  //
+  //   - framer-motion renders the slide's STARTING OFFSET into `transform`,
+  //     and by the time a parent layout effect runs `pageRef` already points
+  //     at the ARRIVING page. Clearing it here would paint that page at rest
+  //     for one frame and then jump it off-screen to slide in. PageTransition
+  //     owns the property and clears it itself whenever no slide is running
+  //     (its own effect guards on exactly that).
+  //   - `will-change: transform` on that layer is React-rendered for the
+  //     length of the slide; removing it imperatively would lose the hint on
+  //     every navigation, because React only writes it again when it changes.
+  //
+  // Nothing of the gesture can strand there anyway: the layer is keyed on the
+  // route, so a committed swipe's off-screen transform is unmounted with the
+  // element, and the hook re-binds on `bindKey` — clearing what it wrote on
+  // the node it wrote it to. The two properties below are nobody else's, so
+  // they are cleared as the belt to that brace.
   useLayoutEffect(() => {
     setNavTucked(false)
-    const el = mainRef.current
-    if (!el) return
-    el.style.transition = ''
-    el.style.transform = ''
-    el.style.willChange = ''
-  }, [location.pathname])
+    setSwiping(false)
+    const main = mainRef.current
+    if (main) {
+      main.style.transition = ''
+      main.style.transform = ''
+      main.style.transformOrigin = ''
+      main.style.willChange = ''
+    }
+    const page = pageRef.current
+    if (page) {
+      page.style.transition = ''
+      page.style.transformOrigin = ''
+    }
+    // `location.key`, like the gesture's bindKey above and for the same
+    // reason: two history entries can share a path, and the state this clears
+    // (the nav tuck, a gesture in progress, what the hook painted) belongs to
+    // the entry you are leaving, not to its URL.
+  }, [location.key])
 
   // Route-level Suspense boundary.
   //
@@ -262,6 +353,10 @@ export function AppShell({ connected }) {
   // landed. That was the flicker. React resolves to the nearest boundary, so
   // this one keeps the shell painted and swaps only the content area. The
   // fallback holds height rather than collapsing so nothing reflows on land.
+  //
+  // One boundary, one instance: the outgoing page in PageTransition is a DOM
+  // snapshot, not a second mount of this tree, so there is nothing else here
+  // that could suspend or throw.
   const routed = (
     <Suspense fallback={<div aria-hidden style={{ minHeight: '60vh' }} />}>
       <ErrorBoundary label={`route:${location.pathname}`} key={location.pathname} fullHeight={false}>
@@ -303,7 +398,7 @@ export function AppShell({ connected }) {
             useNetworkStatus (navigator.onLine + WS). */}
         <ConnectionStatus />
 
-        {/* No page-transition wrapper.
+        {/* Page transition — the record of how this went wrong twice.
             Two prior attempts at a transition both failed:
               - mode="wait" + motion.div: AnimatePresence's exit→enter
                 handshake can be dropped if the parent re-renders mid-
@@ -314,25 +409,36 @@ export function AppShell({ connected }) {
                 render simultaneously as siblings in normal flow, stacking
                 vertically. The new page lands below the viewport, the old
                 fades out, and the visible area goes blank.
-            Pages just snap in — 0.15s of animation isn't worth a recurring
-            black-screen failure mode. ErrorBoundary keyed on pathname still
-            resets per-route.
+            For a long time pages just snapped in — 0.15s of animation isn't
+            worth a recurring black-screen failure mode.
 
-            The motion layer does NOT reintroduce one. The enter below is a
-            keyed CSS animation on a wrapper that mounts with the new route —
-            no AnimatePresence, no exit, no handshake that can be dropped, and
-            nothing that can leave a page stuck at opacity: 0. With the flag
-            off the wrapper is not rendered at all.
-
-            The attribute carries the direction. It stays `data-motion-enter`
-            with a VALUE rather than becoming a second attribute because
-            morph.js does `el.closest('[data-motion-enter]')` to cancel the
-            page enter when a shared-element morph runs — that lookup has to
-            keep finding the wrapper in both directions. Forward renders the
-            literal `true` a bare JSX data attribute has always produced, so
-            a PUSH is byte-for-byte the DOM it was. */}
+            The motion layer's page slide lives in
+            `src/motion/PageTransition.jsx`, which avoids both failures by
+            construction (no AnimatePresence; the outgoing page is a DOM
+            snapshot in an absolute, inert overlay dropped by a timer).
+            `?pages=off` turns only the slide off. The `data-motion-enter`
+            attribute still carries the direction on the entering layer
+            because `morph.js` looks it up — it does
+            `el.closest('[data-motion-enter]')` to cancel the page enter when
+            a shared-element morph runs, and that lookup has to keep finding
+            the wrapper in both directions. When the slide is skipped (first
+            load, `?pages=off`, reduced motion, the room FLIP's routes) that
+            attribute is all there is, and motion.css's keyed CSS enter plays
+            exactly as it did before. ErrorBoundary keyed on pathname still
+            resets per-route. */}
         {motionOn ? (
-          <div data-motion-enter={enterBack ? 'back' : true} key={location.pathname}>{routed}</div>
+          <PageTransition
+            pathKey={location.pathname}
+            back={enterBack}
+            rtl={rtl}
+            enabled={slide}
+            scrollerRef={mainRef}
+            pageRef={pageRef}
+            swiping={swiping}
+            settled={gestureBackRef}
+          >
+            {routed}
+          </PageTransition>
         ) : routed}
       </main>
 
@@ -343,8 +449,8 @@ export function AppShell({ connected }) {
       <BottomNav connected={connected} tucked={motionOn && navTucked} />
       {/* Phone chat surface. Fixed-position, so DOM order only matters for
           stacking ties: after the nav (z-30), before toasts (z-60) — and, with
-          motion on, for the sibling rule that tucks the bubble with the bar. */}
-      {motionOn && <style>{CHAT_BUBBLE_TUCK_CSS}</style>}
+          motion on, for the sibling rule in motion.css that rides the bubble
+          down with the bar as it condenses. */}
       <ChatBubble />
       <ChatSheet />
       <ToastContainer />

@@ -26,12 +26,13 @@
 // ── Two deliberate choices, both about not breaking what exists ──────────────
 //
 // 1. framer owns `y`, not `el.style.transform`.
-//    motion/gestures.js has `useSheetDetents`, a pointer-based engine that
-//    drives the transform imperatively. It encodes exactly the right rules —
-//    velocity-projected snapping, a flick threshold, rubber band past the top,
-//    body-drag only at scrollTop 0 — and this file reuses those rules and their
-//    numbers. It does not reuse the engine, because the engine would have to
-//    take `transform` away from framer, and the chat sheet's entrance is a
+//    motion/gestures.js used to have a pointer-based detent engine; it was
+//    deleted (Task 1, one token vocabulary) once this sheet had its rules.
+//    It encoded exactly the right rules — velocity-projected snapping, a
+//    flick threshold, rubber band past the top, body-drag only at scrollTop
+//    0 — and this file reuses those rules and their numbers. It never reused
+//    the engine itself, because that engine would have had to take
+//    `transform` away from framer, and the chat sheet's entrance is a
 //    framer spring (SPRING_SHEET) on `y`. Swapping that for a CSS curve is a
 //    change to the chat sheet nobody asked for. So the rules live here on top of
 //    framer's own drag, which is the system the chat sheet already used.

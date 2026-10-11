@@ -64,6 +64,17 @@ const MediaDiagnostics  = lazy(() => import('./pages/MediaDiagnostics'))
 // Public client-facing marketing site. Lazy so none of it ships in the
 // authenticated app's initial bundle — only the /welcome branch in App() loads it.
 const MarketingSite     = lazy(() => import('./marketing/MarketingSite'))
+// Motion Lab — an isolated concept board at /motion-lab. DEV BUILDS ONLY.
+//
+// `?lab=on` used to opt a production build in, which meant the lab's chunk —
+// 50 concept demos, gsap, its own CSS — was emitted into every customer's
+// bundle graph for a reference implementation nobody in a home will ever
+// open. The lab is a design artefact, not a feature; it also has its own
+// standalone build (`lab.html` + `vite.lab.config.js`) for looking at it
+// without the app. Both of the lines below are statically false in a
+// production build, so Rollup drops the import and the chunk with it.
+const MotionLab   = import.meta.env.DEV ? lazy(() => import('./lab/MotionLab')) : null
+const _labEnabled = import.meta.env.DEV
 // The device sheet. Lazy: a session that never opens a device never downloads
 // the sheet, and it is never on the critical path for the device PAGE, which
 // still renders from its own chunk exactly as before.
@@ -1301,6 +1312,18 @@ export default function App() {
     return (
       <Suspense fallback={null}>
         <MarketingSite />
+      </Suspense>
+    )
+  }
+
+  // Motion Lab — isolated playground, rendered before the auth wall like the
+  // marketing site so it needs no backend. Dev builds only (see above);
+  // in production this branch is dead code and the chunk does not exist.
+  if (_labEnabled && (window.location.pathname === '/motion-lab' ||
+      window.location.pathname.startsWith('/motion-lab/'))) {
+    return (
+      <Suspense fallback={null}>
+        <MotionLab />
       </Suspense>
     )
   }

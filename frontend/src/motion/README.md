@@ -16,6 +16,12 @@ existed. Set it with **`?motion=off`**, which sticks in that browser until
 `?motion=on`. That is the rollback path, so keep it honest: see the note in
 `flag.js`.
 
+Page transitions have their own switch on top of that one, and it is **off by
+default**: the operator reviewed the iOS push on a phone (2026-10-11) and did
+not want pages arriving from the side, so every home gets the quiet keyed
+rise/back instead. **`?pages=on`** (sticks the same way) turns the push on for
+review; `?pages=off` turns it back off. See `pages.js` and `PageTransition.jsx`.
+
 There is deliberately no on-screen switch and no keyboard shortcut. An earlier
 build had both, plus a tuner with speed and curve dials; all of it was review
 instrumentation, and a real home is not a review. The `m` shortcut was actively
@@ -26,7 +32,8 @@ with nothing to explain why.
 src/motion/
   motion.js      easing, springs, haptics, reduced-motion, velocity helpers
   flag.js        the data-motion switch (URL → localStorage → default on)
-  gestures.js    useLongPress · useSwipeBack · useSheetDetents · useScrub · useScrollChrome
+  pages.js       the page-transition switch (?pages=on|off → localStorage → default OFF)
+  gestures.js    useLongPress · useSwipeBack · useScrub · useScrollChrome
   morph.js       shared-element FLIP across a route change
   pressLayer.js  delegated press + haptic feedback for the whole app
   SheetSurface.jsx  one surface, two frames: bottom sheet / docked right panel
@@ -82,13 +89,24 @@ Kowalski's animation work:
 | `data-on="true\|false"` | a device/room tile root | on-state arrives in 220ms, leaves in 160ms |
 | `data-motion-icon` | the icon box inside such a tile | ignition pop, 6% overshoot |
 | `data-pending="true"` | a control with a command in flight | breathes until the hub answers |
-| `data-motion-enter` | routed page content | quiet rise on navigation |
+| `data-motion-enter` | routed page content | quiet rise on navigation — the fallback when the push is skipped |
+| `data-motion-page="enter\|exit\|current"` | the layers inside the page stage | names the incoming page, the outgoing overlay, and a page arriving without a slide. It names the **layer**, not a running animation: `enter` does not flip back to `current` when the slide settles, because replacing the element would remount the whole route |
+| `data-motion-stage` | the wrapper around those layers | positions and clips, but only while an overlay or a swipe is live |
+| `data-motion-push` | the entering page, while its entrance IS the slide | switches the quiet rise off, so only one entrance plays |
+| `data-motion-settled` | a page the finger placed (a committed swipe-back) | suppresses both entrances — it is already where it belongs |
+| `data-motion-under` + `data-motion-scrim` | the page painted beneath a swipe-back | parallax and dim, so the gesture reveals where it is going |
+| `data-motion-veil` | the dim sheet over the arriving page on a back slide | part of the slide, not of the page — so it is stripped out of the next snapshot |
+| `data-motion-tabs` / `data-motion-tab="<key>"` | a `TabCrossfade` container / each tab body | the outgoing body leaves and the incoming one arrives on the same spot, overlapping |
+| `data-nav-depth="active\|idle"` | each **bottom-nav** cell's inner span | the active tab comes forward, the others recede |
+| `data-nav-row` / `data-nav-label` | the bottom nav's tab row / each tab's label | the row's height and the labels' opacity, which the condense drives |
+| `data-fan-item="<n>"` (+ `data-closing`) | each item in the **More** popover | staggered fan-out, nearest the More tab first; `data-closing` is the faster retract |
+| `data-motion-more-backdrop` | the More popover's backdrop | fades in; tapping it dismisses the menu |
 | `data-motion-stagger` | a grid or list container | children arrive 35ms apart, capped at 8 |
 | `data-motion-disclosure` | a disclosure wrapper | animates open, so nothing below jumps |
 | `data-motion-reveal` | a disclosure panel | its content fades in behind the expansion |
 | `data-motion-chevron` + `data-open` | a disclosure chevron | rotates |
-| `data-motion-nav` + `data-tucked` | the bottom nav | tucks away on scroll down |
-| `data-motion-nav-hl` | the **sidebar**'s active highlight | slides between items |
+| `data-motion-nav` + `data-condensed="true\|false"` | the bottom nav | condenses to icons on scroll down |
+| `data-motion-nav-bar` | the **sidebar**'s active accent bar | slides between items |
 | `data-motion-live="true"` | **UNWIRED** — nothing emits this | would breathe; see the rules above |
 | `data-scrubbing="true"` | a control mid-drag | kills the fill transition so it tracks the finger |
 | `data-motion-hold` + `data-motion-grow` | a slider being held | the control grows under the finger |
@@ -114,9 +132,90 @@ text fading in behind the motion. Implemented as a FLIP, not framer-motion's
 page transitions that black-screened the app. A FLIP has no handshake: if the
 origin is missing or stale, the page simply renders as it does today.
 
+**Page push (off by default — `?pages=on` to review).** Going somewhere new, the page slides in from the inline-end
+edge over the one you were on, which recedes 30% the other way and dims to 35%
+behind a shadow on the incoming edge — so the page you left is visibly still
+there, behind the one you asked for. Coming back is the same movement run
+backwards and 15% faster, on the strong ease-out, because a return is not an
+arrival. `src/motion/PageTransition.jsx`, and it is deliberately not an
+`AnimatePresence`: the entering page is a plain keyed mount, the outgoing one
+is a **DOM snapshot** — `cloneNode(true)` of the page layer, taken while it is
+still on screen — painted in an inert absolute overlay that a watchdog timer
+drops, so there is no handshake to lose (AppShell's comment records the two
+page transitions that black-screened this app, both of which died on a dropped
+handshake). It is a snapshot rather than the previous element re-rendered
+because that would be a second *mount* of the page you are leaving: duplicate
+ids resolving ahead of the live page's, focus stolen by `autoFocus`, and mount
+effects firing again — a POST, or a redirect guard calling `navigate()` on the
+way out. A clone cannot run effects, focus or navigate; its ids, `autofocus`
+and motion attributes are stripped, and motion.css silences animations inside
+the overlay so the departing page does not replay its own arrival. What a clone
+*can* still do is fetch: a cloned `<img>` or `<iframe>` is a fresh request, and
+a camera's MJPEG `<img>` is a connection that stays open — so streaming image
+sources and iframes are neutralised explicitly (a cached still is left alone;
+it re-paints from cache, and showing it is the point). Nothing of
+the slide stands at rest: `position`, `z-index`, the shadow and the clip exist
+only while an overlay does. `?pages=off` turns off the slide alone and
+leaves the rest of the layer running; the quiet rise below is what plays
+instead. Skipped on the first load, under reduced motion, and on navigations
+into or out of a room's page, where the morph is the movement.
+
+**Tab depth in the bottom nav.** The active tab comes forward and the others
+recede: the live icon scales to 1.16 and lifts 2px under a soft drop shadow,
+the four idle cells sit at 0.94 and 65% opacity. Hierarchy is stated in *z*,
+not in *x* — there is no travelling pill and no object sliding between tabs —
+so the bar keeps its resting design exactly, which is what let this ship
+without touching the nav's look. The shadow is a tween rather than a spring,
+because a bouncy spring would drive the blur radius below zero and the browser
+simply rejects the value.
+
+**The More menu fans out.** The two overflow items (Alerts, Settings) rise
+from the More tab rather than appearing: each starts 16px low at 90% scale and
+springs up, staggered so the one nearest the More tab leads. Retracting is
+faster and staggered the other way. The popover is a **plain conditional, not
+an `AnimatePresence`** — the exit cycle used to stall when the `/devices` lazy
+chunk blocked the JS thread mid-animation, leaving the backdrop visibly stuck
+with every nav tap dead behind it. Dismissal is the backdrop, which is why it
+is always mounted alongside the items.
+
+**The bottom nav condenses on scroll.** Scrolling down takes the row from 56px
+to 40px and fades the labels out, leaving the icons; scrolling back up, or
+reaching the top, restores it. It never condenses while a modal or sheet is
+open, while the More menu is up, or while the offline strip is showing — that
+strip is the bar's own message and must not walk off with it. Reduced motion
+pins the row at full height from CSS rather than from a value captured at
+render, so an OS setting that flips mid-session is answered immediately.
+
+**The sidebar's accent bar.** On desktop the active row is marked by a 3px
+accent bar that *slides* from the old row to the new one, instead of a filled
+pill appearing and disappearing. One object moving is one statement about where
+you are; two pills cross-fading is two. The rows themselves stay completely
+unstyled at rest, which is what keeps the sidebar's design untouched.
+
+**Tab bodies cross-fade.** Switching Controls ↔ Info on a device, or Automatic
+↔ On-demand in Actions, no longer swaps the body in a single frame: the
+outgoing body leaves with a 3px blur and a 4px rise while the incoming one
+arrives the same way, overlapping on the same spot (`mode="popLayout"` takes
+the leaver out of flow), and the container springs its height so nothing below
+jumps. The leaver is painted *over* the arriving body, so it stops taking taps
+the moment it starts leaving — otherwise a tap during the fade lands on the tab
+you just left. A tab switch is a frequent interaction, so this is deliberately
+short. Under reduced motion the blur and the rise go and it is opacity only.
+
 **Swipe back.** Drag from the leading edge on any detail page. The page tracks
 the finger, commits past 30% of the width or on a 500px/s flick, springs back
-otherwise.
+otherwise. It **peels before it travels**: the first 32px scale the page up to
+4% from its trailing edge instead of moving it, so the gesture answers at once
+without committing to a direction it has not confirmed yet. Behind it, the page
+you are going back to is painted as a real layer — the same DOM snapshot the
+push overlay uses — parallaxed and dimmed behind a scrim that lifts as you
+pull, so the gesture reveals its destination instead of dragging the page over
+a void. A committed swipe has already told the whole story, so the navigation
+that follows mounts the arriving page **at rest** (`data-motion-settled`): no
+overlay, no travel, no rise. The gesture refuses to start when there is no
+history entry to go back to — a deep link, a shared URL or the PWA start URL
+landing straight on `/devices/<id>` — because a swipe that cannot come back is
+worse than one that is not offered.
 
 **Sheets with detents.** Full-screen modals gain a grabber, two resting
 heights, velocity-aware snapping, rubber-band resistance past the top, and a

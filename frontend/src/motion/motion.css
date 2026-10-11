@@ -1,15 +1,20 @@
 /* ── Ziggy motion layer ──────────────────────────────────────────────────
  *
  * Feel only. Every rule here is a transition, an animation or a transform on
- * a transient state. Nothing sets a colour, size, radius, spacing, font or
- * layout value, so with `data-motion="off"` the app is pixel-for-pixel what
- * it was.
+ * a transient state. Nothing sets a colour, size, radius, spacing or font, so
+ * with `data-motion="off"` the app is pixel-for-pixel what it was.
+ *
+ * ONE EXCEPTION, and it is a resting layout value: `[data-nav-row]`'s height.
+ * The bottom bar's 56px row moved in here because the condense animates it
+ * (BottomNav.jsx stops emitting its own `height` when the layer is on, so
+ * exactly one file owns it at a time and the two can never disagree). With
+ * the layer off the component sets it, as it always did.
  *
  * THIS FILE EXTENDS THE HIG v2 TOKENS, IT DOES NOT COMPETE WITH THEM.
  * index.css already defines the app's motion vocabulary:
- *     --dur-press 120ms · --dur-state 200ms · --dur-enter 240ms
+ *     --dur-press 120ms · --dur-state 200ms · --dur-enter 260ms
  *     --ease-standard cubic-bezier(0.2, 0, 0, 1)
- *     --ease-enter    cubic-bezier(0.16, 1, 0.3, 1)
+ *     --ease-enter    cubic-bezier(0.23, 1, 0.32, 1)  (= --ease-out-strong)
  * Those stay authoritative for everything they already cover: hover, press,
  * a value changing in place, something appearing. This layer adds only what
  * that vocabulary has no word for — gesture-driven surfaces and movement
@@ -23,17 +28,11 @@
 
 [data-motion="on"] {
   /* Aliases onto the app's own tokens: one vocabulary, not two. */
-  --m-std:   var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
-  --m-out:   var(--ease-enter, cubic-bezier(0.16, 1, 0.3, 1));
-
-  /* What HIG v2 has no token for: movement across a distance. A strong
-   * ease-out covers ~90% of its travel in the first third of its duration —
-   * right for a 4px press, and on a 400px hero it reads as a snap followed by
-   * a crawl, which is what "not smooth" usually means. The glide keeps speed
-   * through the middle so a large surface reads as one continuous movement. */
-  --m-glide: cubic-bezier(0.33, 0.68, 0.15, 1);
-  --m-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  --m-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --m-std:    var(--ease-standard);
+  --m-out:    var(--ease-out-strong);
+  --m-glide:  cubic-bezier(0.33, 0.68, 0.15, 1);
+  --m-in-out: var(--ease-in-out);
+  --m-drawer: var(--ease-drawer);
 
   /* Durations scale with distance. --m-scale is a single multiplier over every
      duration below; it stays at 1 and exists so the layer's overall pace can be
@@ -42,7 +41,7 @@
      someone's house. */
   --m-scale: 1;
   --m-dur-press: calc(var(--dur-press, 120ms) * var(--m-scale));
-  --m-dur-ui:    calc(var(--dur-enter, 240ms) * var(--m-scale));
+  --m-dur-ui:    calc(var(--dur-enter, 260ms) * var(--m-scale));
   --m-dur-page:  calc(340ms * var(--m-scale));
   /* Going back undoes a move you already made, so it is never slower than the
      move it undoes — the same entrance:exit ratio the state and disclosure
@@ -144,7 +143,14 @@
 /* ── Page enter ──────────────────────────────────────────────────────────
  * A quiet rise, no exit animation. There is deliberately no exit handshake
  * here: AppShell's own comment records two attempts at an exit-based page
- * transition that black-screened the app when the handshake was dropped. */
+ * transition that black-screened the app when the handshake was dropped.
+ *
+ * This is now the FALLBACK entrance. A navigation normally plays the iOS
+ * push in src/motion/PageTransition.jsx instead; the rise below is what
+ * arrives when that is skipped — the first load of the app, `?pages=off`,
+ * reduced motion, and navigations into or out of a room's own page, where
+ * the shared-element FLIP in morph.js is the movement. Exactly one of the
+ * two ever plays on a given entrance (see the push rule below). */
 
 [data-motion="on"] [data-motion-enter] {
   animation: zm-page-in var(--m-dur-page) var(--m-glide) backwards;
@@ -153,6 +159,28 @@
   from { opacity: 0; transform: translate3d(0, 8px, 0); }
   to   { opacity: 1; transform: none; }
 }
+
+/* A pushed page does not ALSO rise.
+ *
+ * The entering layer keeps `data-motion-enter` while it slides, because
+ * morph.js locates the page wrapper with `closest('[data-motion-enter]')`.
+ * But a CSS animation outranks an inline style in the cascade, so the rise
+ * above would own `transform` for its whole duration and framer's slide
+ * would be invisible underneath it — the page would rise 8px and then jump.
+ * `data-motion-push` marks the one element whose entrance is the push, and
+ * three attribute selectors beat two, so this wins wherever it sits. */
+[data-motion="on"] [data-motion-push][data-motion-enter] { animation: none; }
+
+/* Nor does a page a finger put there.
+ *
+ * A committed swipe-back ends with the previous page already in place behind
+ * the one that was thrown off-screen. The navigation that follows must add
+ * nothing: no slide (PageTransition gives that layer no travel and no
+ * overlay) and no rise or recede either, or the page the finger just placed
+ * would animate itself in afterwards. Same two-attribute shape and the same
+ * reasoning as the rule above. `data-motion-enter` stays on the layer
+ * regardless, because morph.js looks it up. */
+[data-motion="on"] [data-motion-settled][data-motion-enter] { animation: none; }
 
 /* Back is not an arrival.
  *
@@ -261,25 +289,37 @@
 [data-motion="on"] [data-motion-chevron][data-open="true"] { transform: rotate(180deg); }
 
 /* ── Bottom nav ──────────────────────────────────────────────────────────
- * Tucks away as you scroll down, returns as you scroll up. The sliding
- * highlight is drawn by the component; this is only its motion. */
+ * Condenses as you scroll down (56 → 40px, labels fade, icons stay under
+ * the thumb) and restores on the first upward scroll or at the top. This is
+ * the layer's second deliberate layout animation: `height` on a FIXED
+ * element, so nothing else on the page reflows. 40px, not the lab's 38px:
+ * the icon sits centred with 8px above it rather than under the top edge
+ * (the operator asked for more room up top). */
 
-[data-motion="on"] [data-motion-nav] {
-  transition: transform 240ms var(--m-out), opacity 200ms var(--m-std);
+[data-motion="on"] [data-motion-nav] [data-nav-row] {
+  height: 56px;
+  transition: height 400ms var(--m-out);
 }
-[data-motion="on"] [data-motion-nav][data-tucked="true"] {
-  transform: translate3d(0, calc(100% + 12px), 0);
+[data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-row] {
+  height: 40px;
+}
+[data-motion="on"] [data-motion-nav] [data-nav-label] {
+  transition: opacity 160ms var(--m-std);
+}
+[data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-label] {
   opacity: 0;
 }
-[data-motion="on"] [data-motion-nav-hl] {
-  transition: transform 320ms var(--m-out), width 320ms var(--m-out), height 320ms var(--m-out), opacity 200ms var(--m-std);
+/* The chat bubble keeps its 16px breath above the bar as it condenses. */
+[data-motion="on"] [data-motion-nav] ~ .z-chat-bubble {
+  transition: inset-block-end 400ms var(--m-out);
+}
+[data-motion="on"] [data-motion-nav][data-condensed="true"] ~ .z-chat-bubble {
+  inset-block-end: calc(var(--nav-h) - 16px + max(var(--safe-bottom), 8px) + 16px);
 }
 
-/* Sidebar: the active surface moves to the sliding highlight, which draws the
- * SAME values the active item drew (var(--surface-2) on a 0.5px var(--line)
- * border, radius 8). Handing it over rather than doubling it is what keeps
- * the resting sidebar pixel-identical. Only applies once the highlight has
- * actually been measured (data-motion-hl). */
+/* Sidebar: while the accent bar is drawn (data-motion-hl), the active item's
+ * own surface is suppressed — the bar IS the active state with the layer on.
+ * With the layer off the pill is untouched. */
 [data-motion="on"] [data-motion-nav-group][data-motion-hl="true"] .z-nav-item.active {
   background: transparent;
   border-color: transparent;
@@ -289,23 +329,9 @@
 }
 
 /* ── More menu ───────────────────────────────────────────────────────────
- * Enter only. The popover stays a plain conditional (see BottomNav's comment
- * about AnimatePresence stalling and trapping taps), so there is no exit
- * animation and no unmount to wait on — both elements still disappear the
- * frame showMore flips to false. transform-origin is set inline, at the
- * measured centre of the More tab, so the menu grows out of the thing you
- * pressed. */
-
-[data-motion="on"] [data-motion-more] {
-  animation: zm-more-in 200ms var(--m-out) backwards;
-}
-@keyframes zm-more-in {
-  from { opacity: 0; transform: scale(0.96); }
-  to   { opacity: 1; transform: none; }
-}
-[data-motion="on"] [data-motion-more-backdrop] {
-  animation: zm-fade-in 160ms var(--m-std) backwards;
-}
+ * The fan-out is driven by framer in BottomNav.jsx (per-item springs with a
+ * stagger, retract in reverse). Still no AnimatePresence: the retract is a
+ * `closing` state plus a timer. Nothing to do here except reduced motion. */
 
 /* ── Sheets and modals ───────────────────────────────────────────────────
  * The drawer curve on the way in, faster and plainer on the way out. */
@@ -338,9 +364,47 @@
  * Not "no motion": colour and opacity still carry meaning, because removing
  * them would remove information. What goes is travel, scale, and every loop.
  * Honours the OS setting directly as well as our own mirrored attribute, so
- * it is right even before the JS has run. */
+ * it is right even before the JS has run.
+ *
+ * Two parts, and both are needed: a clamp that catches everything this file
+ * does not name — transitions to .01ms, loops to one pass, animation DURATION
+ * left alone (see the note on it below) — and the named rules that say what
+ * each of the layer's own movements becomes. */
 
 @media (prefers-reduced-motion: reduce) {
+  /* THE CLAMP, AND WHY IT IS BACK.
+   *
+   * index.css's global clamp was scoped to `html:not([data-motion="on"])` so
+   * that this file could own the policy with the layer on. That was right for
+   * every rule this file NAMES and wrong for everything it does not: a
+   * transition written inline by a component, a `@keyframes` loop in a page's
+   * own CSS, anything a dependency animates. With the layer ON those were
+   * suddenly unclamped under reduced motion — the one combination nobody
+   * looks at by hand.
+   *
+   * `.01ms`, NOT a "gentle" 160ms. A universal `transition-duration` does not
+   * only shorten the transitions that exist; every element's initial
+   * `transition-property` is `all`, so a non-zero duration here CREATES a
+   * transition on everything — tiles slide into place, and framer's per-frame
+   * inline writes to transform and opacity smear into each other instead of
+   * being applied. Imperceptible is the only safe universal value, which is
+   * what the old global clamp always said.
+   *
+   * `animation-duration` is deliberately NOT clamped: the named rules below
+   * replace this layer's travel with `zm-fade-in` at 140–160ms, and that is
+   * the "keep colour and opacity" half of reduced motion. Only the iteration
+   * count is capped here, which is what stops a loop nobody named. */
+  [data-motion="on"] *,
+  [data-motion="on"] *::before,
+  [data-motion="on"] *::after {
+    transition-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  /* ...except the one loop that means "still working". A spinner stopped after
+   * one turn does not read as calmer, it reads as a hung app — and unlike a
+   * decorative pulse, nothing else on screen carries that information. */
+  [data-motion="on"] .z-spin { animation-iteration-count: infinite !important; }
+
   [data-motion="on"] [data-pressing] { transform: none; }
   [data-motion="on"] [data-on="true"] [data-motion-icon] { animation: none; }
   /* `[data-motion-enter="back"]` is listed explicitly, not left to the
@@ -363,17 +427,34 @@
   [data-motion="on"] [data-motion-disclosure] { --zm-stagger-from: 0ms; }
   [data-motion="on"] [data-motion-live="true"] { animation: none; opacity: 0.9; }
   [data-motion="on"] [data-pending="true"] { animation: none; opacity: 0.75; }
-  [data-motion="on"] [data-motion-nav][data-tucked="true"] { transform: none; opacity: 1; }
-  /* The highlight still marks the active tab, it just stops travelling. */
-  [data-motion="on"] [data-motion-nav-hl] { transition: opacity 160ms var(--m-std); }
-  [data-motion="on"] [data-motion-more] { animation: zm-fade-in 140ms var(--m-out) backwards; }
+  [data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-row] { height: 56px; }
+  [data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-label] { opacity: 1; }
+  [data-motion="on"] [data-motion-nav][data-condensed="true"] ~ .z-chat-bubble { inset-block-end: calc(var(--nav-h) + max(var(--safe-bottom), 8px) + 16px); }
+  /* Loops that live outside this file (Tailwind's pulse, the health dot). */
+  [data-motion="on"] .animate-pulse { animation: none; }
+  [data-motion="on"] .z-pulse { animation: none; }
 }
+/* The attribute form of everything above, for an OS setting that flips
+   mid-session (the media query answers before the JS has run; this answers
+   after it). The clamp is mirrored first, same reasoning and the same .01ms —
+   a non-zero universal transition-duration would invent transitions on
+   elements that have none. */
+[data-motion-reduced="true"][data-motion="on"] *,
+[data-motion-reduced="true"][data-motion="on"] *::before,
+[data-motion-reduced="true"][data-motion="on"] *::after {
+  transition-duration: .01ms !important;
+  animation-iteration-count: 1 !important;
+}
+[data-motion-reduced="true"][data-motion="on"] .z-spin { animation-iteration-count: infinite !important; }
 [data-motion-reduced="true"][data-motion="on"] [data-pressing] { transform: none; }
 [data-motion-reduced="true"][data-motion="on"] [data-motion-live="true"] { animation: none; opacity: 0.9; }
 [data-motion-reduced="true"][data-motion="on"] [data-on="true"] [data-motion-icon] { animation: none; }
-[data-motion-reduced="true"][data-motion="on"] [data-motion-nav][data-tucked="true"] { transform: none; opacity: 1; }
-[data-motion-reduced="true"][data-motion="on"] [data-motion-nav-hl] { transition: opacity 160ms var(--m-std); }
+[data-motion-reduced="true"][data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-row] { height: 56px; }
+[data-motion-reduced="true"][data-motion="on"] [data-motion-nav][data-condensed="true"] [data-nav-label] { opacity: 1; }
+[data-motion-reduced="true"][data-motion="on"] [data-motion-nav][data-condensed="true"] ~ .z-chat-bubble { inset-block-end: calc(var(--nav-h) + max(var(--safe-bottom), 8px) + 16px); }
 [data-motion-reduced="true"][data-motion="on"] [data-motion-disclosure] { transition: none; --zm-stagger-from: 0ms; }
+[data-motion-reduced="true"][data-motion="on"] .animate-pulse { animation: none; }
+[data-motion-reduced="true"][data-motion="on"] .z-pulse { animation: none; }
 
 @keyframes zm-fade-in {
   from { opacity: 0; }
@@ -386,3 +467,35 @@
 
 [data-motion="on"] :focus-visible { transition: none !important; }
 [data-motion="on"] [data-pressing] :is([style*="position: fixed"], .fixed) { transform: none; }
+
+/* A snapshot does not animate.
+ *
+ * The outgoing page in a push — and the page beneath a swipe-back, which is
+ * the same snapshot — is a cloned DOM subtree, and inserting a clone
+ * re-triggers every CSS entrance it carries: the page rise, every stagger.
+ * Without this the page you are LEAVING replays its own arrival while it
+ * recedes. The clone's root has the motion attributes stripped off it in JS;
+ * this is the rest of its subtree.
+ *
+ * `!important`, not order. Being last in the file only wins a tie, and the
+ * descendant rules it has to beat are not ties: `[data-motion="on"]
+ * [data-on="true"] [data-motion-icon]` (zm-ignite) and the disclosure form of
+ * zm-reveal are three selectors to this rule's two, so they outranked it and
+ * a cloned device icon still bloomed on its way out. */
+[data-motion="on"] [data-motion-page="exit"],
+[data-motion="on"] [data-motion-page="exit"] * { animation: none !important; }
+[data-motion="on"] [data-motion-under],
+[data-motion="on"] [data-motion-under] * { animation: none !important; }
+
+/* A page mid-slide is a transformed ancestor; anything position:fixed inside
+ * it is trapped for ≤420ms. Pages keep their fixed children out of the
+ * routed tree (toasts, nav, bubble, dialogs are siblings or portals).
+ *
+ * Not all of them do, in fact: Devices' row menus and Cameras' full-screen
+ * view are `position: fixed` inside the page. They are fine — a menu cannot
+ * be open on a page that is only now arriving — but it is why
+ * PageTransition lifts `position`, `z-index` and the stage's
+ * `overflow-x: clip` ONLY while a slide is actually running. A standing
+ * stacking context around the routed page would re-stack a z-index:9999
+ * menu under the bottom nav, and a standing `position: relative` would
+ * re-parent every absolutely positioned descendant of every page. */
