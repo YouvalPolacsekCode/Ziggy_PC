@@ -344,7 +344,7 @@ class FlowStartBody(BaseModel):
 
 
 @router.get("/api/pairing/wifi-brands")
-async def wifi_brands():
+async def wifi_brands(_user: dict = Depends(require_role("admin"))):
     """Brands the user can pair by name when nothing was auto-discovered.
 
     Carries no Home Assistant vocabulary — the handler behind each brand is an
@@ -395,7 +395,7 @@ async def config_flow_start(body: FlowStartBody,
 
 
 @router.get("/api/pairing/smart-ac-probe")
-async def smart_ac_probe():
+async def smart_ac_probe(_user: dict = Depends(require_role("admin"))):
     """Is there an air conditioner on this network we can control properly?
 
     Asked before letting anyone teach an infrared AC remote. In a multi-split
@@ -440,7 +440,8 @@ class IdentifyBody(BaseModel):
 
 
 @router.get("/api/pairing/climate-units")
-async def pairing_climate_units(entry_id: Optional[str] = None):
+async def pairing_climate_units(entry_id: Optional[str] = None,
+                                _user: dict = Depends(require_role("admin"))):
     """Air conditioners to place in rooms.
 
     With `entry_id`, everything the pairing just produced — the count the
