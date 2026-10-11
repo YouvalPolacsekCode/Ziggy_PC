@@ -57,7 +57,7 @@ export function SensorRemote({ entity }) {
           {facts.stateLabel}
         </div>
         <div style={{ fontSize: 13, marginTop: 8, color: 'var(--ink-mute)' }}>
-          {facts.meta.label}
+          {facts.kindLabel}
         </div>
       </div>
 

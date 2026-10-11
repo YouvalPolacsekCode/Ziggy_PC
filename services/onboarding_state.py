@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from typing import Iterable, Optional
 
 from core.logger_module import log_error, log_info
+from services.usage_counters import bump as _usage_bump
 
 
 ONBOARDING_FILE = "user_files/onboarding.json"
@@ -128,6 +129,7 @@ def mark_step(step_id: str, *, skipped: bool = False) -> dict:
                 skipped_list.remove(step_id)
         state["last_step"] = step_id
 
+    _usage_bump("onboarding_step")
     return _mutate(apply)
 
 

@@ -154,7 +154,7 @@ function SettingRow({ icon: Icon, label, subtitle, children }) {
         {Icon && <Icon size={20} strokeWidth={1.75} style={{ flexShrink: 0, color: 'var(--ink-mute)' }} />}
         <div style={{ minWidth: 0 }}>
           <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{label}</p>
-          {subtitle && <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</p>}
+          {subtitle && <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{subtitle}</p>}
         </div>
       </div>
       {children}
@@ -228,7 +228,7 @@ function HubCard({ icon: Icon, title, subtitle, to, badge }) {
             {badge && <span className="z-chip">{badge}</span>}
           </p>
           {subtitle && (
-            <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
               {subtitle}
             </p>
           )}
@@ -424,7 +424,7 @@ function ZigbeeBridgeSection({ isAdmin }) {
               <Zap size={20} strokeWidth={1.75} style={{ color: pairingActive ? 'var(--accent)' : 'var(--ink-mute)', flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
                 <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('zigbeeBridge.pairingMode')}</p>
-                <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
+                <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} dir="auto">
                   {pairingActive
                     ? t('zigbeeBridge.pairingActive', { n: countdown })
                     : t('zigbeeBridge.pairingIdle')}
@@ -634,7 +634,7 @@ function PresenceSection() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 48, padding: '8px 16px' }}>
           <div style={{ minWidth: 0 }}>
             <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{t('homeSensing.trackMe.title')}</p>
-            <p style={{ fontSize: 13, color: trackMe ? 'var(--ok-text)' : 'var(--ink-mute)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} dir="auto">
+            <p style={{ fontSize: 13, color: trackMe ? 'var(--ok-text)' : 'var(--ink-mute)', marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} dir="auto">
               {trackMe
                 ? (trackMeStatus === 'home'  ? `${t('homeSensing.trackMe.activeHome')}${trackMePerson ? ' · ' + trackMePerson.name : ''}`
                   : trackMeStatus === 'away'  ? `${t('homeSensing.trackMe.activeAway')}${trackMePerson ? ' · ' + trackMePerson.name : ''}`

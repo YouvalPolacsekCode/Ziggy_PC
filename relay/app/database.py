@@ -93,6 +93,24 @@ CREATE TABLE IF NOT EXISTS home_backup_keys (
 -- Aggregation is one row per (home_id, day). last_seen_ts records the
 -- newest sample inside that day's window so a stale aggregate is
 -- detectable (no telemetry posted on day X → no row for day X).
+-- Every LLM call the relay forwards for a home, as numbers only (no prompt, no
+-- answer — those describe someone's private home). This is the one place the
+-- company can see what a customer's chat and automation design cost it, per home,
+-- per day. Cost is computed at write time from the price table in routers/llm.py.
+CREATE TABLE IF NOT EXISTS llm_usage (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    home_id       TEXT    NOT NULL,
+    ts            TEXT    NOT NULL,
+    model         TEXT,
+    input_tokens  INTEGER NOT NULL DEFAULT 0,
+    cached_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd      REAL    NOT NULL DEFAULT 0,
+    streamed      INTEGER NOT NULL DEFAULT 0,
+    estimated     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS llm_usage_home_ts ON llm_usage(home_id, ts);
+
 CREATE TABLE IF NOT EXISTS telemetry_raw (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     home_id   TEXT    NOT NULL,

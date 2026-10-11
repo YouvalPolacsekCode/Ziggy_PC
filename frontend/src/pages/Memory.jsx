@@ -43,19 +43,20 @@ function inferSource(key) {
 // Chip = neutral capsule; the source is carried by an 8px dot so no status
 // colour ever has to be read as 13px text.
 const SOURCE_META = {
-  learned: { label: 'learned', dot: 'z-dot-info' },
-  told:    { label: 'told',    dot: 'z-dot-ok' },
-  config:  { label: 'config',  dot: null },
+  learned: { label: 'memory.sourceLearned', dot: 'z-dot-info' },
+  told:    { label: 'memory.sourceTold',    dot: 'z-dot-ok' },
+  config:  { label: 'memory.sourceConfig',  dot: null },
 }
 
 function SourcePill({ src }) {
+  const t = useT()
   const m = SOURCE_META[src] || SOURCE_META.told
   return (
     <span className="z-chip" style={{ flexShrink: 0 }}>
       {m.dot
         ? <span className={`z-dot ${m.dot}`} />
         : <span className="z-dot" style={{ background: 'var(--ink-faint)' }} />}
-      {m.label}
+      {t(m.label)}
     </span>
   )
 }

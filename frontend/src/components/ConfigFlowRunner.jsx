@@ -9,7 +9,13 @@ import { Loader2, Check, X, Send } from 'lucide-react'
 import { configFlowStep, configFlowCancel } from '../lib/api'
 import { useT } from '../lib/i18n'
 
-export default function ConfigFlowRunner({ flowId, title, onDone, onCancel, onGone }) {
+// `initialStep` is for flows Ziggy started itself (brand-initiated pairing),
+// where the caller already holds the first step. Without it the auto-submit
+// below fires a blind empty step — harmless for a discovered device's empty
+// confirm, but wrong for a flow whose first step asks for input (Electra wants
+// a phone number), which would come straight back as a validation error.
+// Discovered flows pass no initialStep and behave exactly as before.
+export default function ConfigFlowRunner({ flowId, title, initialStep, onDone, onCancel, onGone }) {
   const t = useT()
   const [step, setStep]   = useState(null)   // reshaped envelope
   const [input, setInput] = useState({})
@@ -52,6 +58,7 @@ export default function ConfigFlowRunner({ flowId, title, onDone, onCancel, onGo
     if (initedFlow.current === flowId) return
     initedFlow.current = flowId
     setStep(null); setInput({}); setError(null); setGone(null)
+    if (initialStep) { apply(initialStep); return }
     send({})
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [flowId])

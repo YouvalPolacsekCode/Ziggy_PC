@@ -214,7 +214,7 @@ function SwitchRemote({ entity }) {
           {isOn ? i18nT('common.on') : i18nT('common.off')}
         </div>
         <div style={{ fontSize: 13, marginTop: 4, color: 'var(--ink-mute)' }}>
-          {facts.meta.label}
+          {facts.kindLabel}
         </div>
       </div>
       <button

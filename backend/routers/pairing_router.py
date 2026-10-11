@@ -273,7 +273,13 @@ def _present_config_step(step: dict) -> dict:
     flow_id = step.get("flow_id")
     if kind == "create_entry":
         _schedule_registry_refresh(delay_s=2)
+        # Carry the new entry's id so a caller can ask what it produced. One
+        # Gree entry yields one device per physical AC, which is how the
+        # room-mapping step knows a home has four of them without asking.
+        result = step.get("result")
+        entry_id = result.get("entry_id") if isinstance(result, dict) else result
         return {"ok": True, "status": "done", "flow_id": flow_id,
+                "entry_id": entry_id if isinstance(entry_id, str) else None,
                 "title": step.get("title") or "Device added"}
     if kind == "abort":
         return {"ok": False, "status": "aborted", "flow_id": flow_id,
@@ -331,6 +337,154 @@ async def config_flow_step(flow_id: str, body: FlowStepBody,
     if not res.get("ok"):
         return _present_config_error(res)
     return _present_config_step(res["step"])
+
+
+class FlowStartBody(BaseModel):
+    brand: str
+
+
+@router.get("/api/pairing/wifi-brands")
+async def wifi_brands(_user: dict = Depends(require_role("admin"))):
+    """Brands the user can pair by name when nothing was auto-discovered.
+
+    Carries no Home Assistant vocabulary — the handler behind each brand is an
+    implementation detail (see services/wifi_brands.py).
+    """
+    from services.wifi_brands import listed
+    return {"ok": True, "brands": listed()}
+
+
+@router.post("/api/pairing/config-flow/start")
+async def config_flow_start(body: FlowStartBody,
+                            _user: dict = Depends(require_role("admin"))):
+    """Start a user-sourced HA config flow for a brand the customer picked.
+
+    The discovery list above can only show devices that announce themselves.
+    Air conditioners never do: `gree` (Tadiran) declares no zeroconf/dhcp/ssdp
+    and runs its broadcast scan inside the *user* step, and `electrasmart`
+    (Electra) is cloud-polling with an SMS code. Without this route those
+    devices are unpairable — a customer rescans forever and sees nothing.
+
+    Returns the SAME envelope as the discovery path so the existing
+    ConfigFlowRunner drives the resulting flow without any special casing.
+    """
+    from services.ha_flow_driver import init_flow
+    from services.wifi_brands import abort_guidance, handler_for
+
+    handler = handler_for(body.brand)
+    if not handler:
+        # Allowlist is a boundary, not a hint: never start an arbitrary flow.
+        raise HTTPException(status_code=400, detail="Unsupported brand")
+
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/pairing/config-flow/start",
+               user=_user.get("username"), auth_added=True)
+
+    res = await init_flow(handler, source="user")
+    if not res.get("ok"):
+        return _present_config_error(res)
+
+    out = _present_config_step(res["step"])
+    if out.get("status") == "aborted":
+        # A bare reason code ("no_devices_found") is a dead end. Say what to
+        # check, naming the brand the user actually chose.
+        guidance = abort_guidance(out.get("reason") or "", body.brand)
+        if guidance:
+            out["detail"] = guidance
+    return out
+
+
+@router.get("/api/pairing/smart-ac-probe")
+async def smart_ac_probe(_user: dict = Depends(require_role("admin"))):
+    """Is there an air conditioner on this network we can control properly?
+
+    Asked before letting anyone teach an infrared AC remote. In a multi-split
+    home infrared cannot address a specific unit at all — one handset drives
+    every AC by proximity — so sending such a user to infrared produces a
+    device that looks paired and controls nothing in particular.
+
+    This is a real scan, not a guess: the vendor's own flow performs a UDP
+    broadcast. We read the answer and ALWAYS abort, so merely looking never
+    creates a config entry or strands a one-shot flow.
+    """
+    from services.ha_flow_driver import abort_flow, init_flow
+    from services.wifi_brands import handler_for
+
+    brand = "tadiran"
+    res = await init_flow(handler_for(brand), source="user")
+    if not res.get("ok"):
+        # Can't tell. Must not claim a smart AC exists — that would block the
+        # infrared path for someone who genuinely needs it.
+        return {"ok": False, "available": False, "brand": brand}
+
+    step = res.get("step") or {}
+    flow_id = step.get("flow_id")
+    reason = step.get("reason")
+    # A form means hardware answered. "Already configured" means this home
+    # has smart ACs set up, which is an even stronger reason to avoid IR.
+    available = (step.get("type") != "abort") or reason in (
+        "single_instance_allowed", "already_configured")
+
+    if flow_id:
+        try:
+            await abort_flow(flow_id)
+        except Exception:
+            pass
+
+    return {"ok": True, "available": bool(available), "brand": brand}
+
+
+class IdentifyBody(BaseModel):
+    entity_id: str
+    seconds: Optional[int] = None
+
+
+@router.get("/api/pairing/climate-units")
+async def pairing_climate_units(entry_id: Optional[str] = None,
+                                _user: dict = Depends(require_role("admin"))):
+    """Air conditioners to place in rooms.
+
+    With `entry_id`, everything the pairing just produced — the count the
+    "found N air conditioners" step shows. Without it, only units that still
+    have no room, which is how a unit that came back online later gets noticed.
+    """
+    from services.ha_pairing import climate_units
+    return await climate_units(entry_id=entry_id)
+
+
+@router.post("/api/pairing/identify")
+async def pairing_identify(body: IdentifyBody,
+                           _user: dict = Depends(require_role("admin"))):
+    """Make one AC announce itself so the user can say which room it's in.
+
+    Four identical units are indistinguishable on screen and an AC cannot
+    blink, so the unit runs for a few seconds and is then put back exactly as
+    it was. Returns as soon as the pulse starts — holding the request open for
+    the full window would trip the client's timeout and leave the user
+    wondering whether it worked.
+    """
+    from services.device_identify import identify, DEFAULT_SECONDS
+
+    seconds = body.seconds if body.seconds is not None else DEFAULT_SECONDS
+    seconds = max(0, min(int(seconds), 60))  # never park a customer's AC for long
+
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/pairing/identify",
+               user=_user.get("username"), auth_added=True)
+
+    try:
+        # Validate before backgrounding, so a bad entity is a 400 the user
+        # sees rather than a silent no-op in a task nobody is watching.
+        if not body.entity_id.startswith("climate."):
+            raise HTTPException(status_code=400,
+                                detail="identify supports air conditioners only")
+        asyncio.create_task(identify(body.entity_id, seconds=seconds))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return {"ok": True, "entity_id": body.entity_id, "seconds": seconds}
 
 
 @router.post("/api/pairing/config-flow/{flow_id}/cancel")

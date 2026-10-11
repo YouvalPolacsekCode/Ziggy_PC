@@ -108,6 +108,8 @@ TEMPLATES: list[dict] = [
         "id":                    "leave_home",
         "name":                  "Leave Home",
         "description":           "Turn off the lights and AC the moment everyone's left the house.",
+        "name_he":               "יציאה מהבית",
+        "description_he":        "כיבוי האורות והמזגן ברגע שכולם יצאו מהבית.",
         "category":              "presence",
         "icon":                  "🚪",
         # Needs SOME way to know everyone left — a phone/GPS, a motion sensor, or
@@ -134,6 +136,8 @@ TEMPLATES: list[dict] = [
         "retired":               True,   # curation 2026-07-19: covered by Leave Home / Smart Room; see spec addendum A4
         "name":                  "Welcome Home",
         "description":           "Turn the lights on the second you open the front door.",
+        "name_he":               "ברוכים הבאים",
+        "description_he":        "האורות נדלקים ברגע שדלת הכניסה נפתחת.",
         "category":              "presence",
         "icon":                  "🏠",
         "required_capabilities": ["door_sensor", "light_on_off"],
@@ -154,6 +158,8 @@ TEMPLATES: list[dict] = [
         "id":                    "precool_on_arrival",
         "name":                  "Pre-cool on Arrival",
         "description":           "Start the AC on your way home so the room is already cool when you walk in.",
+        "name_he":               "קירור לקראת הגעה",
+        "description_he":        "המזגן מתחיל לעבוד בדרך הביתה, כך שהחדר כבר קריר כשנכנסים.",
         "category":              "climate",
         "icon":                  "🏡",
         # Needs an AC to control; presence (GPS) is gated inside the dedicated
@@ -179,6 +185,8 @@ TEMPLATES: list[dict] = [
         "retired":               True,   # curation 2026-07-19: see spec addendum A4
         "name":                  "Sleep Mode",
         "description":           "Lights off and AC at sleep temperature when you go to bed.",
+        "name_he":               "מצב שינה",
+        "description_he":        "אורות כבויים ומזגן בטמפרטורת שינה כשהולכים לישון.",
         "category":              "routine",
         "icon":                  "🌙",
         "required_capabilities": ["light_on_off"],
@@ -199,6 +207,8 @@ TEMPLATES: list[dict] = [
         "retired":               True,   # curation 2026-07-19: see spec addendum A4
         "name":                  "Morning Routine",
         "description":           "Lights on and a comfortable temperature waiting for you when you wake up.",
+        "name_he":               "שגרת בוקר",
+        "description_he":        "אורות דולקים וטמפרטורה נעימה מחכים לכם כשמתעוררים.",
         "category":              "routine",
         "icon":                  "☀️",
         "required_capabilities": ["light_on_off"],
@@ -243,6 +253,8 @@ TEMPLATES: list[dict] = [
         "retired":               True,   # curation 2026-07-19: see spec addendum A4
         "name":                  "Child Room Comfort Monitor",
         "description":           "Send you an alert when a room gets too hot — handy for a kid's room.",
+        "name_he":               "מעקב חום בחדר ילדים",
+        "description_he":        "התראה כשחדר מתחמם יותר מדי — שימושי לחדר ילדים.",
         "category":              "safety",
         "icon":                  "👶",
         "required_capabilities": ["room_temperature"],
@@ -267,6 +279,8 @@ TEMPLATES: list[dict] = [
         # condition in the wizard, not a separate template.
         "name":                  "Motion Light",
         "description":           "Light on when you walk in, off a couple of minutes later. Night-only if you want.",
+        "name_he":               "אור לפי תנועה",
+        "description_he":        "האור נדלק כשנכנסים ונכבה כמה דקות אחר כך. אפשר גם רק בלילה.",
         "category":              "comfort",
         "icon":                  "👣",
         "required_capabilities": ["motion_sensor", "light_on_off"],
@@ -340,6 +354,8 @@ TEMPLATES: list[dict] = [
         "id":                    "circadian_lighting",
         "name":                  "Smart Light Schedule",
         "description":           "Match your lights to the time of day — cool and bright at noon, warm and soft at night.",
+        "name_he":               "לוח זמנים חכם לתאורה",
+        "description_he":        "התאורה עוקבת אחרי שעות היום — קרה ובהירה בצהריים, חמה ורכה בלילה.",
         "category":              "comfort",
         "icon":                  "🌅",
         "required_capabilities": ["has_color_temp_light"],
@@ -385,6 +401,8 @@ TEMPLATES: list[dict] = [
         "id":                    "ac_window_interlock",
         "name":                  "Window Open — AC Off",
         "description":           "When a window opens with the AC running, get a push with a one-tap shutoff.",
+        "name_he":               "חלון פתוח — כיבוי מזגן",
+        "description_he":        "כשחלון נפתח בזמן שהמזגן עובד, מגיעה התראה עם כיבוי בלחיצה אחת.",
         "category":              "climate",
         "icon":                  "🪟",
         # Needs an AC (smart OR IR) AND a window/door sensor. The dedicated wizard
@@ -440,6 +458,7 @@ TEMPLATES: list[dict] = [
         "name":                  "Away — Simulate Presence",
         "name_he":               "מצב חופשה — הדמיית נוכחות",
         "description":           "Make the home look lived-in while you're away — Ziggy cycles lights and TV randomly through the day.",
+        "description_he":        "הבית נראה מאויש גם כשאתם לא — זיגי מדליק ומכבה אורות וטלוויזיה באקראי לאורך היום.",
         "category":              "safety",
         "icon":                  "🌙",
         "recommended_by_ziggy":  True,

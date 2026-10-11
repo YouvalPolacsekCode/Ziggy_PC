@@ -790,13 +790,14 @@ export function RoutinesListPanel({ embedded = false }) {
 
 export default function Routines() {
   const { routines } = useAutomationStore()
+  const t = useT()
   return (
     <div style={{ maxWidth: 'var(--page-max-w)', margin: '0 auto', padding: '24px 20px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <p className="z-eyebrow" style={{ marginBottom: 4 }}>Sequences of steps</p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>Routines</h1>
-          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontVariantNumeric: 'tabular-nums', }}>{routines.length} routine{routines.length !== 1 ? 's' : ''}</p>
+          <p className="z-eyebrow" style={{ marginBottom: 4 }}>{t('routines.eyebrow')}</p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>{t('routines.title')}</h1>
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4, fontVariantNumeric: 'tabular-nums', }}>{routines.length === 1 ? t('routines.countOne', { n: 1 }) : t('routines.countPlural', { n: routines.length })}</p>
         </div>
       </div>
       <RoutinesListPanel />

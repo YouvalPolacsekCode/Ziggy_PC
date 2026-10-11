@@ -24,7 +24,7 @@ import { cameraSnapshotUrl } from '../stores/cameraStore'
 import { cn, formatEntityState, humanizeSlug } from '../lib/utils'
 import { findRoomMetric, averageRoomMetric, roomOccupancy, fusedOccupancyIdSet, inferBinarySensorClass } from '../lib/devices'
 import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto, storeCustomDataUrl, removeCustomPhoto, resizeImageToDataUrl } from '../lib/roomPhotos'
-import { useT, useTranslatedName } from '../lib/i18n'
+import { useT, useTranslatedName, translateName, getLang } from '../lib/i18n'
 // ── Motion layer ──────────────────────────────────────────────────────────────
 // Feel only. Every hook below is a no-op while `<html data-motion="off">`, and
 // every CSS rule they trigger is scoped under [data-motion="on"], so the
@@ -363,7 +363,7 @@ export function RoomEditModal({ open, room, onClose, onSaved }) {
           )}
           <div style={{ height: 252, overflowY: 'scroll', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)', marginBottom: 12 }} className="scrollbar-thin">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, padding: 8 }}>
-              {PHOTO_OPTIONS.map(({ key, label }) => {
+              {PHOTO_OPTIONS.map(({ key, label: rawLabel }) => { const label = translateName(rawLabel, getLang())
                 const isSelected = !customPhoto && photoKey === key
                 return (
                   <button key={key} type="button" onClick={() => { setPhotoKey(key); setCustomPhoto(null) }} aria-pressed={isSelected} style={{
@@ -846,7 +846,7 @@ export function RoomsList() {
             <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 8 }}>{t('rooms.photo')}</p>
             <div style={{ height: 252, overflowY: 'scroll', borderRadius: 'var(--r-ctl)', border: '0.5px solid var(--line)' }} className="scrollbar-thin">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, padding: 8 }}>
-                {PHOTO_OPTIONS.map(({ key, label }) => {
+                {PHOTO_OPTIONS.map(({ key, label: rawLabel }) => { const label = translateName(rawLabel, getLang())
                   const isSelected = newRoomPhoto === key
                   return (
                     <button key={key} type="button" onClick={() => setNewRoomPhoto(key)} aria-pressed={isSelected} style={{
@@ -1029,7 +1029,7 @@ function SensorsStrip({ devices }) {
   const renderSensor = (entity) => {
     const domain = entity.domain
     const dcRaw = entity.ha_attributes?.device_class || entity.device_class
-    const name = entity._group?.name || entity.display_name || humanizeSlug(entity.entity_id) || ''
+    const name = translateName(entity._group?.name || entity.display_name || humanizeSlug(entity.entity_id) || '', getLang())
     const rawState = entity.ha_state || entity.state || '—'
     const unit = entity.ha_attributes?.unit_of_measurement || ''
     // For binary_sensors, route through formatEntityState so we get the
@@ -1080,7 +1080,9 @@ function SensorsStrip({ devices }) {
           onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--surface)' }}
         >
           <div style={{ color: 'var(--ink-faint)', marginBottom: 8, display: 'flex' }}><RoomZIcon name={icon} size={18} /></div>
-          <div className="z-mono" style={{ fontSize: 20, lineHeight: '28px', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val}</div>
+          {/* Three tiles share a phone's width; a two-word reading ("אין תנועה")
+              wraps to a second line rather than losing its end to an ellipsis. */}
+          <div className="z-mono" dir="auto" style={{ fontSize: 20, lineHeight: '26px', fontWeight: 600, color: 'var(--ink)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }}>{val}</div>
           <div dir="auto" className="z-footnote" style={{ marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
         </button>
       ))}

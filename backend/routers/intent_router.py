@@ -20,6 +20,7 @@ from core.intent_parser import quick_parse
 from core.logger_module import log_error, log_info
 from core.result_utils import render_result
 from core.debug_bus import bus, BASIC, VERBOSE, TRACE
+from services.usage_counters import bump as _usage_bump
 
 router = APIRouter()
 
@@ -256,6 +257,7 @@ def _actor_ref(request: Request | None) -> str | None:
 @router.post("/api/intent")
 async def process_intent(req: IntentRequest, request: Request):
     request_id = _new_request_id()
+    _usage_bump("chat_message")
     rehearsal.activate_if_enabled()
 
     bus.emit("intent", BASIC, "request_received",
@@ -390,6 +392,7 @@ async def _announce_ziggy_response(text, reply, source, ok, intent, request_id, 
 @router.post("/api/chat")
 async def process_chat(req: ChatRequest, request: Request):
     request_id = _new_request_id()
+    _usage_bump("chat_message")
     actor = _actor_ref(request)
     # Rehearsal mode: this turn (and any task it spawns) skips home writes.
     rehearsal.activate_if_enabled()
@@ -613,6 +616,7 @@ async def transcribe_voice(request: Request, file: UploadFile = File(...)):
 async def process_voice(request: Request, file: UploadFile = File(...)):
     _voice_rate_check(request)
     request_id = _new_request_id()
+    _usage_bump("voice_command")
     rehearsal.activate_if_enabled()
 
     ctype = (file.content_type or "").split(";", 1)[0].strip().lower()

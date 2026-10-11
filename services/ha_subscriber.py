@@ -33,6 +33,7 @@ from core.settings_loader import settings
 from core.logger_module import log_info, log_error
 from core.debug_bus import bus as _dbus, BASIC, VERBOSE, TRACE
 from services import ha_client
+from services.usage_counters import bump as _usage_bump
 
 # Credentials are read live inside _run_once / _refresh_with_retry. Snapshotting
 # them at import time would mean a token rotation only takes effect after a full
@@ -230,6 +231,15 @@ async def _run_deferred_automation_actions(entity_id: str, attrs: dict) -> None:
     )
 
 
+def _automation_fired(old_state: Optional[dict], new_attrs: dict) -> bool:
+    """True when HA's `last_triggered` moved to a new, non-empty value."""
+    new_lt = (new_attrs or {}).get("last_triggered")
+    if not new_lt:
+        return False
+    old_lt = ((old_state or {}).get("attributes") or {}).get("last_triggered")
+    return new_lt != old_lt
+
+
 async def _process_event(event: dict) -> None:
     """Handle a single state_changed event from HA."""
     data = event.get("event", {}).get("data", {})
@@ -271,6 +281,13 @@ async def _process_event(event: dict) -> None:
         "attributes": attrs,
         "last_changed": new_state.get("last_changed", ""),
     }
+
+    # Ziggy automations ARE native HA automations, so the one place every
+    # firing shows up — manual, time, presence, sensor — is HA moving the
+    # automation entity's last_triggered. Counted here, once, for usage
+    # telemetry (no name, no id, just "one fired").
+    if entity_id.startswith("automation.") and _automation_fired(old_state, attrs):
+        _usage_bump("automation_triggered")
 
     # Broadcast to frontend FIRST — this is the user-perceived latency path
     # for "click → tile reflects HA's confirmed state". Every other operation

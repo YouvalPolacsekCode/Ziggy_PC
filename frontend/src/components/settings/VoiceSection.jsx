@@ -19,7 +19,8 @@ const SAMPLE_TEXT = {
   en: "Hi, I'm Ziggy. I've turned on the living room light.",
 }
 
-const LANG_LABEL = { he: 'עברית', en: 'English' }
+// Named in the viewer's language: a Hebrew page says "אנגלית", not "בEnglish".
+const LANG_LABEL_KEY = { he: 'lang.he', en: 'lang.en' }
 
 function LangPicker({ lang, voices, active, onPickAndSave }) {
   const t = useT()
@@ -66,7 +67,7 @@ function LangPicker({ lang, voices, active, onPickAndSave }) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p className="z-eyebrow">
-          {t('voiceSettings.replyLanguageLabel', { lang: LANG_LABEL[lang] })}
+          {t('voiceSettings.replyLanguageLabel', { lang: t(LANG_LABEL_KEY[lang]) })}
         </p>
         <div style={{ fontSize: 13, color: 'var(--ink-mute)', padding: 12,
                       background: 'var(--surface)', border: '0.5px solid var(--line)',
@@ -82,7 +83,7 @@ function LangPicker({ lang, voices, active, onPickAndSave }) {
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <Select
-            label={t('voiceSettings.replyLanguageLabel', { lang: LANG_LABEL[lang] })}
+            label={t('voiceSettings.replyLanguageLabel', { lang: t(LANG_LABEL_KEY[lang]) })}
             value={active || ''}
             onChange={(e) => onPickAndSave(e.target.value)}
             options={options}

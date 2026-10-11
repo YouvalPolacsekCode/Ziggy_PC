@@ -24,7 +24,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { setHomeLocation } from '../lib/mobileApi'
 import { useAuthStore } from '../stores/authStore'
-import { useT } from '../lib/i18n'
+import { useT, getLang } from '../lib/i18n'
 import { SensorsStep, StarterStep, NotifyStep, DoneStep } from './onboarding/steps'
 import { primaryBtn, secondaryBtn, textInput, fieldLabel } from './onboarding/styles'
 
@@ -121,7 +121,9 @@ export default function WebOnboarding() {
 // time-based automations honour them. Never blocks the wizard.
 async function persistWebPrefs() {
   try {
-    const language = (typeof navigator !== 'undefined' && /^he\b/i.test(navigator.language || '')) ? 'he' : 'en'
+    // The language the person just read the wizard in, not the phone's system
+    // locale: a Hebrew wizard on an English phone must leave a Hebrew home.
+    const language = getLang() === 'he' ? 'he' : 'en'
     let timezone = null
     try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null } catch { /* older engines */ }
     await fetch('/api/onboarding/prefs', {

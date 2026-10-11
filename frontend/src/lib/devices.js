@@ -16,7 +16,7 @@
 import { callHaService, irSend, irSendChannel, irSetAcTemperature, irRunSequence, controlDevice } from './api'
 import { DOMAIN_REGISTRY } from './domainRegistry'
 import { lightRgb, humanizeSlug } from './utils'
-import { t as i18nT } from './i18n'
+import { t as i18nT, translateName, getLang } from './i18n'
 
 // ─── Kind taxonomy ──────────────────────────────────────────────────────────
 //
@@ -757,6 +757,25 @@ export function getCapabilities(entity) {
 
 // ─── Facts: normalized state for renderers ──────────────────────────────────
 
+// The label functions below speak English; the tiles speak the viewer's
+// language. Every word they can produce has a key, so a Hebrew room never
+// shows "Off" under a Hebrew name. Numbers (temperature, humidity, power)
+// and unknown words pass through untouched.
+const STATE_LABEL_KEY = {
+  'On': 'common.on', 'Off': 'common.off', 'Open': 'common.open', 'Closed': 'common.closed',
+  'Playing': 'devState.playing', 'Paused': 'devState.paused', 'Idle': 'devState.idle', 'Standby': 'devState.standby',
+  'Heating': 'devState.heating', 'Cooling': 'devState.cooling', 'Auto': 'devState.auto', 'Fan': 'devState.fan', 'Dry': 'devState.dry',
+  'Opening…': 'devState.opening', 'Closing…': 'devState.closing',
+  'Locked': 'devState.locked', 'Unlocked': 'devState.unlocked', 'Locking…': 'devState.locking', 'Unlocking…': 'devState.unlocking',
+  'Cleaning': 'devState.cleaning', 'Docked': 'devState.docked', 'Returning': 'devState.returning',
+  'Motion': 'devState.motion', 'Clear': 'devState.clear', 'Wet': 'devState.wet', 'Present': 'devState.present',
+  'Empty': 'devState.empty', 'Detected': 'devState.detected',
+}
+export function localizeStateLabel(label) {
+  const key = STATE_LABEL_KEY[label]
+  return key ? i18nT(key) : label
+}
+
 const KIND_STATE_LABEL = {
   light:    (e) => isOn(e) ? 'On' : 'Off',
   switch:   (e) => isOn(e) ? 'On' : 'Off',
@@ -873,11 +892,14 @@ export function deviceFacts(entity) {
   // "Clear", "Off"), which lied to the user about the device's real state.
   const _rawState = effectiveState(entity)
   const _isUnavailable = _rawState === 'unavailable' || _rawState === 'unknown' || _rawState == null || _rawState === ''
-  const _stateLabel = _isUnavailable ? i18nT('common.unavailable') : labelFn(entity)
+  const _stateLabel = _isUnavailable ? i18nT('common.unavailable') : localizeStateLabel(labelFn(entity))
   return {
     // Reference to the original entity — so downstream components can call
     // commandAvailable(facts.entity, ...) without re-threading the prop.
     entity,
+    // The kind's word in the viewer's language ("Lamp" → "מנורה"), from the
+    // same dictionary that names rooms. meta.label stays English for code.
+    kindLabel:    translateName(meta.label, getLang()) || meta.label,
     id:           entity.entity_id,
     irId:         linkedIr?.id || null,
     name:         entity.display_name || entity.friendly_name || humanizeSlug(entity.entity_id) || 'Device',

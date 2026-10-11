@@ -19,7 +19,7 @@ import { getEntityDetails, controlDevice, callHaService, assignEntityToArea, ass
 import { cameraSnapshotUrl, cameraStreamUrl, useCameraStore } from '../stores/cameraStore'
 import { cn, normRoomSlug } from '../lib/utils'
 import { patchIrDevice } from '../lib/api'
-import { useT, useTranslatedName, getLang } from '../lib/i18n'
+import { useT, useTranslatedName, getLang, translateNamePhrase } from '../lib/i18n'
 import { buildFixerQuestion } from '../lib/fixerPrompt'
 import { TabCrossfade } from '../motion/TabCrossfade'
 
@@ -174,7 +174,7 @@ function TimeAgo({ iso }) {
   if (diffMin < 1) return t('deviceDetail.justNow')
   if (diffMin < 60) return t('deviceDetail.minutesAgo', { n: diffMin })
   if (diffMin < 1440) return t('deviceDetail.hoursAgo', { n: Math.round(diffMin / 60) })
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  return d.toLocaleDateString(getLang() === 'he' ? 'he-IL' : 'en-GB', { month: 'short', day: 'numeric' })
 }
 
 // ── Ghost device page ────────────────────────────────────────────────────────
@@ -1027,9 +1027,11 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
   // For sibling views we keep showing the entity's own name; the group name
   // is surfaced separately as the parent-device crumb.
   const groupName = group?.name || null
-  const displayName = (isGroupPrimary && groupName)
+  // Named the way the tiles name it: a room reads "מנורת סלון" on the card and
+  // must not become "Living Room Lamp" the moment the card is opened.
+  const displayName = translateNamePhrase((isGroupPrimary && groupName)
     ? groupName
-    : (facts.name || attributes.friendly_name || entityId)
+    : (facts.name || attributes.friendly_name || entityId), getLang())
   // IR pseudo-entities are never listed in an HA area's entities[], so the
   // registry match below never finds them → the header/Info tab read "No Room"
   // even when the device IS assigned. Resolve an IR device's room from its own
@@ -1092,7 +1094,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
 
   // One 15px line under the title: room · kind. Skips whichever half is
   // missing so it never reads "· Light".
-  const subtitle = [currentRoom?.name, meta?.label].filter(Boolean).join(' · ')
+  const subtitle = [translateNamePhrase(currentRoom?.name, getLang()), facts?.kindLabel || meta?.label].filter(Boolean).join(' · ')
 
   // Lives on BOTH tabs — hoisted so it renders once per tab without being
   // duplicated in source. controlsBody renders it (after the
@@ -1200,10 +1202,9 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             {/* Camera live view — keep as separate panel below the remote */}
             {entity.domain === 'camera' && <CameraPanel entityId={entityId} navigate={navigate} />}
 
-            {/* Entity ID footer */}
-            <p className="z-code" style={{ marginTop: 4, fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {entityId}{facts.irId ? ` · ir:${facts.irId}` : ''}
-            </p>
+            {/* No entity-id footer here: the raw HA id is a Home Assistant term, and
+                the Info tab already carries it in the identity card for anyone
+                who needs it. */}
           </>
         )}
     </>
@@ -1390,7 +1391,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             <SectionTitle>{t('deviceDetail.capabilities')}</SectionTitle>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {[...facts.capabilities].map(c => (
-                <span key={c} className="z-chip">{c.replace(/_/g, ' ')}</span>
+                <span key={c} className="z-chip">{t(`cap.${c}`) !== `cap.${c}` ? t(`cap.${c}`) : c.replace(/_/g, ' ')}</span>
               ))}
             </div>
           </Card>
@@ -1494,7 +1495,7 @@ function DeviceDetailBody({ entityId: entityIdProp, onExit } = {}) {
             }}>
               <Home size={18} strokeWidth={1.75} style={{ color: 'var(--ink-mute)', flexShrink: 0 }} />
               <span dir="auto" style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>
-                {currentRoom?.name || t('deviceDetail.noRoom')}
+                {translateNamePhrase(currentRoom?.name, getLang()) || t('deviceDetail.noRoom')}
               </span>
             </div>
           ) : (

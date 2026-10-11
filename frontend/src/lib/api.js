@@ -252,7 +252,10 @@ async function request(method, path, body, { timeoutMs } = {}) {
   return parsed
 }
 
-const get = (path) => request('GET', path)
+// opts is optional and additive — existing callers pass nothing. Needed so a
+// slow read (a real LAN scan) can raise its own timeout without changing the
+// default for every GET.
+const get = (path, opts) => request('GET', path, undefined, opts)
 const post = (path, body, opts) => request('POST', path, body, opts)
 const put = (path, body) => request('PUT', path, body)
 const patch = (path, body) => request('PATCH', path, body)
@@ -311,6 +314,12 @@ export const runAction = (name, args = {}, lang = null) =>
 export const listExternalTokens  = () => get('/external-tokens')
 export const createExternalToken = (name) => post('/external-tokens', { name })
 export const revokeExternalToken = (id) => del(`/external-tokens/${encodeURIComponent(id)}`)
+
+// Cameras. These go through request() so they carry the session token — a bare
+// fetch() here answered 401 for every signed-in person and the page read "no
+// cameras" whatever the home had.
+export const listCameras      = () => get('/cameras')
+export const listCameraMotion = (hours = 24) => get(`/cameras/motion?hours=${encodeURIComponent(hours)}`)
 
 // Persistent, resumable chat threads (server-side; see services/chat_threads.py)
 export const createThread = () => post('/threads', {})
@@ -619,6 +628,28 @@ export const configFlowStep = (flowId, userInput) =>
   post(`/pairing/config-flow/${encodeURIComponent(flowId)}/step`, { user_input: userInput || {} }, { timeoutMs: 60_000 })
 export const configFlowCancel = (flowId) =>
   post(`/pairing/config-flow/${encodeURIComponent(flowId)}/cancel`)
+
+// Brand-initiated pairing — the only way to reach a device that never
+// announces itself. Air conditioners are the case that forced this: a Tadiran
+// (Gree) unit is only ever scanned for once a flow is explicitly started, so
+// it can never appear in the discovered list no matter how often you rescan.
+// The returned envelope is identical to a discovered flow's, so the same
+// ConfigFlowRunner drives it. 60s matches configFlowStep: the first step runs
+// a UDP broadcast scan of the LAN.
+export const getWifiBrands = () => get('/pairing/wifi-brands')
+// With entryId: every AC the pairing just produced. Without: the ones still
+// missing a room, which is how a unit that came back online later is noticed.
+export const getClimateUnits = (entryId) =>
+  get(entryId ? `/pairing/climate-units?entry_id=${encodeURIComponent(entryId)}` : '/pairing/climate-units')
+// Runs the unit for a few seconds, then restores it exactly, so the user can
+// hear which room it's in. An AC can't blink.
+export const identifyClimateUnit = (entityId, seconds) =>
+  post('/pairing/identify', { entity_id: entityId, seconds })
+// Runs a real LAN scan (and always aborts it), so it's slow — give it room.
+// Asked before letting anyone teach an infrared AC remote.
+export const smartAcProbe = () => get('/pairing/smart-ac-probe', { timeoutMs: 30_000 })
+export const configFlowStartByBrand = (brand) =>
+  post('/pairing/config-flow/start', { brand }, { timeoutMs: 60_000 })
 
 // Switcher account — one-time credential collection. Email + token come
 // from the Switcher mobile app (Settings → My account → request token).

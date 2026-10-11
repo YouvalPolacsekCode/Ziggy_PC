@@ -2790,7 +2790,7 @@ export default function Devices() {
       {/* View mode + filter chips */}
       <div onPointerDownCapture={armLayout} style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, marginBottom: 20 }} className="scrollbar-thin">
         {/* View mode toggle */}
-        {[{ id: 'room', label: 'By room' }, { id: 'type', label: 'By type' }].map(v => (
+        {[{ id: 'room', label: t('devices.viewByRoom') }, { id: 'type', label: t('devices.viewByType') }].map(v => (
           <button key={v.id} onClick={() => setViewMode(v.id)} style={{
             padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit',
             background: viewMode === v.id ? 'var(--ink)' : 'var(--surface)',

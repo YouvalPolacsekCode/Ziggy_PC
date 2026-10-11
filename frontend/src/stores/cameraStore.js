@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { listCameras, listCameraMotion } from '../lib/api'
 
 export const useCameraStore = create((set) => ({
   cameras: [],
@@ -6,18 +7,14 @@ export const useCameraStore = create((set) => ({
 
   fetchCameras: async () => {
     try {
-      const r = await fetch('/api/cameras')
-      if (!r.ok) return
-      const data = await r.json()
+      const data = await listCameras()
       set({ cameras: data.cameras || [] })
     } catch {}
   },
 
   fetchMotionHistory: async (hours = 24) => {
     try {
-      const r = await fetch(`/api/cameras/motion?hours=${hours}`)
-      if (!r.ok) return
-      const data = await r.json()
+      const data = await listCameraMotion(hours)
       set({ motionEvents: data.events || [] })
     } catch {}
   },

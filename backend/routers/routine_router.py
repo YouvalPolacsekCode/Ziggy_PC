@@ -6,6 +6,8 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
+from services.usage_counters import bump as _usage_bump
+
 from services.ha_scripts import (
     list_scripts, get_script_for_ui, save_script, delete_script,
 )
@@ -161,6 +163,7 @@ async def create_routine_endpoint(body: RoutineBody):
 async def run_routine_endpoint(script_id: str, background_tasks: BackgroundTasks):
     routine = get_script_for_ui(script_id)
     label = routine.get("name", script_id) if routine else script_id
+    _usage_bump("routine_run")
     background_tasks.add_task(execute_ziggy_actions, script_id, label)
     return {"ok": True, "message": "Routine running"}
 

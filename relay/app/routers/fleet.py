@@ -80,6 +80,10 @@ async def fleet_health_report(request: Request):
             payload = None
         by_home[row["home_id"]] = (row.get("ts"), payload if isinstance(payload, dict) else None)
 
+    # What each home's chat and automation design cost in the last 30 days — the relay is
+    # the one place those calls pass through (routers/llm.py records them), so this is the
+    # one place the company can see the number per customer.
+    llm_30d = await llm_usage_30d()
     verdicts = []
     for h in homes:
         home = dict(h)
@@ -90,18 +94,50 @@ async def fleet_health_report(request: Request):
         v["status"] = home.get("status")
         v["owner_email"] = home.get("owner_email")
         v["vitals"] = fleet_health.vitals(payload)
+        v["llm_30d"] = llm_30d.get(home["id"]) or {"calls": 0, "input_tokens": 0, "cached_tokens": 0, "output_tokens": 0, "usd": 0.0, "estimated": 0}
         verdicts.append(v)
 
     # Worst first, so the thing needing attention is row one.
     rank = {"down": 0, "degraded": 1, "unknown": 2, "ok": 3}
     verdicts.sort(key=lambda v: (rank.get(v["level"], 9), v.get("name") or ""))
 
+    summary = fleet_health.summarize(verdicts)
+    summary["llm_30d_usd"] = round(sum((v.get("llm_30d") or {}).get("usd", 0.0) for v in verdicts), 4)
     return {
         "generated_at": now,
-        "summary": fleet_health.summarize(verdicts),
+        "summary": summary,
         "versions": fleet_health.version_rollup(verdicts),
         "homes": verdicts,
     }
+
+
+async def llm_usage_30d() -> dict[str, dict]:
+    """Per home: calls, tokens and USD over the last 30 days, from llm_usage."""
+    from datetime import datetime, timedelta, timezone
+    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="seconds")
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            """SELECT home_id, COUNT(*) calls, SUM(input_tokens) input_tokens, SUM(cached_tokens) cached_tokens,
+                      SUM(output_tokens) output_tokens, SUM(cost_usd) usd, SUM(estimated) estimated
+               FROM llm_usage WHERE ts >= ? GROUP BY home_id""", (since,))
+    return {r["home_id"]: {"calls": int(r["calls"] or 0), "input_tokens": int(r["input_tokens"] or 0),
+                           "cached_tokens": int(r["cached_tokens"] or 0), "output_tokens": int(r["output_tokens"] or 0),
+                           "usd": round(float(r["usd"] or 0), 4), "estimated": int(r["estimated"] or 0)} for r in rows}
+
+
+@router.get("/llm")
+async def fleet_llm_usage(request: Request, days: int = 30):
+    """Per home, per day: what the relay forwarded to the model and what it cost."""
+    require_role("relay_admin")(request)
+    from datetime import datetime, timedelta, timezone
+    days = max(1, min(int(days), 90))
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            """SELECT home_id, substr(ts, 1, 10) day, model, COUNT(*) calls, SUM(input_tokens) input_tokens,
+                      SUM(cached_tokens) cached_tokens, SUM(output_tokens) output_tokens, SUM(cost_usd) usd, SUM(estimated) estimated
+               FROM llm_usage WHERE ts >= ? GROUP BY home_id, day, model ORDER BY day DESC, home_id""", (since,))
+    return {"days": days, "rows": [dict(r) for r in rows]}
 
 
 # Audit events worth showing a human. `telemetry_posted` and

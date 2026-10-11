@@ -17,8 +17,7 @@ import { HomeConstellation, MiniStat } from './visuals'
 import {
   TrustStrip, Problem, Kit, HowItWorks, Automations, Voice, Local, Compare, Pricing,
 } from './sections'
-
-const WAITLIST_EMAIL = 'hello@ziggy-home.co.il'
+import { WAITLIST_EMAIL, submitWaitlistLead } from './leads'
 
 /* ── Marketing-only keyframes, scoped under .zmk so nothing leaks app-wide ── */
 function ScopedStyles() {
@@ -146,13 +145,19 @@ function Hero() {
 function Waitlist() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
-  const submit = (e) => {
+  const [busy, setBusy] = useState(false)
+  const [viaMail, setViaMail] = useState(false)
+  const submit = async (e) => {
     e.preventDefault()
-    if (!email.trim()) return
-    // No backend wired here yet — capture gracefully and hand off to the
-    // brand inbox. (Production replaces this with the Formspree endpoint.)
+    if (!email.trim() || busy) return
+    setBusy(true)
+    // POST to the Desk lead pipeline (dedupe, attribution, CRM sync live
+    // there). If the Desk is unreachable we fall back to a mailto so the
+    // person's interest still lands in the inbox.
+    const result = await submitWaitlistLead(email)
+    setViaMail(!result.ok)
+    setBusy(false)
     setSent(true)
-    window.location.href = `mailto:${WAITLIST_EMAIL}?subject=${encodeURIComponent('Ziggy waitlist')}&body=${encodeURIComponent(`Please add me to the Ziggy waitlist: ${email}`)}`
   }
   return (
     <section id="waitlist" className="relative overflow-hidden py-24 sm:py-32">
@@ -178,7 +183,8 @@ function Waitlist() {
                 initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
                 className="mx-auto mt-9 flex max-w-md items-center justify-center gap-3 rounded-full border border-ok/40 bg-surface px-6 py-4 text-[15px] font-medium text-ink"
               >
-                <CheckCircle2 size={20} className="text-ok" /> You’re on the list — opening your mail to confirm.
+                <CheckCircle2 size={20} className="text-ok" />
+                {viaMail ? 'Opening your mail to confirm — we’ll add you by hand.' : 'You’re on the list — we’ll be in touch when your kit is ready.'}
               </motion.div>
             ) : (
               <motion.form
@@ -195,7 +201,7 @@ function Waitlist() {
                     className="h-[52px] w-full rounded-full border border-line-2 bg-surface pl-11 pr-4 text-[15px] text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent"
                   />
                 </div>
-                <ButtonPrimary className="h-[52px] shrink-0">Reserve my kit</ButtonPrimary>
+                <ButtonPrimary className="h-[52px] shrink-0" disabled={busy}>{busy ? 'Reserving…' : 'Reserve my kit'}</ButtonPrimary>
               </motion.form>
             )}
           </AnimatePresence>

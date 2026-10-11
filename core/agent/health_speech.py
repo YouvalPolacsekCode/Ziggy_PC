@@ -64,9 +64,13 @@ _FALLBACK = (
 def summarize_health(snapshot: dict, lang: str = "en") -> str:
     """One-line, jargon-free summary of a compute_system_health() payload."""
     primary = (snapshot or {}).get("primary", _H.ISSUE_OK)
+    offline = int(((snapshot or {}).get("devices") or {}).get("offline", 0) or 0)
+    # The rule picks DEVICES_OFFLINE for any share under 50%, which in a 27-device home is
+    # twelve devices. "A device or two" for twelve was a lie the fleet operator caught.
+    if primary == _H.ISSUE_DEVICES_OFFLINE and offline > 2:
+        primary = _H.ISSUE_DEVICES_OFFLINE_MANY
     he, en = _HEALTH_LINES.get(primary, _FALLBACK)
     line = he if lang == "he" else en
-    offline = ((snapshot or {}).get("devices") or {}).get("offline", 0)
     return line.format(offline=offline)
 
 

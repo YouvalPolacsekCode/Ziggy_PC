@@ -173,6 +173,16 @@ const cardBox = { background: 'var(--surface)', border: '0.5px solid var(--line)
 // while task tracking is off). Map category → the feature flag that owns it.
 const CATEGORY_FEATURE = { task_reminder: 'task_tracking' }
 
+// System categories arrive from the hub with English names. Each id has a key;
+// a sensor category keeps its own name, which is the sensor's.
+const SYSTEM_CAT_IDS = new Set(['anomaly_critical', 'anomaly_warning', 'task_reminder', 'presence', 'automation', 'suggestion'])
+function catLabel(cat, t) {
+  return SYSTEM_CAT_IDS.has(cat.id) ? t(`push.cat.${cat.id}`) : cat.label
+}
+function catDescription(cat, t) {
+  return SYSTEM_CAT_IDS.has(cat.id) ? t(`push.catDesc.${cat.id}`) : cat.description
+}
+
 export function PushPreferenceCenter() {
   const t = useT()
   const { addToast } = useUIStore()
@@ -281,7 +291,10 @@ export function PushPreferenceCenter() {
             </p>
           </div>
           <span className="z-chip" style={{ color: pushGranted ? 'var(--ok-text)' : 'var(--ink-mute)', flexShrink: 0 }}>
-            {'Notification' in window ? Notification.permission : t('adminSettings.unsupported')}
+            {!('Notification' in window) ? t('adminSettings.unsupported')
+              : Notification.permission === 'granted' ? t('adminSettings.subscribed')
+              : Notification.permission === 'denied' ? t('adminSettings.blocked')
+              : t('adminSettings.permNotYet')}
           </span>
         </div>
         <div style={{ minHeight: 48, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -322,12 +335,12 @@ export function PushPreferenceCenter() {
             <div key={cat.id} style={{ display: 'flex', alignItems: 'center', minHeight: 48, padding: '8px 16px', borderBottom: i < systemCats.length - 1 ? '0.5px solid var(--line)' : 'none', gap: 12 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  {cat.label}
+                  {catLabel(cat, t)}
                   {cat.bypass_quiet_hours && <span className="z-chip" style={{ color: 'var(--warn-text)' }}>{t('adminSettings.always')}</span>}
                 </p>
-                <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{cat.description}</p>
+                <p style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 2 }}>{catDescription(cat, t)}</p>
               </div>
-              <Toggle checked={!!cat.enabled} aria-label={cat.label} onCheckedChange={() => toggleCategory(cat.id)} />
+              <Toggle checked={!!cat.enabled} aria-label={catLabel(cat, t)} onCheckedChange={() => toggleCategory(cat.id)} />
             </div>
           ))}
         </div>

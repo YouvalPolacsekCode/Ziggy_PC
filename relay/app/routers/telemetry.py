@@ -24,6 +24,9 @@ edge-side telemetry_client.py stays the source of truth for fields:
       "mem_pct":      35.0,            float
       "containers":   [...],           list
       "last_automation_trigger": "<iso8601>" | null,
+      "usage_counters": {window_s, counters{name:int}, features_enabled[],
+                         errors{count, top[]}}   (TRACKING_SPEC §4; forwarded
+                                                  to PostHog, see posthog_forward.py)
     }
 
 Anything else is accepted and stored — the admin dashboard pulls
@@ -46,6 +49,7 @@ from ..audit import log_event, verify as verify_signature
 from ..auth import current_user
 from ..billing import is_operational
 from ..database import get_db
+from ..posthog_forward import schedule_forward
 from .ota import (
     _client_ip,
     _resolve_home_id_from_device_id,
@@ -166,6 +170,14 @@ async def post_telemetry(device_id: str, request: Request):
                 "home_version_changed", home_id=home_id, source_ip=src_ip, ok=True,
                 detail=f"{previous_tag} → {current_tag}",
             )
+    except Exception:
+        pass
+
+    # Feature-usage counters → PostHog (server-side, distinct_id = home_id).
+    # Background task with its own timeout; a vendor outage costs an audit
+    # row, never the hub's 200. No-op unless POSTHOG_PROJECT_KEY is set.
+    try:
+        schedule_forward(home_id, payload)
     except Exception:
         pass
 

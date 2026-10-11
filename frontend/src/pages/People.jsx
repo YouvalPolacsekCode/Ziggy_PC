@@ -29,6 +29,18 @@ import { useT } from '../lib/i18n'
 import { useAuthStore } from '../stores/authStore'
 import { UsersAndAccessSection } from './Settings'
 
+// The engine explains a decision in its own English ("allowed by grant(s)
+// ['legacy:…#0']"). The person reads a sentence in their language; the raw
+// text is still what the API returns for anyone who needs the grant ids.
+function explainReason(reason, t) {
+  const r = String(reason || '')
+  if (r.startsWith('emergency override')) return t('people.reasonEmergency')
+  if (r.startsWith('allowed by grant')) return t('people.reasonAllowedByGrant')
+  if (r.startsWith('denied by grant')) return t('people.reasonDeniedByGrant')
+  if (r.startsWith('no matching allow grant')) return t('people.reasonNoGrant')
+  return r
+}
+
 // Presets, actions and obligations are engine vocabulary; each maps to an i18n
 // key so the Hebrew screen reads as a product, not as a policy dump.
 const PRESET_KEY = {
@@ -729,7 +741,7 @@ function Decision({ res, loading, channel }) {
             {allowed ? t('people.allowed') : t('people.denied')}</span>
         </div>
         <div style={{ fontSize: 13, color: 'var(--ink-mute)', marginTop: 8,
-          overflowWrap: 'anywhere' }} dir="auto">{res.reason}</div>
+          overflowWrap: 'anywhere' }} dir="auto">{explainReason(res.reason, t)}</div>
         {res.obligations?.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
             {res.obligations.map((o, i) => {
