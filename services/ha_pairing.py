@@ -156,12 +156,22 @@ async def commission_matter(code: str) -> dict:
 NON_DEVICE_FLOW_HANDLERS = frozenset({"bluetooth", "upnp", "dhcp"})
 
 
-async def climate_units(entry_id: str | None = None) -> dict:
-    """Air conditioners Ziggy knows about, for the room-mapping step.
+# The domains a customer thinks of as "a device". Pairing can also create
+# diagnostic sensors and config switches; those are not things anyone places
+# in a room, so they never reach the mapping step.
+PRIMARY_DOMAINS = (
+    "climate", "cover", "lock", "vacuum", "camera", "water_heater",
+    "light", "switch", "fan", "media_player", "valve", "alarm_control_panel",
+)
 
-    One physical unit = one HA device (keyed by its MAC) = one climate entity,
-    so counting these IS the answer to "how many ACs does this home have?" —
-    the user never has to tell us.
+
+async def paired_units(entry_id: str | None = None) -> dict:
+    """Devices Ziggy knows about, for the room-mapping step.
+
+    One physical unit = one HA device = one primary entity, so counting these
+    IS the answer to "how many did that pairing produce?" — the user never has
+    to tell us. An air conditioner bridge yielding four indoor units and a
+    shutter hub yielding six blinds are the same shape.
 
     With `entry_id`: every unit that pairing just produced, assigned or not.
     Without it: only units that still have no room. Gree keeps scanning and
@@ -179,7 +189,7 @@ async def climate_units(entry_id: str | None = None) -> dict:
         units = []
         for e in (ent_res.get("result") or []):
             eid = e.get("entity_id") or ""
-            if not eid.startswith("climate."):
+            if eid.split(".", 1)[0] not in PRIMARY_DOMAINS:
                 continue
             dev = devices.get(e.get("device_id"))
             if not dev:
@@ -192,6 +202,7 @@ async def climate_units(entry_id: str | None = None) -> dict:
             units.append({
                 "device_id": dev["id"],
                 "entity_id": eid,
+                "domain": eid.split(".", 1)[0],
                 # name_by_user wins; otherwise the name the unit reported over
                 # the local protocol, which is often what the owner set in the
                 # vendor app and is worth pre-filling.
@@ -200,8 +211,15 @@ async def climate_units(entry_id: str | None = None) -> dict:
             })
         return {"ok": True, "units": units}
     except Exception as e:
-        log_error(f"[Pairing] climate_units: {e}")
+        log_error(f"[Pairing] paired_units: {e}")
         return {"ok": False, "error": str(e), "units": []}
+
+
+async def climate_units(entry_id: str | None = None) -> dict:
+    """Air conditioners only — kept for callers that specifically mean ACs."""
+    res = await paired_units(entry_id)
+    res["units"] = [u for u in res.get("units", []) if u.get("domain") == "climate"]
+    return res
 
 
 async def get_pending_config_flows(integrations: list[str] | None = None,

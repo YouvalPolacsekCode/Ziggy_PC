@@ -24,11 +24,12 @@ function extractMatterCode(raw) {
 import {
   zigbeePermit, getHaDevices, renameHaDevice, assignDeviceToArea,
   zwaveInclude, zwaveStop, matterCommission, matterStatus, getConfigFlows,
-  getWifiBrands, configFlowStartByBrand, smartAcProbe,
+  configFlowStartByBrand, smartAcProbe,
 } from '../lib/api'
 import SwitcherPairingFlow from './SwitcherPairingFlow'
 import ConfigFlowRunner from './ConfigFlowRunner'
-import AcRoomMapping from './AcRoomMapping'
+import DeviceRoomMapping from './DeviceRoomMapping'
+import WifiBrandPicker from './WifiBrandPicker'
 import { useDeviceStore } from '../stores/deviceStore'
 import { cn } from '../lib/utils'
 import { useT } from '../lib/i18n'
@@ -235,7 +236,6 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
   // Brand-initiated pairing. Some devices — every air conditioner sold here —
   // never announce themselves, so they cannot appear in the discovered list no
   // matter how often you rescan. Picking the brand is the only way in.
-  const [wifiBrands,  setWifiBrands]  = useState([])
   const [brandBusy,   setBrandBusy]   = useState(null)   // brand key in flight
   const [brandNotice, setBrandNotice] = useState(null)   // guidance when a start aborts
   // Config entry a brand pairing just created. One Gree entry yields one
@@ -497,12 +497,6 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
       setConfigFlows([])
     } finally {
       setFlowsLoading(false)
-    }
-    // Offered alongside the discovered list, not only when it's empty: an AC is
-    // absent from that list even when a TV or a plug is in it.
-    if (proto === 'wifi') {
-      try { setWifiBrands((await getWifiBrands()).brands || []) }
-      catch { setWifiBrands([]) }
     }
     startDevicePoller()
   }
@@ -868,7 +862,7 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
             )}
 
             {mappingEntryId && (
-              <AcRoomMapping
+              <DeviceRoomMapping
                 entryId={mappingEntryId}
                 onDone={() => {
                   setMappingEntryId(null)
@@ -949,33 +943,16 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                   </div>
                 )}
 
-                {/* Pair by brand. Shown whether or not anything was discovered,
-                    because the devices that need it are never in that list. */}
-                {protocol === 'wifi' && !configuringFlow && !flowsLoading && wifiBrands.length > 0 && (
-                  <div className="w-full mt-3 pt-3 border-t border-line text-start space-y-2">
-                    <p className="text-body font-semibold text-ink">
-                      {t('wizard.pairing.brandPickTitle')}
-                    </p>
-                    <p className="text-subhead text-ink-mute">
-                      {t('wizard.pairing.brandPickHint')}
-                    </p>
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {wifiBrands.map((b) => (
-                        <button
-                          key={b.brand}
-                          onClick={() => handleBrandStart(b.brand, b.label)}
-                          disabled={!!brandBusy}
-                          className="z-btn-secondary z-button disabled:opacity-60"
-                        >
-                          {brandBusy === b.brand && (
-                            <RefreshCw size={16} strokeWidth={1.75} className="animate-spin" aria-hidden />
-                          )}
-                          {b.label}
-                        </button>
-                      ))}
-                    </div>
+                {/* Add by type. Deliberately a PEER of the discovered list
+                    above, not a "didn't find it?" link underneath: most
+                    devices never announce themselves, and nearly every brand
+                    sold here is in that silent majority. Burying this would
+                    make the main Israeli path the consolation prize. */}
+                {protocol === 'wifi' && !configuringFlow && !flowsLoading && (
+                  <div className="w-full mt-3 pt-3 border-t border-line">
+                    <WifiBrandPicker busyBrand={brandBusy} onPick={handleBrandStart} />
                     {brandNotice && (
-                      <p className="text-subhead text-ink-2 bg-surface-2 rounded-card p-3 mt-1">
+                      <p className="text-subhead text-ink-2 bg-surface-2 rounded-card p-3 mt-2">
                         {brandNotice}
                       </p>
                     )}

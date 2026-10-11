@@ -636,7 +636,11 @@ export const configFlowCancel = (flowId) =>
 // The returned envelope is identical to a discovered flow's, so the same
 // ConfigFlowRunner drives it. 60s matches configFlowStep: the first step runs
 // a UDP broadcast scan of the LAN.
-export const getWifiBrands = () => get('/pairing/wifi-brands')
+export const getWifiBrands = (category) =>
+  get(category ? `/pairing/wifi-brands?category=${encodeURIComponent(category)}` : '/pairing/wifi-brands')
+// "Can't find yours?" — the only signal we get for which brand to add next.
+export const requestWifiBrand = (text, category) =>
+  post('/pairing/brand-request', { text, category })
 // With entryId: every AC the pairing just produced. Without: the ones still
 // missing a room, which is how a unit that came back online later is noticed.
 export const getClimateUnits = (entryId) =>

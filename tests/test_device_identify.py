@@ -118,13 +118,47 @@ def test_restore_still_runs_when_the_pulse_fails(monkeypatch):
 
 # ── Boundaries ──────────────────────────────────────────────────────────────
 
-def test_refuses_anything_that_is_not_a_climate_entity(monkeypatch):
-    """This endpoint drives a device in someone's home. It is not a general
-    service-call escape hatch."""
-    ha = _wire(monkeypatch, OFF_UNIT)
+def test_refuses_domains_we_cannot_safely_pulse(monkeypatch):
+    """This drives hardware in someone's home. Only domains with an instant,
+    fully reversible action are allowed. A cover is excluded on purpose:
+    moving a shutter is slow, physical, and can hit something."""
+    ha = _wire(monkeypatch, {"entity_id": "cover.salon", "state": "open",
+                             "attributes": {}})
     with pytest.raises(ValueError):
-        asyncio.run(di.identify("light.bedroom", seconds=0))
+        asyncio.run(di.identify("cover.salon", seconds=0))
     assert ha.calls == []
+
+    ha2 = _wire(monkeypatch, {"entity_id": "sensor.x", "state": "5", "attributes": {}})
+    with pytest.raises(ValueError):
+        asyncio.run(di.identify("sensor.x", seconds=0))
+    assert ha2.calls == []
+
+
+# ── Other pulsable domains ──────────────────────────────────────────────────
+
+LIGHT_OFF = {"entity_id": "light.k", "state": "off", "attributes": {}}
+LIGHT_ON  = {"entity_id": "light.k", "state": "on",  "attributes": {"brightness": 120}}
+
+
+def test_a_light_that_is_off_is_turned_on_then_off_again(monkeypatch):
+    """Lights are the easy case — they can literally blink."""
+    ha = _wire(monkeypatch, LIGHT_OFF)
+    asyncio.run(di.identify("light.k", seconds=0))
+    assert ha.services()[0] == "light.turn_on"
+    assert ha.services()[-1] == "light.turn_off"
+
+
+def test_a_light_that_is_on_is_left_on(monkeypatch):
+    """Never leave a light the user had on switched off."""
+    ha = _wire(monkeypatch, LIGHT_ON)
+    asyncio.run(di.identify("light.k", seconds=0))
+    assert ha.services()[-1] == "light.turn_on"
+
+
+def test_a_switch_toggles_and_returns(monkeypatch):
+    ha = _wire(monkeypatch, {"entity_id": "switch.p", "state": "off", "attributes": {}})
+    asyncio.run(di.identify("switch.p", seconds=0))
+    assert ha.services() == ["switch.turn_on", "switch.turn_off"]
 
 
 def test_unknown_entity_is_rejected(monkeypatch):

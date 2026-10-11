@@ -343,15 +343,46 @@ class FlowStartBody(BaseModel):
     brand: str
 
 
-@router.get("/api/pairing/wifi-brands")
-async def wifi_brands(_user: dict = Depends(require_role("admin"))):
-    """Brands the user can pair by name when nothing was auto-discovered.
+class BrandRequestBody(BaseModel):
+    text: str
+    category: Optional[str] = None
 
-    Carries no Home Assistant vocabulary — the handler behind each brand is an
+
+@router.get("/api/pairing/wifi-brands")
+async def wifi_brands(category: Optional[str] = None,
+                      _user: dict = Depends(require_role("admin"))):
+    """The catalogue behind "what are you adding?".
+
+    Only 295 of Home Assistant's 852 config-flow integrations announce
+    themselves, so for most devices — and for nearly every Israeli brand —
+    naming the device is the only way in. Returns categories plus brands,
+    optionally narrowed to one category.
+
+    Carries no Home Assistant vocabulary: the handler behind each brand is an
     implementation detail (see services/wifi_brands.py).
     """
-    from services.wifi_brands import listed
-    return {"ok": True, "brands": listed()}
+    from services.wifi_brands import categories, listed
+    return {"ok": True, "categories": categories(), "brands": listed(category)}
+
+
+@router.post("/api/pairing/brand-request")
+async def wifi_brand_request(body: BrandRequestBody,
+                             _user: dict = Depends(require_role("admin"))):
+    """"Can't find yours? Tell us."
+
+    The catalogue is curated, so it will always be incomplete. This is the
+    cheapest signal we have for which brand to add next — it records what a
+    real customer actually owns rather than what we guessed.
+    """
+    from services.brand_requests import record
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Tell us what you have")
+    _dbus.emit("ha", BASIC, "wifi_brand_requested",
+               text=text[:200], category=body.category,
+               message=f"Customer asked for an unsupported brand: {text[:80]}")
+    record(text[:200], body.category)
+    return {"ok": True}
 
 
 @router.post("/api/pairing/config-flow/start")
@@ -448,8 +479,8 @@ async def pairing_climate_units(entry_id: Optional[str] = None,
     "found N air conditioners" step shows. Without it, only units that still
     have no room, which is how a unit that came back online later gets noticed.
     """
-    from services.ha_pairing import climate_units
-    return await climate_units(entry_id=entry_id)
+    from services.ha_pairing import paired_units
+    return await paired_units(entry_id=entry_id)
 
 
 @router.post("/api/pairing/identify")
@@ -463,7 +494,7 @@ async def pairing_identify(body: IdentifyBody,
     the full window would trip the client's timeout and leave the user
     wondering whether it worked.
     """
-    from services.device_identify import identify, DEFAULT_SECONDS
+    from services.device_identify import identify, can_identify, DEFAULT_SECONDS
 
     seconds = body.seconds if body.seconds is not None else DEFAULT_SECONDS
     seconds = max(0, min(int(seconds), 60))  # never park a customer's AC for long
@@ -475,9 +506,11 @@ async def pairing_identify(body: IdentifyBody,
     try:
         # Validate before backgrounding, so a bad entity is a 400 the user
         # sees rather than a silent no-op in a task nobody is watching.
-        if not body.entity_id.startswith("climate."):
-            raise HTTPException(status_code=400,
-                                detail="identify supports air conditioners only")
+        if not can_identify(body.entity_id):
+            raise HTTPException(
+                status_code=400,
+                detail="This device can't be identified — it has no instant, "
+                       "reversible way to announce itself.")
         asyncio.create_task(identify(body.entity_id, seconds=seconds))
     except HTTPException:
         raise

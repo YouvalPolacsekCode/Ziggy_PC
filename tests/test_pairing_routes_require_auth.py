@@ -25,6 +25,7 @@ GUARDED = {
     "/api/pairing/smart-ac-probe",
     "/api/pairing/climate-units",
     "/api/pairing/identify",
+    "/api/pairing/brand-request",
 }
 
 

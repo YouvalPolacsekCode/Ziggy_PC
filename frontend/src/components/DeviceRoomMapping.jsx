@@ -1,15 +1,16 @@
-// Place newly-paired air conditioners in rooms.
+// Place newly-paired devices in rooms.
 //
-// A multi-split home onboards several units in one tap. They arrive
-// indistinguishable — same hardware, frequently the same reported name, no
-// room — so dropping them on the Devices page leaves the user with four
-// nameless air conditioners and no way to tell which is which. That is not a
-// paired home; it's a puzzle.
+// One pairing often yields several devices at once — an AC bridge with four
+// indoor units, a shutter hub with six blinds. They arrive indistinguishable:
+// same hardware, frequently the same machine-generated name, no room. David's
+// four Tadirans came through named `7cb8e631196e` and friends. Dropping that
+// on the Devices page isn't a paired home, it's a puzzle.
 //
-// So: one row per unit, pre-filled with whatever name the unit reported (often
-// the name its owner set in the vendor app), a room picker, and a button that
-// makes the unit run for a few seconds so the user can hear which room it's
-// in. An AC cannot blink; running is the only channel it has.
+// So: one row per device, pre-filled with whatever name it reported, a room
+// picker, and — where the device can safely announce itself — an Identify
+// button. A light blinks, a switch clicks, an AC runs its fan. Covers are
+// excluded on purpose: moving a shutter to answer "which one?" is slow,
+// physical and can hit something.
 import { useState, useEffect } from 'react'
 import { Volume2, Check, Loader2 } from 'lucide-react'
 import { Input } from './ui/Input'
@@ -27,7 +28,10 @@ import logger from '../lib/logger'
 const POLL_MS = 1500
 const POLL_TRIES = 10
 
-export default function AcRoomMapping({ entryId, onDone }) {
+// Domains the backend will pulse; anything else hides the button.
+const PULSABLE = new Set(['climate', 'light', 'switch', 'fan'])
+
+export default function DeviceRoomMapping({ entryId, onDone }) {
   const t = useT()
   const [units,   setUnits]   = useState(null)   // null = still looking
   const [rooms,   setRooms]   = useState([])
@@ -55,7 +59,7 @@ export default function AcRoomMapping({ entryId, onDone }) {
           name: u.name || '', area_id: u.area_id || '',
         }])))
       } catch (e) {
-        logger.error('[AcRoomMapping] load failed', e)
+        logger.error('[DeviceRoomMapping] load failed', e)
         if (alive) setUnits([])
       }
     }
@@ -68,7 +72,7 @@ export default function AcRoomMapping({ entryId, onDone }) {
   const pulse = async (u) => {
     setPulsing(u.device_id)
     try { await identifyClimateUnit(u.entity_id) }
-    catch (e) { logger.error('[AcRoomMapping] identify failed', e) }
+    catch (e) { logger.error('[DeviceRoomMapping] identify failed', e) }
     // Clear once the unit has had time to be heard; the backend restores it.
     setTimeout(() => setPulsing(p => (p === u.device_id ? null : p)), 20_000)
   }
@@ -81,11 +85,11 @@ export default function AcRoomMapping({ entryId, onDone }) {
         const name = (d.name || '').trim()
         if (name && name !== u.name) {
           try { await renameHaDevice(u.device_id, name) }
-          catch (e) { logger.error('[AcRoomMapping] rename failed', u.device_id, e) }
+          catch (e) { logger.error('[DeviceRoomMapping] rename failed', u.device_id, e) }
         }
         if (d.area_id && d.area_id !== u.area_id) {
           try { await assignDeviceToArea(u.device_id, d.area_id) }
-          catch (e) { logger.error('[AcRoomMapping] area assign failed', u.device_id, e) }
+          catch (e) { logger.error('[DeviceRoomMapping] area assign failed', u.device_id, e) }
         }
       }
     } finally {
@@ -109,7 +113,9 @@ export default function AcRoomMapping({ entryId, onDone }) {
     <div className="w-full text-start space-y-3">
       <div>
         <p className="text-body font-semibold text-ink">
-          {t('wizard.acMap.foundTitle', { n: units.length })}
+          {units.length === 1
+            ? t('wizard.acMap.foundOne')
+            : t('wizard.acMap.foundTitle', { n: units.length })}
         </p>
         <p className="text-subhead text-ink-mute">{t('wizard.acMap.foundHint')}</p>
       </div>
@@ -137,17 +143,19 @@ export default function AcRoomMapping({ entryId, onDone }) {
                     </option>
                   ))}
                 </select>
-                <button
-                  onClick={() => pulse(u)}
-                  disabled={!!pulsing}
-                  className="z-btn-secondary z-button shrink-0 disabled:opacity-60"
-                  title={t('wizard.acMap.identifyHint')}
-                >
-                  {pulsing === u.device_id
-                    ? <Loader2 size={16} className="animate-spin" aria-hidden />
-                    : <Volume2 size={16} strokeWidth={1.75} aria-hidden />}
-                  {t('wizard.acMap.identify')}
-                </button>
+                {PULSABLE.has(u.domain) && (
+                  <button
+                    onClick={() => pulse(u)}
+                    disabled={!!pulsing}
+                    className="z-btn-secondary z-button shrink-0 disabled:opacity-60"
+                    title={t('wizard.acMap.identifyHint')}
+                  >
+                    {pulsing === u.device_id
+                      ? <Loader2 size={16} className="animate-spin" aria-hidden />
+                      : <Volume2 size={16} strokeWidth={1.75} aria-hidden />}
+                    {t('wizard.acMap.identify')}
+                  </button>
+                )}
               </div>
               {pulsing === u.device_id && (
                 <p className="text-caption text-ink-mute">{t('wizard.acMap.identifyRunning')}</p>
