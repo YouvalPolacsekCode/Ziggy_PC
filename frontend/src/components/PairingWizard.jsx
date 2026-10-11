@@ -24,10 +24,11 @@ function extractMatterCode(raw) {
 import {
   zigbeePermit, getHaDevices, renameHaDevice, assignDeviceToArea,
   zwaveInclude, zwaveStop, matterCommission, matterStatus, getConfigFlows,
-  getWifiBrands, configFlowStartByBrand,
+  getWifiBrands, configFlowStartByBrand, smartAcProbe,
 } from '../lib/api'
 import SwitcherPairingFlow from './SwitcherPairingFlow'
 import ConfigFlowRunner from './ConfigFlowRunner'
+import AcRoomMapping from './AcRoomMapping'
 import { useDeviceStore } from '../stores/deviceStore'
 import { cn } from '../lib/utils'
 import { useT } from '../lib/i18n'
@@ -237,6 +238,12 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
   const [wifiBrands,  setWifiBrands]  = useState([])
   const [brandBusy,   setBrandBusy]   = useState(null)   // brand key in flight
   const [brandNotice, setBrandNotice] = useState(null)   // guidance when a start aborts
+  // Config entry a brand pairing just created. One Gree entry yields one
+  // device per physical AC, so this is what lets the next screen say "found 4"
+  // without ever asking the user how many they own.
+  const [mappingEntryId, setMappingEntryId] = useState(null)
+  // Set when the user chose infrared for an AC that is actually on Wi-Fi.
+  const [irSteer, setIrSteer] = useState(null)
 
   const snapshotRef = useRef(new Set())
   const timerRef    = useRef(null)
@@ -521,8 +528,12 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
     try {
       const env = await configFlowStartByBrand(brand)
       if (env?.status === 'form' || env?.status === 'progress') {
-        setConfiguringFlow({ flow_id: env.flow_id, title: env.title || label || '', initialStep: env })
+        setConfiguringFlow({ flow_id: env.flow_id, title: env.title || label || '',
+                             initialStep: env, isBrandAc: true })
       } else if (env?.status === 'done') {
+        // Don't close yet — a multi-split home just gained several ACs that
+        // all need a room. Hand off to the mapping step.
+        if (env.entry_id) { setMappingEntryId(env.entry_id); return }
         try { useDeviceStore.getState().fetchAll({ force: true }) } catch {}
         onClose?.()
       } else {
@@ -561,6 +572,18 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
         onAddIrBlaster?.()
       }
       else if (protocol === 'ir_device') {
+        // Before teaching an AC remote, check whether the AC is actually on
+        // Wi-Fi. In a multi-split home one handset drives every unit by
+        // proximity, so infrared carries no per-unit identity and produces a
+        // device that controls whatever happens to be in range.
+        try {
+          const probe = await smartAcProbe()
+          if (probe?.available) {
+            setIrSteer(probe.brand || 'tadiran')
+            setStep('pairing')   // the steer screen lives in the pairing step
+            return
+          }
+        } catch { /* can't tell — fall through to IR rather than block it */ }
         // Set up a TV/AC remote (assumes a blaster exists). Hand off to IRWizard.
         onClose()
         onAddIrDevice?.()
@@ -810,8 +833,53 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
               </div>
             )}
 
+            {/* Air conditioners just paired — place them in rooms before we
+                let the user go. Takes over the whole Wi-Fi panel. */}
+            {/* Chose infrared, but the AC is reachable over Wi-Fi. Infrared
+                can't address one unit in a multi-split home, so say why and
+                offer the route that actually works — without blocking IR for
+                someone who really does have a dumb unit. */}
+            {irSteer && (
+              <div className="w-full bg-surface-2 rounded-card p-4 text-start space-y-2">
+                <p className="text-body font-semibold text-ink">
+                  {t('wizard.irSteer.title')}
+                </p>
+                <p className="text-subhead text-ink-mute">
+                  {t('wizard.irSteer.body')}
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button onClick={() => {
+                    // Switch to the Wi-Fi panel so the flow runner and the
+                    // room-mapping step render; then start the brand flow.
+                    setIrSteer(null)
+                    setProtocol('wifi')
+                    handleBrandStart(irSteer)
+                  }}>
+                    {t('wizard.irSteer.useWifi')}
+                  </Button>
+                  <button
+                    onClick={() => { setIrSteer(null); onClose(); onAddIrDevice?.() }}
+                    className="z-btn-secondary z-button"
+                  >
+                    {t('wizard.irSteer.useIr')}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {mappingEntryId && (
+              <AcRoomMapping
+                entryId={mappingEntryId}
+                onDone={() => {
+                  setMappingEntryId(null)
+                  try { useDeviceStore.getState().fetchAll({ force: true }) } catch {}
+                  onClose?.()
+                }}
+              />
+            )}
+
             {/* Broadlink / Wi-Fi: discovered flows list */}
-            {(protocol === 'broadlink' || protocol === 'wifi') && (
+            {!mappingEntryId && (protocol === 'broadlink' || protocol === 'wifi') && (
               <div className="w-full">
                 {flowsLoading ? (
                   <div className="flex items-center justify-center py-6">
@@ -822,8 +890,13 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                     flowId={configuringFlow.flow_id}
                     title={configuringFlow.title}
                     initialStep={configuringFlow.initialStep}
-                    onDone={() => {
+                    onDone={(env) => {
+                      const brandAc = configuringFlow.isBrandAc
                       setConfiguringFlow(null)
+                      // An AC pairing can yield several units at once; send
+                      // those to the room-mapping step instead of closing.
+                      // A discovered TV or plug is a single device — close as before.
+                      if (brandAc && env?.entry_id) { setMappingEntryId(env.entry_id); return }
                       try { useDeviceStore.getState().fetchAll({ force: true }) } catch {}
                       onClose?.()
                     }}

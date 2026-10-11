@@ -252,7 +252,10 @@ async function request(method, path, body, { timeoutMs } = {}) {
   return parsed
 }
 
-const get = (path) => request('GET', path)
+// opts is optional and additive — existing callers pass nothing. Needed so a
+// slow read (a real LAN scan) can raise its own timeout without changing the
+// default for every GET.
+const get = (path, opts) => request('GET', path, undefined, opts)
 const post = (path, body, opts) => request('POST', path, body, opts)
 const put = (path, body) => request('PUT', path, body)
 const patch = (path, body) => request('PATCH', path, body)
@@ -634,6 +637,17 @@ export const configFlowCancel = (flowId) =>
 // ConfigFlowRunner drives it. 60s matches configFlowStep: the first step runs
 // a UDP broadcast scan of the LAN.
 export const getWifiBrands = () => get('/pairing/wifi-brands')
+// With entryId: every AC the pairing just produced. Without: the ones still
+// missing a room, which is how a unit that came back online later is noticed.
+export const getClimateUnits = (entryId) =>
+  get(entryId ? `/pairing/climate-units?entry_id=${encodeURIComponent(entryId)}` : '/pairing/climate-units')
+// Runs the unit for a few seconds, then restores it exactly, so the user can
+// hear which room it's in. An AC can't blink.
+export const identifyClimateUnit = (entityId, seconds) =>
+  post('/pairing/identify', { entity_id: entityId, seconds })
+// Runs a real LAN scan (and always aborts it), so it's slow — give it room.
+// Asked before letting anyone teach an infrared AC remote.
+export const smartAcProbe = () => get('/pairing/smart-ac-probe', { timeoutMs: 30_000 })
 export const configFlowStartByBrand = (brand) =>
   post('/pairing/config-flow/start', { brand }, { timeoutMs: 60_000 })
 

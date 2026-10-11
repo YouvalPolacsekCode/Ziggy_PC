@@ -156,6 +156,54 @@ async def commission_matter(code: str) -> dict:
 NON_DEVICE_FLOW_HANDLERS = frozenset({"bluetooth", "upnp", "dhcp"})
 
 
+async def climate_units(entry_id: str | None = None) -> dict:
+    """Air conditioners Ziggy knows about, for the room-mapping step.
+
+    One physical unit = one HA device (keyed by its MAC) = one climate entity,
+    so counting these IS the answer to "how many ACs does this home have?" —
+    the user never has to tell us.
+
+    With `entry_id`: every unit that pairing just produced, assigned or not.
+    Without it: only units that still have no room. Gree keeps scanning and
+    adds units as they come back online, so that second query is how Ziggy
+    notices a unit whose Wi-Fi module was reset days later.
+
+    Deliberately omits manufacturer. HA hardcodes it to "Gree" while the
+    customer bought a Tadiran, and no HA vocabulary belongs in this payload.
+    """
+    try:
+        dev_res, = await _ws({"type": "config/device_registry/list"})
+        ent_res, = await _ws({"type": "config/entity_registry/list"})
+        devices = {d["id"]: d for d in (dev_res.get("result") or [])}
+
+        units = []
+        for e in (ent_res.get("result") or []):
+            eid = e.get("entity_id") or ""
+            if not eid.startswith("climate."):
+                continue
+            dev = devices.get(e.get("device_id"))
+            if not dev:
+                continue
+            if entry_id and entry_id not in (dev.get("config_entries") or []):
+                continue
+            area = dev.get("area_id")
+            if not entry_id and area:
+                continue  # late-arrival query: only the ones still unplaced
+            units.append({
+                "device_id": dev["id"],
+                "entity_id": eid,
+                # name_by_user wins; otherwise the name the unit reported over
+                # the local protocol, which is often what the owner set in the
+                # vendor app and is worth pre-filling.
+                "name": dev.get("name_by_user") or dev.get("name") or eid,
+                "area_id": area,
+            })
+        return {"ok": True, "units": units}
+    except Exception as e:
+        log_error(f"[Pairing] climate_units: {e}")
+        return {"ok": False, "error": str(e), "units": []}
+
+
 async def get_pending_config_flows(integrations: list[str] | None = None,
                                    exclude: frozenset[str] | None = None) -> dict:
     """Return pending HA config flows (devices HA auto-discovered but not yet
