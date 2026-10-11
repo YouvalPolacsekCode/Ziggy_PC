@@ -425,6 +425,49 @@ async def config_flow_start(body: FlowStartBody,
     return out
 
 
+# ---------------------------------------------------------------------------
+# Integrations — the way OUT. Ziggy could add an integration but never remove
+# one; the only route was deleting its devices one at a time, which the
+# shared-entry safety guard in device_router correctly blocks, leaving a
+# zombie entry that refuses the next pairing with "already set up".
+# ---------------------------------------------------------------------------
+
+@router.get("/api/ha/integrations")
+async def ha_integrations(_user: dict = Depends(require_role("admin"))):
+    from services.ha_integrations import list_integrations
+    return await list_integrations()
+
+
+@router.delete("/api/ha/integrations/{entry_id}")
+async def ha_integration_remove(entry_id: str,
+                                _user: dict = Depends(require_role("admin"))):
+    """Remove an integration and everything it owns.
+
+    Answers from a read-back of the config entry, the device registry AND the
+    entity registry — never from the delete's own status code. A previous
+    removal looked successful because one layer happened to be empty while
+    two others were still populated.
+    """
+    from services.ha_integrations import remove_integration
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="DELETE /api/ha/integrations/{entry_id}",
+               user=_user.get("username"), auth_added=True)
+    res = await remove_integration(entry_id)
+    _schedule_registry_refresh(delay_s=2)
+    _dbus.emit("ha", BASIC, "integration_removed",
+               entry_id=entry_id, domain=res.get("domain"),
+               ok=res.get("ok"), verified=res.get("verified"))
+    return res
+
+
+@router.get("/api/ha/integrations/{entry_id}/verify")
+async def ha_integration_verify(entry_id: str,
+                                _user: dict = Depends(require_role("admin"))):
+    """Independent read-back: is this entry really gone, at every layer?"""
+    from services.ha_integrations import verify_removed
+    return await verify_removed(entry_id)
+
+
 @router.get("/api/pairing/smart-ac-probe")
 async def smart_ac_probe(_user: dict = Depends(require_role("admin"))):
     """Is there an air conditioner on this network we can control properly?
@@ -446,15 +489,25 @@ async def smart_ac_probe(_user: dict = Depends(require_role("admin"))):
     if not res.get("ok"):
         # Can't tell. Must not claim a smart AC exists — that would block the
         # infrared path for someone who genuinely needs it.
-        return {"ok": False, "available": False, "brand": brand}
+        return {"ok": False, "available": False, "state": "unknown",
+                "found_hardware": False, "brand": brand}
 
     step = res.get("step") or {}
     flow_id = step.get("flow_id")
     reason = step.get("reason")
-    # A form means hardware answered. "Already configured" means this home
-    # has smart ACs set up, which is an even stronger reason to avoid IR.
-    available = (step.get("type") != "abort") or reason in (
-        "single_instance_allowed", "already_configured")
+
+    # Three DISTINCT outcomes. They used to collapse into one boolean, and
+    # that cost a real debugging session: a customer's ACs had been deleted
+    # but the config entry survived, the probe answered `available: true`,
+    # and that was read as "the slate is clean" when it actually meant "the
+    # entry is still here". An aborted flow proves nothing about what is on
+    # the network, so `found_hardware` is only ever true for a live step.
+    if step.get("type") != "abort":
+        state, found = "found", True
+    elif reason in ("single_instance_allowed", "already_configured"):
+        state, found = "already_configured", False
+    else:
+        state, found = "none", False
 
     if flow_id:
         try:
@@ -462,7 +515,11 @@ async def smart_ac_probe(_user: dict = Depends(require_role("admin"))):
         except Exception:
             pass
 
-    return {"ok": True, "available": bool(available), "brand": brand}
+    # `available` stays "don't send this user to infrared" — true for both a
+    # live unit and an existing entry — but callers that need to know which
+    # must read `state`.
+    return {"ok": True, "available": state in ("found", "already_configured"),
+            "state": state, "found_hardware": found, "brand": brand}
 
 
 class IdentifyBody(BaseModel):

@@ -55,13 +55,37 @@ def test_no_devices_found_is_reported_unavailable(monkeypatch):
     assert out["available"] is False
 
 
-def test_already_configured_still_means_a_smart_ac_exists(monkeypatch):
-    """If the integration is already set up, the home HAS smart ACs — that is
-    the strongest possible reason not to send the user to infrared."""
+def test_already_configured_is_reported_distinctly(monkeypatch):
+    """A home that already HAS the integration set up is still a reason not to
+    send the user to infrared — but it is NOT the same fact as "hardware
+    answered a scan", and conflating them cost us a real debugging session.
+
+    A customer's four ACs were deleted; the config entry survived; the probe
+    reported `available: true` and was read as "the slate is clean", when what
+    it actually meant was "there is still an entry here". The caller must be
+    able to tell the two apart.
+    """
     _wire(monkeypatch, {"type": "abort", "flow_id": "f1",
                         "reason": "single_instance_allowed"})
     out = asyncio.run(pr.smart_ac_probe())
     assert out["available"] is True
+    assert out["state"] == "already_configured"
+    assert out["found_hardware"] is False, (
+        "an aborted flow proves nothing about what is on the network")
+
+
+def test_hardware_found_is_its_own_state(monkeypatch):
+    _wire(monkeypatch, {"type": "form", "flow_id": "f1", "step_id": "confirm"})
+    out = asyncio.run(pr.smart_ac_probe())
+    assert out["state"] == "found"
+    assert out["found_hardware"] is True
+
+
+def test_nothing_found_is_its_own_state(monkeypatch):
+    _wire(monkeypatch, {"type": "abort", "flow_id": "f1", "reason": "no_devices_found"})
+    out = asyncio.run(pr.smart_ac_probe())
+    assert out["state"] == "none"
+    assert out["found_hardware"] is False
 
 
 def test_probe_never_leaves_a_flow_behind(monkeypatch):
