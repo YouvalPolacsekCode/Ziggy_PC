@@ -16,9 +16,11 @@ existed. Set it with **`?motion=off`**, which sticks in that browser until
 `?motion=on`. That is the rollback path, so keep it honest: see the note in
 `flag.js`.
 
-Page transitions have their own switch on top of that one: **`?pages=off`**
-(sticks the same way) drops only the page slide and keeps everything else.
-See `pages.js` and `PageTransition.jsx` for why it exists.
+Page transitions have their own switch on top of that one, and it is **off by
+default**: the operator reviewed the iOS push on a phone (2026-10-11) and did
+not want pages arriving from the side, so every home gets the quiet keyed
+rise/back instead. **`?pages=on`** (sticks the same way) turns the push on for
+review; `?pages=off` turns it back off. See `pages.js` and `PageTransition.jsx`.
 
 There is deliberately no on-screen switch and no keyboard shortcut. An earlier
 build had both, plus a tuner with speed and curve dials; all of it was review
@@ -30,7 +32,7 @@ with nothing to explain why.
 src/motion/
   motion.js      easing, springs, haptics, reduced-motion, velocity helpers
   flag.js        the data-motion switch (URL → localStorage → default on)
-  pages.js       the page-transition switch (?pages=on|off → localStorage → default on)
+  pages.js       the page-transition switch (?pages=on|off → localStorage → default OFF)
   gestures.js    useLongPress · useSwipeBack · useScrub · useScrollChrome
   morph.js       shared-element FLIP across a route change
   pressLayer.js  delegated press + haptic feedback for the whole app
@@ -130,7 +132,7 @@ text fading in behind the motion. Implemented as a FLIP, not framer-motion's
 page transitions that black-screened the app. A FLIP has no handshake: if the
 origin is missing or stale, the page simply renders as it does today.
 
-**Page push.** Going somewhere new, the page slides in from the inline-end
+**Page push (off by default — `?pages=on` to review).** Going somewhere new, the page slides in from the inline-end
 edge over the one you were on, which recedes 30% the other way and dims to 35%
 behind a shadow on the incoming edge — so the page you left is visibly still
 there, behind the one you asked for. Coming back is the same movement run

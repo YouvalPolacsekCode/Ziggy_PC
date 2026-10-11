@@ -1,11 +1,13 @@
-// The page-transition switch — a second, narrower kill switch beside flag.js.
+// The page-transition switch — a second, narrower switch beside flag.js.
 //
 // Two earlier page transitions black-screened the app (AppShell.jsx has the
 // record). The iOS push built in PageTransition.jsx avoids both failure modes
-// by construction, but a home that still hits something wrong with it must
-// be able to drop ONLY the page slide and keep the rest of the layer. So:
+// by construction, and it passed every gate — but the operator held it on a
+// phone on 2026-10-11 and did not want pages arriving from the side. So the
+// slide is OFF by default: the quiet keyed CSS rise/back in motion.css is what
+// every home gets, and the push stays available for review behind `?pages=on`.
 //
-//   ?pages=on|1 / ?pages=off|0  →  localStorage ziggy_motion_pages  →  default ON
+//   ?pages=on|1 / ?pages=off|0  →  localStorage ziggy_motion_pages  →  default OFF
 //
 // An explicit query choice sticks, for the same reason flag.js's does: a
 // rollback that forgets itself on the next tap is not a rollback. Mirrored to
@@ -23,7 +25,7 @@ function readInitial() {
     if (stored === 'on') return true
     if (stored === 'off') return false
   } catch { /* private mode */ }
-  return true
+  return false
 }
 
 function persistExplicitChoice() {

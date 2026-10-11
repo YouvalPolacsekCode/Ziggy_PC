@@ -25,10 +25,10 @@ async function load(search) {
 describe('data-motion-pages flag', () => {
   beforeEach(() => { localStorage.clear(); document.documentElement.removeAttribute('data-motion-pages') })
 
-  it('defaults on and mirrors to <html>', async () => {
+  it('defaults OFF (operator decision 2026-10-11) and mirrors to <html>', async () => {
     const m = await load('')
-    expect(m.isPagesOn()).toBe(true)
-    expect(document.documentElement.getAttribute('data-motion-pages')).toBe('on')
+    expect(m.isPagesOn()).toBe(false)
+    expect(document.documentElement.getAttribute('data-motion-pages')).toBe('off')
   })
   it('?pages=off turns it off and sticks', async () => {
     const m = await load('?pages=off')
@@ -37,11 +37,13 @@ describe('data-motion-pages flag', () => {
     const again = await load('')
     expect(again.isPagesOn()).toBe(false)
   })
-  it('?pages=on re-enables', async () => {
-    localStorage.setItem('ziggy_motion_pages', 'off')
+  it('?pages=on opts in and sticks', async () => {
     const m = await load('?pages=on')
     expect(m.isPagesOn()).toBe(true)
     expect(document.documentElement.getAttribute('data-motion-pages')).toBe('on')
+    expect(localStorage.getItem('ziggy_motion_pages')).toBe('on')
+    const again = await load('')
+    expect(again.isPagesOn()).toBe(true)
   })
   it('setPages notifies subscribers', async () => {
     const m = await load('')
