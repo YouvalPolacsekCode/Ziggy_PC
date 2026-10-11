@@ -159,6 +159,8 @@ NON_DEVICE_FLOW_HANDLERS = frozenset({"bluetooth", "upnp", "dhcp"})
 # The domains a customer thinks of as "a device". Pairing can also create
 # diagnostic sensors and config switches; those are not things anyone places
 # in a room, so they never reach the mapping step.
+from services.entity_filter import _should_hide
+
 PRIMARY_DOMAINS = (
     "climate", "cover", "lock", "vacuum", "camera", "water_heater",
     "light", "switch", "fan", "media_player", "valve", "alarm_control_panel",
@@ -190,6 +192,12 @@ async def paired_units(entry_id: str | None = None) -> dict:
         for e in (ent_res.get("result") or []):
             eid = e.get("entity_id") or ""
             if eid.split(".", 1)[0] not in PRIMARY_DOMAINS:
+                continue
+            # Pairing also produces bridge controls and diagnostics — a
+            # Zigbee2MQTT permit-join switch is a `switch`, but nobody puts it
+            # in a room. Reuse Ziggy's one filter for system entities rather
+            # than growing a second opinion about what counts as a device.
+            if _should_hide(eid):
                 continue
             dev = devices.get(e.get("device_id"))
             if not dev:

@@ -32,6 +32,10 @@ ENTITIES = [
     {"entity_id": "climate.ac_2",  "device_id": "d2"},
     {"entity_id": "climate.alon",  "device_id": "d3"},
     {"entity_id": "light.hub",     "device_id": "d9"},
+    # Infrastructure: a Zigbee2MQTT bridge control. Found on a real hub after
+    # the lookup was widened past climate — it is not a device anyone puts in
+    # a room, and offering it as one is noise at best.
+    {"entity_id": "switch.zigbee2mqtt_bridge_permit_join", "device_id": "d2"},
 ]
 
 
@@ -87,6 +91,16 @@ def test_without_an_entry_id_returns_only_roomless_units(monkeypatch):
     _wire(monkeypatch)
     out = asyncio.run(hp.climate_units())
     assert {u["entity_id"] for u in out["units"]} == {"climate.salon", "climate.ac_2"}
+
+
+def test_infrastructure_entities_are_not_offered_as_devices(monkeypatch):
+    """Widening this lookup past climate started surfacing bridge plumbing as
+    "a device needing a room". Ziggy already has one filter for system
+    entities; this must use it rather than grow a second opinion."""
+    _wire(monkeypatch)
+    out = asyncio.run(hp.paired_units(entry_id="gree-entry"))
+    ids = {u["entity_id"] for u in out["units"]}
+    assert "switch.zigbee2mqtt_bridge_permit_join" not in ids
 
 
 def test_never_leaks_the_ha_handler_vocabulary(monkeypatch):
