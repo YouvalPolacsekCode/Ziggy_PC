@@ -26,6 +26,7 @@ GUARDED = {
     "/api/pairing/climate-units",
     "/api/pairing/identify",
     "/api/pairing/brand-request",
+    "/api/pairing/brand-rescan",
     # Removal is the most destructive thing in this router.
     "/api/ha/integrations",
     "/api/ha/integrations/{entry_id}",

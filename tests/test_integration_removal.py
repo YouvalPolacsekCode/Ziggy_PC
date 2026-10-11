@@ -144,3 +144,43 @@ def test_remove_reports_the_verification_not_the_http_status(monkeypatch):
     out = asyncio.run(hi.remove_integration("gree-1", verify=True))
     assert out["ok"] is False
     assert out["verified"]["removed"] is False
+
+
+# ── Rescan: the way to pick up units that weren't answering ─────────────────
+
+def test_reload_finds_the_entry_for_a_domain(monkeypatch):
+    """Gree is single-instance: once the entry exists, starting its flow again
+    is refused with "already set up". A customer with six air conditioners
+    paired three and had no way to reach the rest — the pairing screen was a
+    dead end. Reloading the entry re-runs the integration's own discovery."""
+    _wire(monkeypatch)
+    called = []
+
+    async def fake_reload(entry_id):
+        called.append(entry_id)
+        return True
+
+    monkeypatch.setattr(hi, "_reload_entry", fake_reload)
+    out = asyncio.run(hi.rescan_domain("gree"))
+    assert out["ok"] is True
+    assert called == ["gree-1"]
+
+
+def test_rescan_reports_what_changed(monkeypatch):
+    """The answer the user needs is "did that find anything new", so the count
+    before and after must both be reported."""
+    _wire(monkeypatch)
+
+    async def fake_reload(entry_id):
+        return True
+
+    monkeypatch.setattr(hi, "_reload_entry", fake_reload)
+    out = asyncio.run(hi.rescan_domain("gree", settle_s=0))
+    assert out["devices_before"] == 2
+    assert "devices_after" in out
+
+
+def test_rescan_on_a_domain_with_no_entry_is_refused(monkeypatch):
+    _wire(monkeypatch)
+    out = asyncio.run(hi.rescan_domain("electrasmart"))
+    assert out["ok"] is False

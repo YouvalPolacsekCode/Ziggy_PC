@@ -24,7 +24,7 @@ function extractMatterCode(raw) {
 import {
   zigbeePermit, getHaDevices, renameHaDevice, assignDeviceToArea,
   zwaveInclude, zwaveStop, matterCommission, matterStatus, getConfigFlows,
-  configFlowStartByBrand, smartAcProbe,
+  configFlowStartByBrand, smartAcProbe, rescanBrand,
 } from '../lib/api'
 import SwitcherPairingFlow from './SwitcherPairingFlow'
 import ConfigFlowRunner from './ConfigFlowRunner'
@@ -244,6 +244,11 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
   const [mappingEntryId, setMappingEntryId] = useState(null)
   // Set when the user chose infrared for an AC that is actually on Wi-Fi.
   const [irSteer, setIrSteer] = useState(null)
+  // Brand whose integration already exists — offer a rescan instead of a
+  // dead end, because that is the only way to reach units that were asleep
+  // or resetting when the first broadcast went out.
+  const [rescanBrandKey, setRescanBrandKey] = useState(null)
+  const [rescanBusy, setRescanBusy] = useState(false)
 
   const snapshotRef = useRef(new Set())
   const timerRef    = useRef(null)
@@ -531,6 +536,9 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
         try { useDeviceStore.getState().fetchAll({ force: true }) } catch {}
         onClose?.()
       } else {
+        if (env?.reason === 'single_instance_allowed' || env?.reason === 'already_configured') {
+          setRescanBrandKey(brand)
+        }
         const key = ABORT_KEYS[env?.reason]
         setBrandNotice(
           key ? t(key, { brand: label || brand })
@@ -952,9 +960,29 @@ export function PairingWizard({ open, onClose, onAddIrDevice, onAddIrBlaster }) 
                   <div className="w-full mt-3 pt-3 border-t border-line">
                     <WifiBrandPicker busyBrand={brandBusy} onPick={handleBrandStart} />
                     {brandNotice && (
-                      <p className="text-subhead text-ink-2 bg-surface-2 rounded-card p-3 mt-2">
-                        {brandNotice}
-                      </p>
+                      <div className="text-subhead text-ink-2 bg-surface-2 rounded-card p-3 mt-2 space-y-2">
+                        <p>{brandNotice}</p>
+                        {rescanBrandKey && (
+                          <Button
+                            onClick={async () => {
+                              setRescanBusy(true)
+                              try {
+                                const r = await rescanBrand(rescanBrandKey)
+                                setBrandNotice(
+                                  r?.found_new > 0
+                                    ? t('wizard.pairing.rescanFound', { n: r.found_new })
+                                    : t('wizard.pairing.rescanNone'))
+                                if (r?.found_new > 0) { setRescanBrandKey(null); setMappingEntryId(r.entry_id) }
+                              } catch {
+                                setBrandNotice(t('wizard.pairing.rescanNone'))
+                              } finally { setRescanBusy(false) }
+                            }}
+                            disabled={rescanBusy}
+                          >
+                            {rescanBusy ? t('wizard.pairing.rescanBusy') : t('wizard.pairing.rescanBtn')}
+                          </Button>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}

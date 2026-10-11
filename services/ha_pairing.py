@@ -188,10 +188,17 @@ async def paired_units(entry_id: str | None = None) -> dict:
         ent_res, = await _ws({"type": "config/entity_registry/list"})
         devices = {d["id"]: d for d in (dev_res.get("result") or [])}
 
-        units = []
+        # One row per PHYSICAL DEVICE, not per entity. A Gree air conditioner
+        # publishes a climate entity plus five auxiliary switches (panel
+        # light, quiet mode, fresh air, xtra fan, health mode). Listing
+        # entities made one AC appear as six near-identical rows sharing a
+        # MAC-derived name; a customer configured one of them and gave up.
+        # "Which room is this?" is a question about the box on the wall.
+        best: dict[str, dict] = {}
         for e in (ent_res.get("result") or []):
             eid = e.get("entity_id") or ""
-            if eid.split(".", 1)[0] not in PRIMARY_DOMAINS:
+            domain = eid.split(".", 1)[0]
+            if domain not in PRIMARY_DOMAINS:
                 continue
             # Pairing also produces bridge controls and diagnostics — a
             # Zigbee2MQTT permit-join switch is a `switch`, but nobody puts it
@@ -207,16 +214,23 @@ async def paired_units(entry_id: str | None = None) -> dict:
             area = dev.get("area_id")
             if not entry_id and area:
                 continue  # late-arrival query: only the ones still unplaced
-            units.append({
+
+            rank = PRIMARY_DOMAINS.index(domain)
+            prev = best.get(dev["id"])
+            if prev and prev["_rank"] <= rank:
+                continue
+            best[dev["id"]] = {
+                "_rank": rank,
                 "device_id": dev["id"],
                 "entity_id": eid,
-                "domain": eid.split(".", 1)[0],
+                "domain": domain,
                 # name_by_user wins; otherwise the name the unit reported over
                 # the local protocol, which is often what the owner set in the
                 # vendor app and is worth pre-filling.
                 "name": dev.get("name_by_user") or dev.get("name") or eid,
                 "area_id": area,
-            })
+            }
+        units = [{k: v for k, v in u.items() if k != "_rank"} for u in best.values()]
         return {"ok": True, "units": units}
     except Exception as e:
         log_error(f"[Pairing] paired_units: {e}")

@@ -155,3 +155,60 @@ async def remove_integration(entry_id: str, verify: bool = True) -> dict:
         "delete_reported": bool(deleted),
         "verified": checked,
     }
+
+
+async def _reload_entry(entry_id: str) -> bool:
+    """Ask HA to reload one config entry. For a discovery-based integration
+    this re-runs its setup, which re-runs its scan."""
+    import asyncio
+    from services.home_automation import call_service
+    try:
+        await asyncio.to_thread(
+            call_service, "homeassistant", "reload_config_entry",
+            {"entry_id": entry_id})
+        return True
+    except Exception as e:
+        log_error(f"[Integrations] reload {entry_id}: {e}")
+        return False
+
+
+async def rescan_domain(domain: str, settle_s: float = 12.0) -> dict:
+    """Look for more devices belonging to an integration already set up.
+
+    Gree — and every other single-instance integration — refuses to start its
+    config flow a second time, so once the entry exists the pairing screen has
+    nothing left to offer. A customer with six air conditioners paired the
+    three that happened to answer the first broadcast and was then stuck:
+    tapping the brand again just said "already set up".
+
+    Reloading the entry re-runs the integration's own discovery, which is the
+    supported way to pick up units that were asleep, resetting, or simply
+    missed the first scan.
+    """
+    import asyncio
+    entries = await _entries()
+    entry = next((e for e in entries if e.get("domain") == domain), None)
+    if not entry:
+        return {"ok": False, "error": f"'{domain}' is not set up on this hub"}
+
+    entry_id = entry.get("entry_id")
+    devices = await _devices()
+    before = sum(1 for d in devices if entry_id in (d.get("config_entries") or []))
+
+    log_info(f"[Integrations] rescanning {domain} ({entry_id}), {before} device(s) now")
+    ok = await _reload_entry(entry_id)
+    if settle_s:
+        # Discovery is a UDP broadcast with its own timeout; give it room
+        # before counting, or we report the pre-reload number back.
+        await asyncio.sleep(settle_s)
+
+    devices_after = await _devices()
+    after = sum(1 for d in devices_after if entry_id in (d.get("config_entries") or []))
+    return {
+        "ok": bool(ok),
+        "domain": domain,
+        "entry_id": entry_id,
+        "devices_before": before,
+        "devices_after": after,
+        "found_new": max(0, after - before),
+    }

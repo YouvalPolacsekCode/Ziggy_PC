@@ -468,6 +468,32 @@ async def ha_integration_verify(entry_id: str,
     return await verify_removed(entry_id)
 
 
+@router.post("/api/pairing/brand-rescan")
+async def brand_rescan(body: FlowStartBody,
+                       _user: dict = Depends(require_role("admin"))):
+    """Look for more units of a brand that is already set up.
+
+    Single-instance integrations refuse a second config flow, so "already set
+    up" was a dead end: a home with six air conditioners paired the three that
+    answered the first broadcast and had no way to reach the rest. This
+    reloads the integration, which re-runs its own discovery.
+    """
+    from services.ha_integrations import rescan_domain
+    from services.wifi_brands import handler_for, label_for
+
+    handler = handler_for(body.brand)
+    if not handler:
+        raise HTTPException(status_code=400, detail="Unsupported brand")
+
+    _dbus.emit("auth", BASIC, "auth_promoted_route_called",
+               route="POST /api/pairing/brand-rescan",
+               user=_user.get("username"), auth_added=True)
+    res = await rescan_domain(handler)
+    res["label"] = label_for(body.brand)
+    _schedule_registry_refresh(delay_s=2)
+    return res
+
+
 @router.get("/api/pairing/smart-ac-probe")
 async def smart_ac_probe(_user: dict = Depends(require_role("admin"))):
     """Is there an air conditioner on this network we can control properly?

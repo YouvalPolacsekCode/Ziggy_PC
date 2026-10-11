@@ -652,6 +652,11 @@ export const identifyClimateUnit = (entityId, seconds) =>
 // Runs a real LAN scan (and always aborts it), so it's slow — give it room.
 // Asked before letting anyone teach an infrared AC remote.
 export const smartAcProbe = () => get('/pairing/smart-ac-probe', { timeoutMs: 30_000 })
+// "Already set up" is not the end of the road: single-instance integrations
+// refuse a second pairing, so this reloads the one that exists and re-runs
+// its own discovery to pick up units that missed the first scan.
+export const rescanBrand = (brand) =>
+  post('/pairing/brand-rescan', { brand }, { timeoutMs: 60_000 })
 export const configFlowStartByBrand = (brand) =>
   post('/pairing/config-flow/start', { brand }, { timeoutMs: 60_000 })
 

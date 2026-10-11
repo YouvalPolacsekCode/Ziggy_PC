@@ -36,6 +36,12 @@ ENTITIES = [
     # the lookup was widened past climate — it is not a device anyone puts in
     # a room, and offering it as one is noise at best.
     {"entity_id": "switch.zigbee2mqtt_bridge_permit_join", "device_id": "d2"},
+    # A Gree AC also exposes five auxiliary switches. On a real hub this made
+    # ONE air conditioner appear as SIX rows, all with the same MAC-derived
+    # name, and the customer gave up after configuring one of them.
+    {"entity_id": "switch.ac_2_panel_light", "device_id": "d2"},
+    {"entity_id": "switch.ac_2_quiet_mode",  "device_id": "d2"},
+    {"entity_id": "switch.ac_2_fresh_air",   "device_id": "d2"},
 ]
 
 
@@ -91,6 +97,27 @@ def test_without_an_entry_id_returns_only_roomless_units(monkeypatch):
     _wire(monkeypatch)
     out = asyncio.run(hp.climate_units())
     assert {u["entity_id"] for u in out["units"]} == {"climate.salon", "climate.ac_2"}
+
+
+def test_one_row_per_physical_device_not_per_entity(monkeypatch):
+    """A Gree AC publishes a climate entity plus five switches. The mapping
+    screen asks "which room is this?" — a question about the box on the wall,
+    so it must be asked once per box, not once per entity."""
+    _wire(monkeypatch)
+    out = asyncio.run(hp.paired_units(entry_id="gree-entry"))
+    devs = [u["device_id"] for u in out["units"]]
+    assert len(devs) == len(set(devs)), f"duplicate rows per device: {devs}"
+
+
+def test_the_row_carries_the_devices_primary_entity(monkeypatch):
+    """When a device has both a climate entity and switches, the row must be
+    the climate one — that is what Identify pulses and what the room cares
+    about."""
+    _wire(monkeypatch)
+    out = asyncio.run(hp.paired_units(entry_id="gree-entry"))
+    row = next(u for u in out["units"] if u["device_id"] == "d2")
+    assert row["entity_id"] == "climate.ac_2"
+    assert row["domain"] == "climate"
 
 
 def test_infrastructure_entities_are_not_offered_as_devices(monkeypatch):
