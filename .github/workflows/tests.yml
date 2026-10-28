@@ -106,7 +106,7 @@ jobs:
 
       - name: pytest
         run: |
-          pytest -q -x --timeout=600 tests \
+          pytest -q --timeout=600 tests \
             --deselect tests/test_anomaly_engine.py::TestAnom04::test_fires_in_quiet_hours \
             --deselect tests/test_anomaly_engine.py::TestAnom04::test_clears_when_quiet_hours_end \
             --deselect tests/test_anomaly_engine.py::TestAnom04::test_away_mode_boosts_confidence \
