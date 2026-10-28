@@ -7,6 +7,7 @@ import { cn } from '../../lib/utils'
 import { useT, t as _t } from '../../lib/i18n'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { getKind } from '../../lib/devices'
+import { matchesDeviceSearch } from '../../lib/deviceSearch'
 import { DeviceIcon } from '../../lib/deviceIcons'
 
 // Resolve an action's display label. Prefers labelKey (i18n) and falls back to
@@ -175,6 +176,10 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
   // name even before the dropdown lazily fetches its own list (otherwise a
   // pre-filled value shows "Unknown device" until the dropdown is opened).
   const storeEntities = useDeviceStore((s) => s.entities)
+  // Physical device groups, when the store has them — lets search treat a
+  // power-metering switch as a plug, same as the Devices page.
+  const groupByEntityId = useDeviceStore((s) => s.groupByEntityId)
+  const groupById = useDeviceStore((s) => s.groupById)
   const [loading, setLoading] = useState(false)
   const ref = useRef(null)
   const triggerRef = useRef(null)
@@ -281,15 +286,10 @@ export function EntitySelect({ value, onChange, label, placeholder, domain: filt
   // Group entities by room
   const filteredEntities = entities.filter((e) => {
     if (allowedDomains && !allowedDomains.has(e.domain)) return false
-    const q = search.toLowerCase()
-    if (!q) return true
-    // Match against entity_id and EVERY name source so a search for the
-    // user's renamed label finds the device — earlier we only checked
-    // friendly_name, which meant Ziggy renames (stored in display_name)
-    // weren't searchable until HA's registry caught up.
-    return e.entity_id.toLowerCase().includes(q)
-        || (e.display_name || '').toLowerCase().includes(q)
-        || (e.friendly_name || '').toLowerCase().includes(q)
+    // Match entity_id, EVERY name source (Ziggy renames live in display_name
+    // before HA's registry catches up) and what the device is — kind, label
+    // in both languages, synonyms. See lib/deviceSearch.js.
+    return matchesDeviceSearch(e, search, groupById[groupByEntityId[e.entity_id]] || null)
   })
 
   const grouped = {}

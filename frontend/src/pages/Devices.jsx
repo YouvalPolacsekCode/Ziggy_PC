@@ -30,6 +30,7 @@ import BlastersSection from '../components/settings/BlastersSection'
 import UnassignedSignalsPanel from '../components/UnassignedSignalsPanel'
 import { getRoomPhoto } from '../lib/roomPhotos'
 import { useT, useLang, translateNamePhrase } from '../lib/i18n'
+import { matchesDeviceSearch } from '../lib/deviceSearch'
 
 // True for a stateless controller in EITHER list. The flat device list carries
 // a `_controller` flag (set by deviceStore.controllerToEntity), but the "By
@@ -2349,17 +2350,20 @@ export default function Devices() {
     }
   }, [entities.length])
 
+  // Search matches names AND what the device is (kind, synonyms, its group) —
+  // see lib/deviceSearch.js. Applied to every filter, including No Room and
+  // Unassigned, which used to ignore the search box entirely.
+  const matchesSearch = (e) =>
+    !search || matchesDeviceSearch(e, search, groupById[groupByEntityId[e.entity_id]] || null)
+
   const filtered = (() => {
-    if (domain === 'unassigned') return unassigned
-    if (domain === 'noroom') return noRoomEntities
+    if (domain === 'unassigned') return unassigned.filter(matchesSearch)
+    if (domain === 'noroom') return noRoomEntities.filter(matchesSearch)
     // Smart sensors are surfaced as their own enriched list — they don't live
     // in the main `entities` filter path (so they never show up twice when
     // any other filter is active).
     if (domain === 'smart_sensors') {
-      return smartSensorEntries.filter((e) =>
-        !search ||
-        (e.display_name || e.friendly_name || '').toLowerCase().includes(search.toLowerCase())
-      )
+      return smartSensorEntries.filter(matchesSearch)
     }
     return entities.filter((e) => {
       const isHidden = hiddenEntities.has(e.entity_id)
@@ -2386,10 +2390,7 @@ export default function Devices() {
         const isGroupFilter = groupFilters.some((f) => f.id === domain)
         matchDomain = isGroupFilter ? domainGroup(e) === domain : e.domain === domain
       }
-      const matchSearch = !search ||
-        (e.display_name || e.friendly_name || '').toLowerCase().includes(search.toLowerCase()) ||
-        e.entity_id.toLowerCase().includes(search.toLowerCase())
-      return matchDomain && matchSearch
+      return matchDomain && matchesSearch(e)
     })
   })()
 
