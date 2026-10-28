@@ -71,6 +71,10 @@ def test_manifest_records_recipe_automations(monkeypatch):
 
 def test_preview_summary_counts_only_buildable(monkeypatch):
     from core.handlers import automation_handler as AH
+    from core import result_utils
+    # The summary speaks the home's language; the assertions below are English,
+    # and settings.example.yaml (CI's config) is Hebrew-first.
+    monkeypatch.setattr(result_utils, "current_language", lambda: "en")
     monkeypatch.setattr("services.orchestra_designer.design_bundle", lambda outcome, language=None: {"ok": True, "bundle": {
         "bundle_id": "b", "name": "N", "rationale": "R", "language": "en", "decline": None,
         "artifacts": {"recipes": [{"recipe": "smart_room", "room": "kitchen"}], "automations": []},

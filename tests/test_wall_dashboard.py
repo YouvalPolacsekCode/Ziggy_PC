@@ -752,7 +752,8 @@ def test_wall_routes_are_registered():
     server.py, which is why /api/dashboard/* 404s. Guard against the wall
     router silently suffering the same fate."""
     import backend.server as server
-    paths = {r.path for r in server.app.routes if hasattr(r, "path")}
+    from tests._routes import route_paths
+    paths = route_paths(server.app)
     for expected in ("/api/wall/layout", "/api/wall/policy", "/api/wall/pin/verify",
                      "/api/lists", "/api/agenda", "/api/wall/tablets/claim"):
         assert expected in paths, f"{expected} is not registered"

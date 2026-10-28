@@ -15,6 +15,12 @@
 # * Nothing here needs hardware, a Home Assistant, or the network beyond
 #   package installs. Tests that talk to a real HA/MQTT are already
 #   self-skipping or mock their I/O.
+# * Each suite runs on the Python its production image runs: the hub on 3.12
+#   (Dockerfile: python:3.12-slim), the relay on 3.11 (relay/Dockerfile:
+#   python:3.11-slim). Until 2026-10-28 both ran together on 3.11, and
+#   requirements.txt's `aioswitcher>=6.0` (6.x is Requires-Python >=3.12) made
+#   `pip install` fail before a single test ran — on every branch, every run,
+#   since this workflow was added. Keep these in step with the Dockerfiles.
 #
 # Deselected tests (documented exclusions — remove a line when it is fixed)
 # ------------------------------------------------------------------------
@@ -55,8 +61,8 @@ permissions:
   contents: read
 
 jobs:
-  python:
-    name: pytest (hub + relay)
+  hub:
+    name: pytest (hub)
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -74,7 +80,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"   # = Dockerfile (hub image)
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -86,13 +92,21 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends portaudio19-dev
 
       - name: Install Python dependencies
+        # Only the hub's requirements.txt, as the hub image installs — NOT
+        # relay/requirements.txt, whose fastapi==0.115.0 pin drags Starlette
+        # back to 0.38 and breaks every hub test using TestClient(client=...).
+        # A few hub-suite tests import relay code, so add just the relay
+        # packages they need, at the relay's pins: PyJWT for
+        # tests/test_edge_ota_client.py (hub and relay must canonicalise OTA
+        # manifests identically) and stripe for tests/test_relay_*.py, which
+        # import relay.app.main.
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r relay/requirements.txt
+          pip install -r requirements.txt "PyJWT==2.9.0" "stripe==11.1.0"
 
       - name: pytest
         run: |
-          pytest -q -x --timeout=600 tests relay/tests \
+          pytest -q -x --timeout=600 tests \
             --deselect tests/test_anomaly_engine.py::TestAnom04::test_fires_in_quiet_hours \
             --deselect tests/test_anomaly_engine.py::TestAnom04::test_clears_when_quiet_hours_end \
             --deselect tests/test_anomaly_engine.py::TestAnom04::test_away_mode_boosts_confidence \
@@ -104,6 +118,32 @@ jobs:
             --deselect tests/test_edge_health_router.py::test_snapshot_returns_unknown_ziggy_version_if_telemetry_missing \
             --deselect tests/test_mobile_router_audit_events.py::test_route_surface_unchanged \
             --deselect tests/test_smart_room_recipe.py::test_needs_occupancy_when_none
+
+  relay:
+    name: pytest (relay)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # = relay/Dockerfile (Fly image)
+          cache: pip
+          cache-dependency-path: relay/requirements.txt
+
+      - name: Install Python dependencies
+        # relay/requirements.txt is the production image's list and carries no
+        # test tooling; the pins below match requirements.txt's.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r relay/requirements.txt "pytest>=8.0" "pytest-asyncio>=0.23" "pytest-timeout>=2.3"
+
+      - name: pytest
+        run: pytest -q -x --timeout=600 relay/tests
 
   frontend:
     name: frontend (build + vitest)

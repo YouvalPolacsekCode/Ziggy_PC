@@ -249,4 +249,6 @@ async def test_init_db_creates_all_tables(relay_db):
         "ota_release_cohorts", "home_cohorts",
         # Prompt 9 chunk 2 (Stripe billing):
         "founder_slots", "processed_webhooks", "invoice_sequence",
+        # 5c1d8286 (relay LLM proxy): per-home model-call cost ledger.
+        "llm_usage",
     }

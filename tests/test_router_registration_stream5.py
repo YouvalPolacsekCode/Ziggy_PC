@@ -14,7 +14,8 @@ import pytest
 
 def _app_paths():
     from backend.server import app
-    return {getattr(r, "path", None) for r in app.routes}
+    from tests._routes import route_paths
+    return route_paths(app)
 
 
 def test_alerts_router_mounted():
@@ -30,7 +31,8 @@ def test_lifecycle_routes_mounted():
 
 def test_login_route_has_rate_limit_dependency():
     from backend.server import app
-    login = [r for r in app.routes if getattr(r, "path", None) == "/api/auth/login"]
+    from tests._routes import iter_routes
+    login = [r for path, r in iter_routes(app) if path == "/api/auth/login"]
     assert login, "login route missing"
     dep_calls = [d.call for d in login[0].dependant.dependencies]
     from backend.middleware.rate_limit import enforce_login_rate_limit
