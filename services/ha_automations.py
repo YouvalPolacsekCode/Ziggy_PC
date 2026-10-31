@@ -180,8 +180,10 @@ def invalid_trigger_reason(data: dict) -> Optional[str]:
         if not fill(t.get("entity_id")):
             return "This automation watches no device, so nothing can set it off. Choose one."
     elif kind == "time":
-        if not fill(t.get("time")):
-            return "This automation has no time set, so it would never run. Set a time."
+        from services.schedule_trigger import invalid_reason as _schedule_invalid
+        reason = _schedule_invalid(t)
+        if reason:
+            return reason
     elif kind == "time_pattern":
         if not any(fill(t.get(k)) for k in ("seconds", "minutes", "hours")):
             return "This automation has no repeat interval, so it would never run."
@@ -420,6 +422,13 @@ def _trigger_to_ha(t: dict) -> list:
         log_error(f"[HA] converting an incomplete trigger {t!r} — {_incomplete} "
                   f"(this should have been refused at save time)")
     if kind == "time":
+        # Several times a day → HA takes a list. A single time keeps the exact
+        # config every existing rule compiled to. Days are a condition, added
+        # by save_automation (_schedule_day_condition).
+        from services.schedule_trigger import trigger_times
+        times = trigger_times(t)
+        if len(times) > 1:
+            return [{"platform": "time", "at": [f"{x}:00" for x in times]}]
         return [{"platform": "time", "at": f"{t.get('time', '08:00')}:00"}]
     if kind == "state":
         cfg: dict = {"platform": "state", "entity_id": t.get("entity_id", ""), "to": t.get("state", "on")}
@@ -582,7 +591,11 @@ def _ha_trigger_to_ziggy(ha_triggers: list) -> dict:
     t = ha_triggers[0] if isinstance(ha_triggers, list) else ha_triggers
     platform = t.get("platform", "time")
     if platform == "time":
-        return {"type": "time", "time": str(t.get("at", "00:00:00"))[:5]}
+        at = t.get("at", "00:00:00")
+        if isinstance(at, list) and at:
+            times = [str(x)[:5] for x in at]
+            return {"type": "time", "time": times[0], **({"times": times} if len(times) > 1 else {})}
+        return {"type": "time", "time": str(at)[:5]}
     if platform == "state":
         return {"type": "state", "entity_id": t.get("entity_id", ""), "state": t.get("to", "on")}
     if platform == "numeric_state":
@@ -951,6 +964,12 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
 
     ziggy_actions = data.get("actions", [])
     trigger = data.get("trigger", {})
+    if (trigger or {}).get("type") == "time":
+        # Canonical schedule form (days, several times). A plain every-day,
+        # single-time rule comes out exactly as it went in.
+        from services.schedule_trigger import normalized as _schedule_normalized
+        trigger = _schedule_normalized(trigger)
+        data = {**data, "trigger": trigger}
 
     from services.local_automation_actions import save_ziggy_actions, save_automation_meta
 
@@ -1000,6 +1019,9 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
         ziggy_conditions = data.get("conditions", [])
         ha_conditions = [_condition_to_ha(c) for c in ziggy_conditions]
         ha_conditions = [c for c in ha_conditions if c is not None]
+        _day_cond = _schedule_day_condition(trigger)
+        if _day_cond and not (native and native.get("triggers")):
+            ha_conditions.append(_day_cond)
 
     if native and native.get("triggers"):
         ha_triggers = list(native["triggers"])
@@ -1056,6 +1078,19 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
         return {"ok": False, "error": f"HA {resp.status_code}: {resp.text}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+def _schedule_day_condition(trigger: dict) -> Optional[dict]:
+    """A schedule's days as an HA weekday condition, or None for every day.
+
+    Time rules are fired by Ziggy's scheduler, so this only matters for one
+    compiled into HA (a hybrid body); without it HA would run it every day.
+    """
+    if (trigger or {}).get("type") != "time":
+        return None
+    from services.schedule_trigger import trigger_days
+    days = trigger_days(trigger)
+    return {"condition": "time", "weekday": days} if days else None
 
 
 def _retire_local_copy(auto_id: str) -> None:

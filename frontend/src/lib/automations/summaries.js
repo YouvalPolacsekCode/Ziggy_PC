@@ -4,9 +4,28 @@
 // These resolve translation keys via the static t() reader so they can run
 // outside React render contexts (e.g. when building a card preview from a
 // memo, where useT() isn't available).
-import { t as tStatic } from '../i18n'
+import { t as tStatic, getLang } from '../i18n'
 import { entityDisplayName } from '../utils'
 import { useDeviceStore } from '../../stores/deviceStore'
+import { scheduleTimes, scheduleDays, daysPreset, dayShortName } from './schedule'
+
+/** "Every day at 07:00" · "Sun–Thu at 07:00, 19:30" · "Mon, Wed at 18:00". */
+export function scheduleSummary(trigger) {
+  const times = scheduleTimes(trigger)
+  if (!times.length) return tStatic('automations.summary.timeNoTime')
+  const time = times.join(', ')
+  const days = scheduleDays(trigger)
+  switch (daysPreset(days)) {
+    case 'every':    return tStatic('automations.summary.everyDayAt', { time })
+    case 'workweek': return tStatic('automations.summary.workweekAt', { time })
+    case 'weekend':  return tStatic('automations.summary.weekendAt', { time })
+    default: {
+      if (!days.length) return tStatic('automations.summary.noDays')
+      const lang = getLang()
+      return tStatic('automations.summary.daysAt', { days: days.map(d => dayShortName(d, lang)).join(', '), time })
+    }
+  }
+}
 
 export function formatRelativeTime(iso) {
   if (!iso) return null
@@ -22,9 +41,7 @@ export function formatRelativeTime(iso) {
 export function triggerSummary(trigger) {
   if (!trigger?.type) return tStatic('automations.summary.noTrigger')
   switch (trigger.type) {
-    case 'time':    return trigger.time
-      ? tStatic('automations.summary.everyDayAt', { time: trigger.time.slice(0, 5) })
-      : tStatic('automations.summary.timeNoTime')
+    case 'time':    return scheduleSummary(trigger)
     case 'state': {
       let s = tStatic('automations.summary.whenBecomes', { entity: friendlyEntityName(trigger.entity_id) || tStatic('automations.summary.unknownDevice'), state: trigger.state || 'on/off' })
       if (trigger.for_minutes) s += ' ' + tStatic('automations.summary.forMinutes', { n: trigger.for_minutes })

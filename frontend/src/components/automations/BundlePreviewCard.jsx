@@ -4,6 +4,7 @@ import { AlertTriangle, Check, X, Undo2 } from 'lucide-react'
 import { useT } from '../../lib/i18n'
 import { T_ENTER } from '../../lib/motion'
 import { applyAutomationBundle, deleteAutomationBundle } from '../../lib/api'
+import { scheduleSummary } from '../../lib/automations/summaries'
 
 // One 1s linear spinner (the .z-spin keyframe), sized to sit inside a button.
 function Spinner({ size = 16 }) {
@@ -79,6 +80,8 @@ function triggerSummary(trigger, lang, t) {
 
   // Time-of-day — "every day at 23:00"
   if (type === 'time') {
+    // A schedule with days or several times reads like it does everywhere else.
+    if (trigger.days || (Array.isArray(trigger.times) && trigger.times.length > 1)) return scheduleSummary(trigger)
     const at = trigger.at || trigger.time || ''
     if (at) return t('automations.proCard.trigTimeAt', { time: at })
     return t('automations.proCard.trigTimeGeneric')

@@ -26,6 +26,8 @@
 // here; services/ha_automations.has_valid_trigger closes it server-side,
 // because a client-only check is not a guarantee.
 
+import { scheduleTimes } from './schedule'
+
 /** True when this step would actually reach a device or a person. */
 export function isEffectiveAction(action) {
   if (!action || typeof action !== 'object') return false
@@ -64,8 +66,13 @@ export function triggerBlocker(trigger) {
     case 'occupancy':
       // Resolved to a `state` trigger on save, so it needs the same target.
       return filled(t.entity_id) ? null : 'triggerRoom'
-    case 'time':
-      return filled(t.time) ? null : 'triggerTime'
+    case 'time': {
+      // Every slot must be a real time (a blank second slot would be saved as
+      // nothing), and an explicit empty day list means "never".
+      const slots = Array.isArray(t.times) && t.times.length ? t.times : [t.time]
+      if (!slots.every(filled) || !scheduleTimes(t).length) return 'triggerTime'
+      return Array.isArray(t.days) && t.days.length === 0 ? 'triggerDays' : null
+    }
     case 'time_pattern':
       return (filled(t.minutes) || filled(t.hours) || filled(t.seconds)) ? null : 'triggerPattern'
     case 'controller':

@@ -66,6 +66,25 @@ def _service_for_domain(domain: str, requested_service: str) -> str:
     return f"{domain}.{requested_service}"
 
 
+def _apply_schedule_params(trigger: dict, params: dict) -> None:
+    """Copy the agent's schedule fields onto a time trigger (in place).
+
+    `trigger_days` / `trigger_times` are optional; when the agent omits them
+    the rule stays every day at one time, as before. Validation happens in
+    save_automation (services/schedule_trigger.invalid_reason).
+    """
+    times = params.get("trigger_times")
+    if isinstance(times, (list, tuple)) and times:
+        trigger["times"] = [str(t) for t in times]
+        if not params.get("trigger_time"):
+            trigger["time"] = str(times[0])
+    days = params.get("trigger_days")
+    if isinstance(days, str):
+        days = [days]
+    if isinstance(days, (list, tuple)) and days:
+        trigger["days"] = list(days)
+
+
 def _resolve_trigger_entity(raw: str) -> str:
     """If raw looks like a room name rather than an HA entity ID, resolve it to
     a temperature sensor entity.  Returns raw unchanged when it already looks
@@ -144,6 +163,7 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
     trigger: dict = {"type": trigger_type}
     if trigger_type == "time":
         trigger["time"] = params.get("trigger_time", "08:00")
+        _apply_schedule_params(trigger, params)
     elif trigger_type == "state":
         raw = params.get("trigger_entity_id") or ""
         # State triggers need an exact HA entity ID (domain.object_id contains a dot).
@@ -382,6 +402,7 @@ async def handle_update_automation(params: dict, *, source: str = "unknown") -> 
         trigger = {"type": new_type}
         if new_type == "time":
             trigger["time"] = params.get("trigger_time") or current.get("trigger", {}).get("time", "08:00")
+            _apply_schedule_params(trigger, params)
         elif new_type == "state":
             trigger["entity_id"] = _resolve_trigger_entity(params.get("trigger_entity_id") or "")
             trigger["state"] = params.get("trigger_state") or "on"
@@ -415,6 +436,11 @@ async def handle_update_automation(params: dict, *, source: str = "unknown") -> 
         # Partial trigger field updates — keep existing type, patch only what changed
         if params.get("trigger_time"):
             trigger["time"] = params["trigger_time"]
+            # A new single time replaces a several-times schedule.
+            if not params.get("trigger_times"):
+                trigger.pop("times", None)
+        if trigger.get("type", "time") == "time":
+            _apply_schedule_params(trigger, params)
         if params.get("trigger_entity_id"):
             trigger["entity_id"] = _resolve_trigger_entity(params["trigger_entity_id"])
         if params.get("trigger_state"):

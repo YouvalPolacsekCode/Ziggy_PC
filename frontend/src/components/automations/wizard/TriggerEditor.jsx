@@ -11,6 +11,7 @@ import {
   getTimePatternUnits, PRESENCE_TRIGGER_TYPES,
 } from '../../../lib/automations/types'
 import PresenceTriggerEditor from './PresenceTriggerEditor'
+import ScheduleEditor from './ScheduleEditor'
 import OccupancySensorForm from '../OccupancySensorForm'
 import { FieldHint } from './Atoms'
 import { chipStyle, fieldLabelStyle, noteBox, warnNoteBox } from '../../../lib/automations/styles'
@@ -151,14 +152,9 @@ function TriggerEditor({ trigger, onChange }) {
       <Select label={t('automations.triggerType')} options={getTriggerTypes()} value={uiType} onChange={handleTypeChange} />
 
       {uiType === 'time' && (
-        <Input
-          label={t('automations.editor.timeLabel')}
-          type="time"
-          // HA stores time as "HH:MM:SS"; <input type="time"> needs "HH:MM".
-          // Slice defensively so edit-existing always shows the value.
-          value={(trigger.time || '').slice(0, 5)}
-          onChange={e => onChange({ ...trigger, type: 'time', time: e.target.value })}
-        />
+        // Days of the week + one or more times. HA stores "HH:MM:SS"; the
+        // editor slices to "HH:MM" so edit-existing always shows the value.
+        <ScheduleEditor trigger={trigger} onChange={onChange} />
       )}
 
       {uiType === 'controller' && (

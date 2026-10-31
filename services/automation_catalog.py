@@ -72,9 +72,11 @@ _TRIGGERS: list[dict[str, Any]] = [
     },
     {
         "id":          "time",
-        "description": "Fire at a specific wall-clock time.",
-        "shape":       {"time": "HH:MM"},
-        "example":     "Every day at 07:00",
+        "description": "Fire on a schedule: one or more wall-clock times, on chosen days of the week "
+                       "(omit days for every day).",
+        "shape":       {"time": "HH:MM", "times": ["HH:MM", "HH:MM"],
+                        "days": ["sun", "mon", "tue", "wed", "thu"]},
+        "example":     "Sunday–Thursday at 07:00 and 19:30",
     },
     {
         "id":          "time_pattern",

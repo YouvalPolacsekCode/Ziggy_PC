@@ -152,6 +152,8 @@ TOOL_SCHEMAS: list[dict] = [
             "name": {"type": "string"},
             "trigger_type": {"type": "string", "enum": ["time", "state", "numeric_state", "sunrise", "sunset"]},
             "trigger_time": {"type": "string"},
+            "trigger_days": {"type": "array", "items": {"type": "string", "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]}, "description": "Days a time trigger runs; omit for every day. Israeli workweek = sun..thu."},
+            "trigger_times": {"type": "array", "items": {"type": "string"}, "description": "Several HH:MM times a day, e.g. ['07:00', '19:30']."},
             "action_entity_id": {"type": "string", "description": "Exact device id from the directory."},
             "action_service": {"type": "string", "description": "turn_on or turn_off"},
         }, "required": ["trigger_type"]},

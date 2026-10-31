@@ -20,6 +20,7 @@ from datetime import datetime
 
 from core.logger_module import log_error, log_info
 from core.debug_bus import bus as _dbus, BASIC, VERBOSE
+from services import schedule_trigger as _schedule
 
 _started = False
 _tick: int = 0   # increments once per minute
@@ -363,7 +364,10 @@ async def run_scheduler() -> None:
                 trigger = automation.get("trigger", {})
                 if trigger.get("type") != "time":
                     continue
-                if trigger.get("time") != current_time:
+                # Days of the week + several times a day; a rule with neither
+                # (every rule saved before 2026-10-31) fires daily at `time`,
+                # exactly as before. See services/schedule_trigger.py.
+                if not _schedule.fires_at(trigger, now):
                     continue
 
                 auto_id = automation["id"]
