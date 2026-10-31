@@ -135,6 +135,14 @@ const saveRoomsOrder = (ids) => localStorage.setItem(ROOMS_ORDER_KEY, JSON.strin
 // real multi-entity group; returns `null` when the entity is a non-primary
 // sibling that should drop out of the visible list; returns the entity
 // unchanged when no grouping info is available (solo or HA registry empty).
+// The channel entry for this entity when its group is a multi-channel device
+// (≥2 channels), else null.
+function _channelOf(g, entityId) {
+  const chans = g && Array.isArray(g.channels) ? g.channels : []
+  if (chans.length < 2) return null
+  return chans.find((c) => c && c.entity_id === entityId) || null
+}
+
 function _attachGroup(entity, groupByEntityId, groupById) {
   if (!entity || !entity.entity_id) return entity
   const g = groupById[groupByEntityId[entity.entity_id]]
@@ -145,9 +153,14 @@ function _attachGroup(entity, groupByEntityId, groupById) {
   // below reads it as a non-primary sibling and drops it from every list.
   const isPrimary = entity.entity_id === g.primary_entity_id
     || (g.card_kind === 'controller' && entity._controller === true)
+  // A real channel of a multi-channel device (dual valve zone, 2-gang switch
+  // gang) gets its own card, named for the channel — see
+  // services/device_channels.py. `channels` is [] for every other device.
+  const channel = _channelOf(g, entity.entity_id)
   // Non-primary siblings drop out of the grid UNLESS the user promoted this one
-  // to its own tile (B: e.g. surface a sensor's temperature as its own card).
-  if (!isPrimary && !entity.is_tile) return null
+  // to its own tile (B: e.g. surface a sensor's temperature as its own card),
+  // or it is one of the device's channels.
+  if (!isPrimary && !entity.is_tile && !channel) return null
   return {
     ...entity,
     // A promoted sibling stands alone — don't let it inherit the group's
@@ -156,7 +169,8 @@ function _attachGroup(entity, groupByEntityId, groupById) {
     _group: {
       group_id:     g.group_id,
       kind:         g.kind,
-      name:         g.name,
+      name:         channel ? channel.name : g.name,
+      channel:      channel ? channel.channel : null,
       room:         g.room,
       ha_device_id: g.ha_device_id,
       ir_device_id: g.ir_device_id,
@@ -1044,8 +1058,11 @@ export const useDeviceStore = create((set, get) => ({
   // The shape stays compatible with the existing Rooms.jsx render path —
   // callers don't need to re-learn fields.
   getGroupedZiggyRooms: () => {
-    const { ziggyRooms, deviceGroups, groupByEntityId, groupById } = get()
+    const { ziggyRooms, deviceGroups, groupByEntityId, groupById, entities, showHidden } = get()
     if (!deviceGroups || deviceGroups.length === 0) return ziggyRooms
+    // Channels the user hid stay hidden here too (getGroupedEntities applies
+    // the same rule) — a room row that resolves to nothing still renders.
+    const hiddenIds = new Set(showHidden ? [] : (entities || []).filter(e => e.hidden).map(e => e.entity_id))
 
     const filterRoomDevices = (devices) => {
       const out = []
@@ -1067,17 +1084,32 @@ export const useDeviceStore = create((set, get) => ({
         // defensive — group identity is the source of truth).
         if (seenGroups.has(g.group_id)) continue
         seenGroups.add(g.group_id)
-        out.push({
-          ...d,
-          _group: {
-            group_id:     g.group_id,
-            name:         g.name,
-            metrics:      g.metrics || [],
-            entities:     g.entities || [],
-            capabilities: g.capabilities || null,
-            hasMultiple:  (g.entities || []).length > 1,
-          },
+        const groupMeta = (name) => ({
+          group_id:     g.group_id,
+          name,
+          metrics:      g.metrics || [],
+          entities:     g.entities || [],
+          capabilities: g.capabilities || null,
+          hasMultiple:  (g.entities || []).length > 1,
         })
+        const own = _channelOf(g, eid)
+        out.push({ ...d, _group: groupMeta(own ? own.name : g.name) })
+        // Multi-channel device: the room rows hold only the primary, so add a
+        // row for each other channel right after it (same room, own card).
+        if (own) {
+          for (const ch of g.channels) {
+            if (ch.entity_id === eid || hiddenIds.has(ch.entity_id)) continue
+            const sib = (g.entities || []).find(x => x.entity_id === ch.entity_id) || {}
+            out.push({
+              ...d,
+              entity_id:     ch.entity_id,
+              display_name:  ch.name,
+              ha_state:      sib.state ?? 'unknown',
+              ha_attributes: {},
+              _group:        groupMeta(ch.name),
+            })
+          }
+        }
       }
       return out
     }

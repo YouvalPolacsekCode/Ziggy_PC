@@ -567,6 +567,16 @@ async def refresh(force: bool = False) -> list[dict]:
                 parse_bridge_devices(bridge_payload if isinstance(bridge_payload, list) else []),
                 parse_discovery(discovery),
             )
+            # Same payload tells which devices have several channels (a dual
+            # valve, a 2-gang switch) — see services/device_channels. Only
+            # replaced on a real payload so a broker hiccup keeps the last map.
+            if isinstance(bridge_payload, list):
+                try:
+                    from services import device_channels
+                    device_channels.set_z2m_channels(
+                        device_channels.parse_z2m_channels(bridge_payload))
+                except Exception as e:
+                    log_error(f"[controllers] channel map skipped: {e}")
             # Adopt each controller's HA identity (user's name, room, device_id)
             # so the card reads back what the user set and rename / room
             # assignment have a device to PATCH.

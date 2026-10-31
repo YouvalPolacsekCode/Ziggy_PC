@@ -336,6 +336,11 @@ async def _fetch_ha_registry_async() -> dict:
             by_entity[eid] = {
                 "device_id": did,
                 "area_id":   e.get("area_id"),
+                # Read by services.device_channels to tell a device's real
+                # channels from its settings.
+                "unique_id":       e.get("unique_id"),
+                "entity_category": e.get("entity_category"),
+                "original_name":   e.get("original_name"),
             }
         # Resolve names against the CANONICAL id. When two raw devices merge,
         # take the first non-empty name we see — `name_by_user` from the
@@ -888,8 +893,22 @@ def build_groups(enriched_devices: list[dict], registry: dict | None = None) -> 
             # stack of source_list/heuristic checks scattered across
             # DeviceRemote.jsx and TVRemote.jsx.
             "capabilities":        _project_capabilities(rows, primary),
+            # Multi-channel devices (2-gang switch, dual valve): each real
+            # channel, in order, so the app can give every one its own card.
+            # [] for everything else — the device renders exactly as before.
+            "channels":            _channels_for(rows, primary_eid, by_entity, name),
         })
     return groups
+
+
+def _channels_for(rows, primary_eid, by_entity, name) -> list:
+    # Never let channel detection take the device list down with it.
+    try:
+        from services.device_channels import detect_channels
+        return detect_channels(rows, primary_eid, by_entity, name)
+    except Exception as e:
+        log_error(f"[DeviceGroups] channel detection failed for {primary_eid}: {e}")
+        return []
 
 
 # ---------------------------------------------------------------------------
