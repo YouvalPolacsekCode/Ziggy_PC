@@ -79,6 +79,25 @@ def check(automations: list[dict], known: set[str],
     return out
 
 
+def unfireable(automations: list[dict]) -> list[dict]:
+    """Pure: Ziggy-local automations whose trigger only HA can fire.
+
+    These pass every device check and run fine from "Run", yet nothing will
+    ever set them off — David's three pergola button rules (2026-10-31) sat
+    like this while this sweep reported zero broken. ha_automations'
+    migration moves them into HA; this is what notices one it could not move.
+    """
+    from services.ha_automations import HA_TRIGGER_TYPES
+    out: list[dict] = []
+    for a in automations:
+        if a.get("source") != "ziggy":
+            continue
+        kind = (a.get("trigger") or {}).get("type")
+        if kind in HA_TRIGGER_TYPES:
+            out.append({"id": a.get("id"), "name": a.get("name") or a.get("id"), "trigger": kind})
+    return out
+
+
 def annotate(automations: list[dict], known: set[str]) -> list[dict]:
     """Add `missing_entities` to each list item (cheap: no HA round-trip)."""
     if not known:
@@ -112,7 +131,12 @@ async def sweep() -> dict:
             return []
 
     broken = await asyncio.to_thread(check, automations, known, _ha_actions)
-    last_report = {"at": time.time(), "broken": broken, "checked": len(automations)}
+    never_fires = unfireable(automations)
+    last_report = {"at": time.time(), "broken": broken, "never_fires": never_fires,
+                   "checked": len(automations)}
+    if never_fires:
+        log_error("[AutomationIntegrity] automation(s) that nothing can trigger: "
+                  + ", ".join(f"{n['name']} ({n['trigger']})" for n in never_fires))
 
     try:
         from services import anomaly_engine as ae

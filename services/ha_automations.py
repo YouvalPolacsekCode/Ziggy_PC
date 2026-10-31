@@ -15,7 +15,7 @@ from typing import Optional
 import requests
 
 from core.settings_loader import settings
-from core.logger_module import log_error
+from core.logger_module import log_error, log_info
 from services import ha_client
 
 # Local aliases so the call sites below stay readable. Each call resolves
@@ -74,6 +74,10 @@ def needs_ha(data: dict) -> bool:
                               doesn't speak time_pattern, so without this
                               routing the automation would be saved Ziggy-local
                               and silently never fire
+    - controller            → HA's `mqtt` trigger hears the button press. Ziggy
+                              has no listener for it, so a Ziggy-local button
+                              rule saved cleanly, ran from "Run", and never
+                              fired from the button (David's pergola, 2026-10-31)
     - time trigger          → Ziggy's own scheduler handles it; no HA required
       (call_service steps are now executed natively by execute_ziggy_actions)
     - ha_native_body present → HA must run it (blueprint-sourced bodies can
@@ -83,7 +87,16 @@ def needs_ha(data: dict) -> bool:
     if isinstance(data.get("ha_native_body"), dict) and data["ha_native_body"]:
         return True
     trigger_type = data.get("trigger", {}).get("type", "")
-    return trigger_type in ("state", "numeric_state", "sunrise", "sunset", "webhook", "zone", "time_pattern")
+    return trigger_type in HA_TRIGGER_TYPES
+
+
+# Trigger types only Home Assistant can fire. A Ziggy-local automation with
+# one of these can only ever run from "Run". (Ziggy itself fires `time` from
+# the scheduler and the person/arrival kinds from presence_side_effects.)
+HA_TRIGGER_TYPES = frozenset({
+    "state", "numeric_state", "sunrise", "sunset", "webhook", "zone",
+    "time_pattern", "controller",
+})
 
 
 def _duplicate_name_of(name: Optional[str], auto_id: Optional[str]) -> Optional[str]:
@@ -986,6 +999,18 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
     if trigger_err:
         return {"ok": False, **trigger_err}
 
+    if (trigger or {}).get("type") == "controller" and not (native and native.get("triggers")):
+        if not ha_triggers:
+            # The button's MQTT topic comes from the discovery cache; with it
+            # cold and no stored topic, HA would get a rule with no triggers.
+            return {"ok": False, "reason": "invalid_trigger",
+                    "error": "Ziggy can't see that button right now. Press it once "
+                             "so it wakes up, then save again."}
+        # Keep the compiled topic on the stored trigger so a later re-save on a
+        # cold cache (just after a restart) still compiles.
+        trigger = {**trigger, "topic": ha_triggers[0].get("topic"),
+                   "payload": ha_triggers[0].get("payload")}
+
     # HA 2024.1+ uses plural keys only. Sending both "trigger"+"triggers" (or
     # "condition"+"conditions", "action"+"actions") causes a 400 "Message malformed"
     # error. Use plural keys exclusively.
@@ -1012,10 +1037,56 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
                 "conditions": data.get("conditions", []),
                 "rooms": data.get("rooms", []),
             })
+            _retire_local_copy(auto_id)
             return {"ok": True, "id": auto_id, "source": "ha"}
         return {"ok": False, "error": f"HA {resp.status_code}: {resp.text}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+def _retire_local_copy(auto_id: str) -> None:
+    """Drop a Ziggy-local copy once HA holds the automation.
+
+    Left in place, the stale copy would answer for this id in the Ziggy store
+    while HA ran the real one. A copy the user had switched off stays off.
+    """
+    try:
+        from core.automation_file import get_automation as get_ziggy, delete_automation as delete_ziggy
+        local = get_ziggy(auto_id)
+        if not local:
+            return
+        delete_ziggy(auto_id)
+        if local.get("enabled") is False:
+            toggle_automation(auto_id, False)
+    except Exception as e:
+        log_error(f"[HA Automations] retire local copy of {auto_id}: {e}")
+
+
+def migrate_local_to_ha() -> dict:
+    """Move Ziggy-local automations that only HA can fire into HA.
+
+    Until 2026-10-31 a button (`controller`) rule was routed Ziggy-local, where
+    nothing listens for a press. Re-saving each one through save_automation
+    puts it in HA under the same id, then retires the local copy. Idempotent:
+    a rule that fails (HA down, cold controller cache) stays local and is
+    retried on the next pass.
+    """
+    from core.automation_file import list_automations as list_ziggy
+    moved, failed = [], []
+    for a in list_ziggy():
+        if not needs_ha(a):
+            continue
+        auto_id = a.get("id")
+        res = save_automation(dict(a), auto_id=auto_id)
+        if res.get("ok") and res.get("source") == "ha":
+            moved.append(auto_id)
+        else:
+            failed.append({"id": auto_id, "error": res.get("error") or res.get("reason")})
+    if moved:
+        log_info(f"[HA Automations] moved {len(moved)} automation(s) into HA: {moved}")
+    if failed:
+        log_error(f"[HA Automations] could not move into HA (will retry): {failed}")
+    return {"moved": moved, "failed": failed}
 
 
 def _save_paired_automation(data: dict, base_auto_id: Optional[str] = None) -> dict:

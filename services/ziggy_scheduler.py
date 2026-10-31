@@ -593,6 +593,17 @@ async def run_scheduler() -> None:
             except Exception as exc:
                 log_error(f"[Scheduler] Z2M availability request failed: {exc}")
 
+        # ── Soon after boot, then hourly: move HA-only rules into HA ─────────
+        # A button rule saved before 2026-10-31 sits Ziggy-local where no press
+        # can fire it. The controller refresh above has already run this tick,
+        # so the cache that supplies each button's MQTT topic is warm.
+        if _tick == 2 or _tick % 60 == 2:
+            try:
+                from services import ha_automations
+                await asyncio.to_thread(ha_automations.migrate_local_to_ha)
+            except Exception as exc:
+                log_error(f"[Scheduler] local→HA automation migration failed: {exc}")
+
         # ── Hourly: automation integrity ──────────────────────────────────────
         # Every automation's trigger/conditions/actions must point at devices
         # that exist. Re-pairing a device changes its entity id; the bedroom
