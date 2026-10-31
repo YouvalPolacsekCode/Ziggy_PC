@@ -5,6 +5,15 @@ import { useT } from '../../lib/i18n'
 import { T_ENTER } from '../../lib/motion'
 import { applyAutomationBundle, deleteAutomationBundle } from '../../lib/api'
 import { scheduleSummary } from '../../lib/automations/summaries'
+import { useAutomationStore } from '../../stores/automationStore'
+
+// Accept and Undo change the automations list through REST, which sends no
+// `ziggy_action` signal (that fired at preview time, before anything existed),
+// so the cached Actions list stayed stale until a reload — "I accepted it and
+// I don't see it" (Canary, 2026-10-31). Refresh it ourselves. Never throws.
+function refreshAutomations() {
+  try { useAutomationStore.getState().fetchAutomations({ force: true })?.catch?.(() => {}) } catch { /* best effort */ }
+}
 
 // One 1s linear spinner (the .z-spin keyframe), sized to sit inside a button.
 function Spinner({ size = 16 }) {
@@ -385,6 +394,8 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
       const result = await applyAutomationBundle(buildEditedBundle())
       // Backend returns 200 even on partial failure so we render results inline.
       const errors  = result?.errors  || []
+      // Something may have been created even on partial failure.
+      refreshAutomations()
       // Keep the full result (carries bundle_id) so Undo can sweep the bundle.
       setApplyResult(result)
       if (result?.ok && errors.length === 0) {
@@ -412,6 +423,7 @@ export default function BundlePreviewCard({ bundle, onAccept, onDiscard }) {
     setTopError(null)
     try {
       await deleteAutomationBundle(bundleId)
+      refreshAutomations()
       setStatus(STATUS.UNDONE)
     } catch (e) {
       setTopError(e?.userMessage || e?.message || t('automations.proCard.undoFailed'))
