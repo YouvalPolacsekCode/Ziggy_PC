@@ -881,6 +881,10 @@ async def create_automation_endpoint(body: AutomationBody):
             raise HTTPException(status_code=422, detail=result.get("error", "Add at least one action"))
         # A trigger that can never fire is the mirror of no_actions, and just
         # as user-fixable (ha_automations.invalid_trigger_reason).
+        # A condition that can't be checked (e.g. weather not ready) — the
+        # user's to fix or retry, not an HA outage.
+        if result.get("reason") == "invalid_condition":
+            raise HTTPException(status_code=422, detail=result.get("error", "This condition can't be checked"))
         if result.get("reason") == "invalid_trigger":
             raise HTTPException(status_code=422, detail=result.get("error", "This trigger could never fire"))
         # A duplicate name isn't an outage either — the user picks another.

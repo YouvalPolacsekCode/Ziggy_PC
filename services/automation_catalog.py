@@ -202,6 +202,15 @@ _CONDITIONS: list[dict[str, Any]] = [
         "decline_message_he": "אני עדיין לא יודע להשתמש במצבי בית באוטומציות.",
     },
     {
+        "id":          "weather",
+        "description": "Require a yes/no weather fact for the home's location (Open-Meteo): rain_today "
+                       "(fallen or expected), rain_yesterday, rain_tomorrow, cloudy_today, or hot_today "
+                       "(today's high above `above` °C). Use is=false for 'unless': 'water the garden unless it "
+                       "rains' → {check: rain_today, is: false}. Unknown forecast = not met.",
+        "shape":       {"type": "weather", "check": "rain_today|rain_yesterday|rain_tomorrow|cloudy_today|hot_today",
+                        "is": "true|false", "above": "<°C, hot_today only>"},
+    },
+    {
         "id":          "presence",
         "description": "Require Ziggy's household presence: everyone away, or someone home.",
         "shape":       {"type": "presence", "value": "all_away|anyone_home", "for_minutes": "<optional int>"},

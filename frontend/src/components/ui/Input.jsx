@@ -1,3 +1,5 @@
+import { useId } from 'react'
+
 // Text fields at Body size (17px). Under 16px iOS Safari zooms the page on
 // focus, which is the single most "cheap web app" moment a form can have.
 const fieldStyle = {
@@ -19,10 +21,14 @@ function focus(e) {
 }
 
 export function Input({ className, label, error, style, dir = 'auto', ...props }) {
+  // Tie the label to the field (screen readers; tests find it by label).
+  const autoId = useId()
+  const id = props.id || autoId
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      {label && <label style={labelStyle}>{label}</label>}
+      {label && <label htmlFor={id} style={labelStyle}>{label}</label>}
       <input
+        id={id}
         dir={dir}
         className={className}
         style={{
@@ -44,10 +50,13 @@ export function Input({ className, label, error, style, dir = 'auto', ...props }
 }
 
 export function Textarea({ className, label, error, style, dir = 'auto', ...props }) {
+  const autoId = useId()
+  const id = props.id || autoId
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      {label && <label style={labelStyle}>{label}</label>}
+      {label && <label htmlFor={id} style={labelStyle}>{label}</label>}
       <textarea
+        id={id}
         dir={dir}
         className={className}
         style={{

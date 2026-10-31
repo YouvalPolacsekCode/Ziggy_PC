@@ -246,7 +246,20 @@ export function getConditionTypes() {
     // long before the wizard offered them (see ConditionRow).
     { value: 'sun',      label: tStatic('automations.cond.sunType') },
     { value: 'presence', label: tStatic('automations.cond.presenceType') },
+    // Yes/no forecast facts for the home (services/weather.py).
+    { value: 'weather',  label: tStatic('automations.cond.weatherType') },
   ]
+}
+
+// Weather condition choices: each fact in both directions, so "unless it
+// rains" is one pick ("It doesn't rain today") rather than two fields.
+export const WEATHER_CHECKS = ['rain_today', 'rain_yesterday', 'rain_tomorrow', 'cloudy_today', 'hot_today']
+
+export function getWeatherOptions() {
+  return WEATHER_CHECKS.flatMap(check => [
+    { value: `${check}:yes`, label: tStatic(`automations.cond.weather.${check}.yes`) },
+    { value: `${check}:no`,  label: tStatic(`automations.cond.weather.${check}.no`) },
+  ])
 }
 
 // The fixed home modes (services/modes.py). There are no others and nobody

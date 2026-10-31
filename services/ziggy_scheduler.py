@@ -353,6 +353,26 @@ async def run_scheduler() -> None:
         now = datetime.now()
         current_time = f"{now.hour:02d}:{now.minute:02d}"
 
+        # ── At boot, then every 30 minutes: weather facts for conditions ──────
+        # "Skip the sprinklers if it rains today" reads services/weather's
+        # cache; the same tick republishes the facts HA-run rules gate on. Runs
+        # BEFORE the schedule check so a rule due right after a restart already
+        # has a forecast instead of reading "weather unknown".
+        # Also retried while the cache is unknown (every 5 min, not every
+        # minute, so an Open-Meteo outage isn't hammered) and at the day
+        # change, when yesterday's facts stop counting as today's.
+        try:
+            from services import weather
+            _wx_due = (_tick == 1 or _tick % 30 == 0
+                       or (weather.current() is None and (_tick % 5 == 0 or (now.hour, now.minute) == (0, 0))))
+        except Exception:
+            _wx_due = False
+        if _wx_due:
+            try:
+                await weather.refresh()
+            except Exception as exc:
+                log_error(f"[Scheduler] weather refresh failed: {exc}")
+
         # ── Time-triggered automations ────────────────────────────────────────
         try:
             from core.automation_file import list_automations

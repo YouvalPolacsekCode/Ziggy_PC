@@ -1,10 +1,17 @@
+import { useId } from 'react'
+
 export function Select({ label, options = [], className, style, error, ...props }) {
+  // Tie the label to the control so screen readers announce it (and tests can
+  // find the field by its label). A caller's own id wins.
+  const autoId = useId()
+  const id = props.id || autoId
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       {label && (
-        <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>{label}</label>
+        <label htmlFor={id} style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>{label}</label>
       )}
       <select
+        id={id}
         className={className}
         style={{
           height: 40, padding: '0 14px',

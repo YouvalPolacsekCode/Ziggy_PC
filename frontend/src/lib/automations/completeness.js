@@ -125,6 +125,8 @@ export function incompleteConditions(conditions) {
       case 'mode':      return !filled(c.mode)
       case 'sun':       return !(filled(c.after) || filled(c.before))
       case 'presence':  return !filled(c.value)
+      // "Hot" needs a real number — Number('') is 0, so check it's filled first.
+      case 'weather':   return !filled(c.check) || (c.check === 'hot_today' && !(filled(c.above) && Number.isFinite(Number(c.above))))
       case 'or_group':
       case 'and_group': return !Array.isArray(c.conditions) || c.conditions.length === 0
       default:          return !filled(c.entity_id)

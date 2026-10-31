@@ -86,6 +86,10 @@ _HIDDEN_PATTERNS: list[re.Pattern] = [
         # name on first discovery (seen live on Canary 2026-09-19); fresh homes
         # get the pinned `ziggy_mode_<x>` object_id.
         r"^binary_sensor\.ziggy_modes?_",
+        # Ziggy's weather facts mirrored into HA (services/weather_mqtt.py) —
+        # plumbing for automation conditions, not a device. Both spellings,
+        # as for modes (pinned object_id vs. device-name-derived id).
+        r"^(binary_)?sensor\.ziggy_weather_",
     ]
 ]
 

@@ -359,6 +359,34 @@ def _condition_to_ha(c: dict) -> Optional[dict]:
         return {"condition": "state", "entity_id": ent,
                 "state": "on" if bool(c.get("is", True)) else "off"}
 
+    # ── Weather — Ziggy's forecast facts, mirrored into HA ────────────────
+    # services/weather_mqtt publishes them as retained entities. Unlike a mode,
+    # a weather condition is never dropped when the entity is missing: an HA
+    # rule would then water the garden in the rain. save_automation refuses
+    # the save instead (_uncompiled_weather_condition).
+    if c.get("type") == "weather":
+        from services import weather_mqtt, weather as _weather
+        check = str(c.get("check") or "")
+        if check not in _weather.CHECKS:
+            return None
+        want = bool(c.get("is", True))
+        if check == "hot_today":
+            ent = weather_mqtt.entity_id("max_temp_today")
+            if not ent:
+                return None
+            try:
+                above = float(c.get("above", 30))
+            except (TypeError, ValueError):
+                return None
+            hot = {"condition": "numeric_state", "entity_id": ent, "above": above}
+            # "Not hot" must still fail on an unavailable sensor, which a bare
+            # `not` would turn into a pass — so spell it as below-or-equal.
+            return hot if want else {"condition": "numeric_state", "entity_id": ent, "below": above + 0.01}
+        ent = weather_mqtt.entity_id(check)
+        if not ent:
+            return None
+        return {"condition": "state", "entity_id": ent, "state": "on" if want else "off"}
+
     # ── Sun condition ──────────────────────────────────────────────────────
     if c.get("type") == "sun":
         out: dict = {"condition": "sun"}
@@ -951,6 +979,11 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
         return {"ok": False, "reason": "duplicate_name",
                 "error": f"You already have an automation called “{_dup}”. Pick another name."}
 
+    # A weather condition with nothing to check would never be met.
+    _bad_weather = _invalid_weather_condition(data.get("conditions"))
+    if _bad_weather:
+        return {"ok": False, "reason": "invalid_condition", "error": _bad_weather}
+
     # Actions pointing at devices that no longer exist — see invalid_action_entity.
     _bad_action = invalid_action_entity(data)
     if _bad_action:
@@ -1017,6 +1050,10 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
         ha_conditions = list(native["conditions"])
     else:
         ziggy_conditions = data.get("conditions", [])
+        if any(_condition_to_ha(c) is None for c in _weather_conditions(ziggy_conditions)):
+            return {"ok": False, "reason": "invalid_condition",
+                    "error": "Ziggy's weather isn't ready on this hub yet, so this rule can't "
+                             "check the weather. Try again in a few minutes."}
         ha_conditions = [_condition_to_ha(c) for c in ziggy_conditions]
         ha_conditions = [c for c in ha_conditions if c is not None]
         _day_cond = _schedule_day_condition(trigger)
@@ -1078,6 +1115,29 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
         return {"ok": False, "error": f"HA {resp.status_code}: {resp.text}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+def _weather_conditions(conditions) -> list:
+    """Every weather condition in a condition list, groups included."""
+    out: list = []
+    for c in conditions or []:
+        if not isinstance(c, dict):
+            continue
+        if c.get("type") == "weather":
+            out.append(c)
+        out.extend(_weather_conditions(c.get("conditions")))
+        if isinstance(c.get("condition"), dict):
+            out.extend(_weather_conditions([c["condition"]]))
+    return out
+
+
+def _invalid_weather_condition(conditions) -> Optional[str]:
+    from services.weather import invalid_reason
+    for c in _weather_conditions(conditions):
+        reason = invalid_reason(c)
+        if reason:
+            return reason
+    return None
 
 
 def _schedule_day_condition(trigger: dict) -> Optional[dict]:

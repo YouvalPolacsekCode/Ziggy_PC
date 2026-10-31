@@ -222,6 +222,15 @@ def _eval_single_condition(cond: dict) -> tuple[bool, str]:
             passed = after <= now_hm < before
         return passed, f"time {now_hm} in [{after},{before})"
 
+    # Weather — yes/no facts from services.weather (rain today / yesterday /
+    # tomorrow, cloudy today, hot today above X °C). Shape:
+    #   {"type": "weather", "check": "rain_today", "is": false}
+    # Unknown forecast = NOT met, matching HA's view of the mirrored entity
+    # going unavailable (services/weather_mqtt).
+    if ctype == "weather":
+        from services import weather as _weather
+        return _weather.evaluate(cond)
+
     # Home-mode condition — one of the FIXED modes in services.modes. Shape:
     #   {"type": "mode", "mode": "sleep", "is": false}
     # HA sees the same fact through the mirrored binary_sensor (modes_mqtt), so

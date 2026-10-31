@@ -9,6 +9,7 @@ import { useDeviceStore } from '../../../stores/deviceStore'
 import {
   getBinarySensorConditionStates, getDefaultBinaryCondition,
   getConditionTypes, getControllableConditionStates, getModeOptions,
+  WEATHER_CHECKS, getWeatherOptions,
 } from '../../../lib/automations/types'
 import { FieldHint } from './Atoms'
 
@@ -65,6 +66,8 @@ function ConditionRow({ condition, onChange, onRemove }) {
           // parks the wizard on an incomplete condition.
           else if (next === 'sun') onChange({ type: 'sun', after: 'sunset' })
           else if (next === 'presence') onChange({ type: 'presence', value: 'anyone_home' })
+          // "Unless it rains today" is the commonest weather rule.
+          else if (next === 'weather') onChange({ type: 'weather', check: 'rain_today', is: false })
           else onChange({ type: 'entity', entity_id: '', operator: 'is', value: 'on' })
         }}
       />
@@ -115,6 +118,39 @@ function ConditionRow({ condition, onChange, onRemove }) {
           ? { type: 'sun', after: 'sunrise', before: 'sunset' }
           : { type: 'sun', after: 'sunset' })}
       />
+    )
+  }
+
+  // ── Weather ───────────────────────────────────────────────────────────────
+  // Yes/no forecast facts for the home's location (services/weather.py). One
+  // pick carries both the fact and its direction; only "hot" needs a number.
+  if (condType === 'weather') {
+    const check = WEATHER_CHECKS.includes(condition.check) ? condition.check : 'rain_today'
+    const value = `${check}:${condition.is === false ? 'no' : 'yes'}`
+    return sharedWrapper(
+      <>
+        <Select
+          label={t('automations.cond.weatherLabel')}
+          options={getWeatherOptions()}
+          value={value}
+          onChange={e => {
+            const [c, yn] = e.target.value.split(':')
+            const next = { type: 'weather', check: c, is: yn === 'yes' }
+            if (c === 'hot_today') next.above = condition.above ?? 30
+            onChange(next)
+          }}
+        />
+        {check === 'hot_today' && (
+          <Input
+            label={t('automations.cond.weatherAbove')}
+            type="number"
+            inputMode="numeric"
+            value={condition.above ?? ''}
+            onChange={e => onChange({ ...condition, above: e.target.value === '' ? '' : Number(e.target.value) })}
+          />
+        )}
+        <FieldHint>{t('automations.cond.weatherHint')}</FieldHint>
+      </>
     )
   }
 

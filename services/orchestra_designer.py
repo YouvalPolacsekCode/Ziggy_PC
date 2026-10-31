@@ -60,6 +60,7 @@ _SYSTEM_PROMPT_TMPL = """You are Ziggy's automation designer. The user described
 7. Never restate a trigger as a condition. Never make a rule whose only action is a notification. Never add a notification that fires repeatedly on a routine event (a room emptying, motion).
 8. OCCUPANCY IS PART OF EVERY ROOM. Do not create sensors; leave occupancy_sensors empty. "I enter the bedroom" / "כשאני נכנס" means the room's motion/presence sensor, NOT arriving home. Only "home" / "the house" / "מגיע הביתה" / "יוצא מהבית" mean arrival/departure — use the recipes for those.
 9. Light turn_ons carry "respect_hold": true. Motion-driven "on" rules carry the sleep and movie mode conditions; "off when empty" rules carry the cleaning one. (Recipes do this for you.)
+10. SCHEDULES AND WEATHER: "every Sun, Tue and Thu at 6 and 18" is ONE time trigger {{"type": "time", "time": "06:00", "times": ["06:00", "18:00"], "days": ["sun", "tue", "thu"]}} (days omitted = every day). "Unless it rains" / "אם לא יורד גשם" is the condition {{"type": "weather", "check": "rain_today", "is": false}}; add rain_yesterday the same way when the user says it rained. "On cloudy days" → cloudy_today; "when it's hot" → hot_today with "above".
 10. Israeli home defaults: 24°C, 5-minute motion windows, 24h clock. Hebrew when the user typed Hebrew: warm, short, dugri, gender-free by construction ("אפשר…", "כדאי…"), Ziggy in masculine first person, no technical words (no entity / טריגר / אינטגרציה).
 11. If a piece of the outcome is impossible, put it in left_out using the matching decline text from catalog.gaps (Hebrew when the user typed Hebrew). Set "decline" ONLY when you can build nothing at all.
 12. Output STRICT JSON matching the schema. No prose, no markdown fences.
@@ -82,7 +83,7 @@ _SYSTEM_PROMPT_TMPL = """You are Ziggy's automation designer. The user described
         "name": "<short name in the user's language>",
         "source": "custom",
         "trigger": {{"type": "<from catalog>", ...}},
-        "conditions": [{{"type": "mode", "mode": "sleep", "is": false}}, {{"entity_id": "...", "operator": "is|is_not|above|below", "value": "..."}}, {{"type": "time", "after": "HH:MM", "before": "HH:MM"}}, {{"type": "sun", "after": "sunset"}}],
+        "conditions": [{{"type": "mode", "mode": "sleep", "is": false}}, {{"entity_id": "...", "operator": "is|is_not|above|below", "value": "..."}}, {{"type": "time", "after": "HH:MM", "before": "HH:MM"}}, {{"type": "sun", "after": "sunset"}}, {{"type": "weather", "check": "rain_today|rain_yesterday|rain_tomorrow|cloudy_today|hot_today", "is": true|false, "above": 30}}],
         "actions": [{{"type": "call_service", "entity_id": "...", "service": "turn_on|turn_off", "service_data": {{"brightness_pct": 40}}, "respect_hold": true}}, {{"type": "set_mode", "mode": "movie", "on": true, "hours": 2}}, {{"type": "turn_off_all_lights"}}],
         "mode": "single|restart|queued|parallel"
       }}

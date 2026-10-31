@@ -10,6 +10,7 @@ import { useFeature } from '../../../stores/featuresStore'
 import { CONTROLLABLE_DOMAINS } from '../../../lib/domainRegistry'
 import { getActionTypes, getModeOptions } from '../../../lib/automations/types'
 import { actionSummary } from '../../../lib/automations/summaries'
+import { incompleteConditions } from '../../../lib/automations/completeness'
 import { FieldHint } from './Atoms'
 import { cardIconBtn } from '../../../lib/automations/styles'
 import IRDeviceSelect from '../../IRDeviceSelect'
@@ -212,12 +213,14 @@ function DraggableActionRow({ action, index, onChange, onRemove, collapsed, onTo
   )
 }
 
-// A condition is "complete enough" to surface in summaries if it has an entity
-// (entity-state condition) or a time bound (time-window condition).
+// A condition is "complete enough" to surface in summaries when it carries a
+// usable test — the SAME rule the wizard saves by (completeness.js). This used
+// to accept only entity and time-window conditions, so mode / daylight /
+// presence (and now weather) conditions were saved and enforced but silently
+// missing from the review step and the automation viewer.
 export function isCompleteCondition(c) {
   if (!c) return false
-  if (c.type === 'time') return !!(c.after || c.before)
-  return !!c.entity_id
+  return incompleteConditions([c]).length === 0
 }
 
 export { DraggableActionRow }

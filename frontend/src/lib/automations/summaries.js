@@ -150,6 +150,18 @@ export function behaviorSummary(automation, max = 3) {
 }
 
 export function conditionSummary(c) {
+  if (c.type === 'weather') {
+    const check = c.check || 'rain_today'
+    return tStatic(`automations.cond.weather.${check}.${c.is === false ? 'no' : 'yes'}`) +
+      (check === 'hot_today' && c.above != null && c.above !== '' ? ` (${tStatic('automations.summary.aboveDeg', { n: c.above })})` : '')
+  }
+  if (c.type === 'sun') {
+    const light = String(c.after || '').toLowerCase() === 'sunrise' || String(c.before || '').toLowerCase() === 'sunset'
+    return tStatic(light ? 'automations.cond.sunLight' : 'automations.cond.sunDark')
+  }
+  if (c.type === 'presence') {
+    return tStatic(c.value === 'all_away' ? 'automations.cond.presenceEveryoneOut' : 'automations.cond.presenceSomeoneHome')
+  }
   if (c.type === 'mode') {
     return tStatic(c.is === false ? 'automations.summary.condModeOff' : 'automations.summary.condModeOn',
                    { mode: tStatic(`modes.${c.mode || 'sleep'}`) })
