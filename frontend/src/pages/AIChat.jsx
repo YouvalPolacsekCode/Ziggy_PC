@@ -1228,8 +1228,8 @@ export default function AIChat({ docked = false }) {
   }
 
   const handleSend = async (text) => {
-    const t = (text || input).trim()
-    if (!t) return
+    const msgText = (text || input).trim()
+    if (!msgText) return
     const fromInput = !text
     // History = previous messages only. The backend appends req.text as the final user turn.
     const historyForApi = messages.map((m) => ({
@@ -1237,18 +1237,21 @@ export default function AIChat({ docked = false }) {
       content: m.text,
     }))
     logger.action('chat_send', {
-      length: t.length,
+      length: msgText.length,
       from: fromInput ? 'input' : 'suggestion',
       history_turns: historyForApi.length,
     })
-    addMessage('user', t)
-    // Defer clearing the input until sendChat() succeeds so a network blip
-    // doesn't make the user re-type a long question.
-    setThinkingMode(isProModeOutcome(t) ? 'pro' : 'chat')
+    addMessage('user', msgText)
+    // Clear the input the moment the message is sent — it is already on
+    // screen as the user's bubble. Waiting for the reply left the text sitting
+    // in the box for the 10–40 s a designed automation takes, and forever if
+    // the send failed (fleet report, 2026-10-31). A failed send puts the text
+    // back (see catch) so a long question is never lost.
+    if (fromInput) setInput('')
+    setThinkingMode(isProModeOutcome(msgText) ? 'pro' : 'chat')
     setThinking(true); setOrbState('thinking')
     try {
-      const res = await sendChat(t, historyForApi, 'web', threadId, mode)
-      if (fromInput) setInput('')
+      const res = await sendChat(msgText, historyForApi, 'web', threadId, mode)
       noteModeChange(res)
       // Build action chip labels from the response
       const actions = res.actions?.map(a => {
@@ -1287,6 +1290,8 @@ export default function AIChat({ docked = false }) {
         : t('chat.somethingWrong')
       addMessage('assistant', msg, false)
       setOrbState('idle')
+      // Give the failed question back — unless the user already started a new one.
+      if (fromInput) setInput(cur => (cur ? cur : msgText))
     } finally { setThinking(false) }
   }
 
