@@ -13,6 +13,7 @@ import { actionSummary } from '../../../lib/automations/summaries'
 import { incompleteConditions } from '../../../lib/automations/completeness'
 import { FieldHint } from './Atoms'
 import { cardIconBtn } from '../../../lib/automations/styles'
+import { canHaveDuration, withDurationRule, splitSeconds, MAX_DURATION_MINUTES } from '../../../lib/automations/duration'
 import IRDeviceSelect from '../../IRDeviceSelect'
 import MediaPlayActionEditor from '../../media/MediaPlayActionEditor'
 import SendIntentEditor from './SendIntentEditor'
@@ -28,6 +29,9 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
   const domain = action.entity_id?.split('.')?.[0] || null
   const availableActions = domain ? getActionsForDomain(domain) : [{ value: 'turn_on', label: t('automations.fallback.turnOn') }, { value: 'turn_off', label: t('automations.fallback.turnOff') }, { value: 'toggle', label: t('automations.fallback.toggle') }]
   const linkedIr = entities.find(e => e.entity_id === action.entity_id)?._linkedIr || null
+  // Every device/service change goes through here, so a "for how long" never
+  // survives onto a step that has no off (turn on → turn off).
+  const setServiceAction = next => onChange(withDurationRule(next))
 
   // Neutral look matching the Trigger / Conditions steps — no info tint, plain
   // surface + hairline. The drag handle and the small numeric badge are kept
@@ -109,20 +113,20 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
 
       {action.type === 'call_service' && (
         <>
-          <EntitySelect value={action.entity_id || ''} onChange={v => onChange({ ...action, entity_id: v, service: 'homeassistant.turn_on', service_value: 'turn_on', service_data: undefined })} placeholder={t('automations.action.selectEntity')} allowedDomains={CONTROLLABLE_DOMAINS} />
+          <EntitySelect value={action.entity_id || ''} onChange={v => setServiceAction({ ...action, entity_id: v, service: 'homeassistant.turn_on', service_value: 'turn_on', service_data: undefined })} placeholder={t('automations.action.selectEntity')} allowedDomains={CONTROLLABLE_DOMAINS} />
           {linkedIr && action.entity_id ? (
             <MergedActionPicker
               haActions={availableActions}
               irDevice={linkedIr}
               haValue={action.service_value || action.service?.split('.')[1] || 'turn_on'}
-              onChangeHa={val => { const def = availableActions.find(a => a.value === val) || {}; onChange({ ...action, service_value: val, service: `homeassistant.${def.haService || val}`, service_data: def.serviceData || undefined }) }}
+              onChangeHa={val => { const def = availableActions.find(a => a.value === val) || {}; setServiceAction({ ...action, service_value: val, service: `homeassistant.${def.haService || val}`, service_data: def.serviceData || undefined }) }}
               onPickIrCommand={cmd => onChange({ ...action, type: 'ir_command', ir_device_id: linkedIr.id, ir_device_name: linkedIr.name, ir_command: cmd, ir_sequence: undefined, service: undefined, service_value: undefined, service_data: undefined })}
             />
           ) : (
             <Select
               options={availableActions.map(a => ({ ...a, label: getActionLabel(a, t) }))}
               value={action.service_value || action.service?.split('.')[1] || 'turn_on'}
-              onChange={e => { const sel = e.target.value; const def = availableActions.find(a => a.value === sel) || {}; onChange({ ...action, service_value: sel, service: `homeassistant.${def.haService || sel}`, service_data: def.serviceData || undefined }) }}
+              onChange={e => { const sel = e.target.value; const def = availableActions.find(a => a.value === sel) || {}; setServiceAction({ ...action, service_value: sel, service: `homeassistant.${def.haService || sel}`, service_data: def.serviceData || undefined }) }}
             />
           )}
           {(() => {
@@ -132,11 +136,48 @@ function ActionRow({ action, index, onChange, onRemove, collapsed, onToggleColla
               <NeedsInputFields fields={def.needsInput} entityId={action.entity_id} serviceData={action.service_data} onChangeServiceData={data => onChange({ ...action, service_data: data })} />
             ) : null
           })()}
+          {/* "On for 20 minutes" — Ziggy turns it back off by itself. Only on a
+              step that has an off; see lib/automations/duration.js. */}
+          {canHaveDuration(action) && (
+            <>
+              <Input
+                label={t('automations.action.forLabel')}
+                type="number" min="1" max={MAX_DURATION_MINUTES} inputMode="numeric"
+                placeholder={t('automations.action.forPh')}
+                value={action.for_minutes ?? ''}
+                onChange={e => {
+                  const v = e.target.value
+                  if (v === '') { const { for_minutes: _x, ...rest } = action; onChange(rest) }
+                  else onChange({ ...action, for_minutes: Number(v) })
+                }}
+              />
+              {Number(action.for_minutes) > 0 && <FieldHint>{t('automations.action.forHint')}</FieldHint>}
+            </>
+          )}
         </>
       )}
 
       {action.type === 'send_intent' && <SendIntentEditor value={action.text || ''} onChange={text => onChange({ ...action, text })} />}
-      {action.type === 'delay'       && <Input type="number" placeholder={t('automations.action.secondsPh')} value={action.seconds || ''} onChange={e => onChange({ ...action, seconds: parseInt(e.target.value) })} />}
+      {action.type === 'delay' && (() => {
+        // Minutes + seconds; stored as total seconds, as the hub always has.
+        const { h, m, s } = splitSeconds(action.seconds)
+        const mins = h * 60 + m
+        const set = (nm, ns) => onChange({ ...action, seconds: Math.max(0, (nm || 0) * 60 + (ns || 0)) })
+        return (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <Input label={t('automations.action.waitMinutesLabel')} type="number" min="0" inputMode="numeric"
+                placeholder={t('automations.action.minutesPh')} value={action.seconds ? mins : ''}
+                onChange={e => set(parseInt(e.target.value) || 0, s)} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <Input label={t('automations.action.waitSecondsLabel')} type="number" min="0" max="59" inputMode="numeric"
+                placeholder={t('automations.action.secondsPh')} value={action.seconds ? s : ''}
+                onChange={e => set(mins, Math.min(59, parseInt(e.target.value) || 0))} />
+            </div>
+          </div>
+        )
+      })()}
       {action.type === 'notify'      && <Input placeholder={t('automations.action.messagePh')} value={action.message || ''} onChange={e => onChange({ ...action, message: e.target.value })} dir="auto" />}
       {action.type === 'set_mode' && (
         <>

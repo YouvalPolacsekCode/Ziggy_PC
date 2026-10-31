@@ -156,6 +156,7 @@ TOOL_SCHEMAS: list[dict] = [
             "trigger_times": {"type": "array", "items": {"type": "string"}, "description": "Several HH:MM times a day, e.g. ['07:00', '19:30']."},
             "action_entity_id": {"type": "string", "description": "Exact device id from the directory."},
             "action_service": {"type": "string", "description": "turn_on or turn_off"},
+            "action_for_minutes": {"type": "number", "description": "Keep it on for N minutes, then off ('water for 20 min' → 20)."},
         }, "required": ["trigger_type"]},
     }},
     {"type": "function", "function": {

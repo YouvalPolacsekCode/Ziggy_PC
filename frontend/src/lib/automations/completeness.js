@@ -1,3 +1,4 @@
+import { durationBlocker } from './duration'
 // Can this automation actually do anything?
 //
 // An automation with no actions is not a draft, it is a dead rule: Home
@@ -108,6 +109,8 @@ export function saveBlocker({ name, actions, trigger, conditions } = {}) {
   const list = Array.isArray(actions) ? actions : []
   if (list.length === 0) return 'actions'
   if (!list.some(isEffectiveAction)) return 'actionTarget'
+  const dur = durationBlocker(list)
+  if (dur) return dur
   // A half-filled condition used to be deleted silently on save — the user
   // added it, never finished it, and it was gone with no word. Refusing is
   // the honest option: it is their rule, not ours to discard.

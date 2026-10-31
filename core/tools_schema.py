@@ -858,6 +858,7 @@ TOOLS = [
             "action_entity_id":  {"type": "string", "description": "Specific HA entity ID for the action (use this instead of action_room when you know the exact entity, e.g. light.gledopto_gl_b_004p)"},
             "action_service":    {"type": "string",
                                   "description": f"HA service to call. Common: turn_on, turn_off. Device-specific: {_automation_all_services()}"},
+            "action_for_minutes": {"type": "number", "description": "Optional: keep the device on/open for this many minutes, then turn it back off/close it. 'water the garden for 20 minutes' → action_service=turn_on, action_for_minutes=20. Never build the off yourself as a second automation."},
             "conditions":        {
                 "type": "array",
                 "description": (
@@ -1047,6 +1048,7 @@ TOOLS = [
             "action_room":       {"type": "string", "description": f"New room for the action. Options: {_ROOMS}"},
             "action_device_type":{"type": "string", "description": f"New device type: {_automation_device_types()}"},
             "action_service":    {"type": "string", "description": f"New HA service: {_automation_all_services()}"},
+            "action_for_minutes": {"type": "number", "description": "New 'for how long' in minutes for the action (turn back off after this long). 0 removes it."},
         }, "required": ["automation_name"]},
     }},
 

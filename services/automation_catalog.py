@@ -231,9 +231,13 @@ _ACTIONS: list[dict[str, Any]] = [
     {
         "id":          "call_service",
         "description": "Invoke a service on an entity (turn_on, turn_off, set_temperature, open_cover, ...). "
-                       "Light turn_ons should carry respect_hold=true so a light a person switched off stays off.",
+                       "Light turn_ons should carry respect_hold=true so a light a person switched off stays off. "
+                       "A turn_on / open_cover / open_valve can carry for_minutes: Ziggy turns it back off "
+                       "after that long (\"water for 20 minutes\" is ONE step with for_minutes=20 — never "
+                       "write the delay and the turn_off yourself), with a safety net if a restart drops the off.",
         "shape":       {"type": "call_service", "entity_id": "<entity>", "service": "turn_on|turn_off|...",
-                        "service_data": "<optional kwargs, e.g. {\"brightness_pct\": 40}>", "respect_hold": "true for light turn_on"},
+                        "service_data": "<optional kwargs, e.g. {\"brightness_pct\": 40}>", "respect_hold": "true for light turn_on",
+                        "for_minutes": "<optional number: turn back off after this long (turn_on/open only)>"},
     },
     {
         "id":          "delay",

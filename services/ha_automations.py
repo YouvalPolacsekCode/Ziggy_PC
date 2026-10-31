@@ -984,6 +984,12 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
     if _bad_weather:
         return {"ok": False, "reason": "invalid_condition", "error": _bad_weather}
 
+    # "For how long" on a step that has nothing to undo, or a nonsense length.
+    from services.timed_actions import invalid_reason as _bad_duration
+    _bad_timed = _bad_duration(data.get("actions"))
+    if _bad_timed:
+        return {"ok": False, "reason": "invalid_action", "error": _bad_timed}
+
     # Actions pointing at devices that no longer exist — see invalid_action_entity.
     _bad_action = invalid_action_entity(data)
     if _bad_action:
@@ -1043,7 +1049,9 @@ def save_automation(data: dict, auto_id: Optional[str] = None) -> dict:
     if native and native.get("actions"):
         ha_actions = list(native["actions"])
     else:
-        ha_actions = [_action_to_ha(a) for a in ziggy_actions]
+        # "On for 20 minutes" is one stored step; HA gets on → wait → off.
+        from services.timed_actions import expand as _expand_timed
+        ha_actions = [_action_to_ha(a) for a in _expand_timed(ziggy_actions)]
         ha_actions = [a for a in ha_actions if a is not None]
 
     if native and native.get("conditions") is not None:

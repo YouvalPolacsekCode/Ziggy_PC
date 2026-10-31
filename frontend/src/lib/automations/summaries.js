@@ -109,12 +109,21 @@ function _stripEntityId(entityId) {
   return tail.replace(/_/g, ' ')
 }
 
+// 20 → "20 minutes", 120 → "2 hours", 90 → "90 minutes".
+export function formatMinutes(mins) {
+  const n = Number(mins) || 0
+  if (n >= 60 && n % 60 === 0) return tStatic(n === 60 ? 'automations.duration.hour' : 'automations.duration.hours', { n: n / 60 })
+  return tStatic(n === 1 ? 'automations.duration.minute' : 'automations.duration.minutes', { n })
+}
+
 export function actionSummary(action) {
   const unk = tStatic('automations.summary.unknownDevice')
   switch (action.type) {
     case 'call_service': {
       const verb = (action.service_value || action.service?.split('.')[1] || tStatic('automations.summary.control')).replace(/_/g, ' ')
-      return `${verb} ${action.entity_id ? friendlyEntityName(action.entity_id) : unk}`
+      const base = `${verb} ${action.entity_id ? friendlyEntityName(action.entity_id) : unk}`
+      const mins = Number(action.for_minutes)
+      return mins > 0 ? `${base} ${tStatic('automations.summary.forDuration', { d: formatMinutes(mins) })}` : base
     }
     case 'device_command': {
       const svc = (action.command_id || '').split('.').slice(-1)[0] || tStatic('automations.summary.command')
@@ -124,7 +133,11 @@ export function actionSummary(action) {
     case 'send_intent':  return tStatic('automations.summary.commandLabel', { text: action.text || unk })
     case 'set_mode':     return tStatic(action.on === false ? 'automations.summary.modeOff' : 'automations.summary.modeOn',
                                         { mode: tStatic(`modes.${action.mode || 'movie'}`) })
-    case 'delay':        return tStatic('automations.summary.waitSeconds', { n: action.seconds || unk })
+    case 'delay': {
+      const secs = Number(action.seconds) || 0
+      if (secs >= 60 && secs % 60 === 0) return tStatic('automations.summary.waitDuration', { d: formatMinutes(secs / 60) })
+      return tStatic('automations.summary.waitSeconds', { n: action.seconds || unk })
+    }
     case 'notify':       return tStatic('automations.summary.notifyLabel', { message: action.message || unk })
     case 'fake_occupancy_start': {
       const n   = (action.rooms || []).length

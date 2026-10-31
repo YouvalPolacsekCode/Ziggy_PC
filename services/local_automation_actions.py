@@ -431,6 +431,14 @@ async def execute_ziggy_actions(
     # (e.g. user tapped Cancel after the wait completed) must not abort this one.
     _cancel_flags.pop(automation_id, None)
     steps = steps_override if steps_override is not None else get_ziggy_actions(automation_id)
+    # "On for 20 minutes" → on, wait, off (services/timed_actions.py).
+    _timed_source = steps
+    try:
+        from services import timed_actions as _timed
+        steps = _timed.expand(steps)
+    except Exception as e:
+        _timed = None
+        log_error(f"[Executor] timed-step expansion for {automation_id}: {e}")
     _bus.emit("automation", BASIC, "automation_started",
               request_id=request_id, automation_id=automation_id,
               label=label, steps_count=len(steps))
@@ -458,6 +466,14 @@ async def execute_ziggy_actions(
                     )
                     return []
             log_info(f"[Executor] {automation_id} all {len(conditions)} condition(s) passed")
+        # The run is going ahead: record the offs it owes, so a restart during
+        # a wait can't leave a device on. An HA-fired run (steps_override) was
+        # already recorded by the ha_subscriber bridge.
+        if steps_override is None and _timed is not None:
+            try:
+                _timed.note_fired(automation_id, _timed_source, started_at)
+            except Exception as e:
+                log_error(f"[Executor] timed-step bookkeeping for {automation_id}: {e}")
 
         for i, step in enumerate(steps):
             kind = step.get("type", "")

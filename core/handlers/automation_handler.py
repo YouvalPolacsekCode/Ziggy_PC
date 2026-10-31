@@ -139,6 +139,25 @@ def _resolve_controller_trigger(controller_id: str | None, action: str | None) -
     }}
 
 
+def _with_duration(action: dict, minutes, *, clear: bool = False) -> dict:
+    """Attach "for N minutes, then back off" to a turn-on/open step.
+
+    Only steps that have an off (services/timed_actions.undo_service) take one;
+    on anything else the duration is dropped rather than saved as a promise
+    nothing keeps.
+    """
+    from services.timed_actions import undo_service
+    try:
+        mins = float(minutes) if minutes not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        mins = 0.0
+    if mins > 0 and undo_service(action):
+        action["for_minutes"] = int(mins) if mins == int(mins) else mins
+    elif clear or mins > 0:
+        action.pop("for_minutes", None)
+    return action
+
+
 async def handle_create_automation(params: dict, *, source: str = "unknown") -> dict:
     # Guard: both room and device type must be present before we attempt entity resolution.
     # Without them the handler would silently hallucinate a device (e.g. defaulting to
@@ -276,7 +295,8 @@ async def handle_create_automation(params: dict, *, source: str = "unknown") -> 
         "description": params.get("description", "Created by Ziggy"),
         "trigger": trigger,
         "conditions": conditions,
-        "actions": [{"type": "call_service", "entity_id": entity_id, "service": full_service}],
+        "actions": [_with_duration({"type": "call_service", "entity_id": entity_id, "service": full_service},
+                                   params.get("action_for_minutes"))],
     }
     # Optional mode override. Default is single; motion-driven automations
     # should pass "restart" so each new trigger event resets any running off-timer.
@@ -496,6 +516,14 @@ async def handle_update_automation(params: dict, *, source: str = "unknown") -> 
         service = action_svc or (existing_entity and existing_action.get("service", "homeassistant.turn_on").split(".")[-1]) or "turn_on"
         update_domain = entity_id.split(".")[0] if entity_id and "." in entity_id else "homeassistant"
         actions = [{"type": "call_service", "entity_id": entity_id, "service": _service_for_domain(update_domain, service)}]
+
+    # "For how long" — a new value wins; 0 removes it; omitted keeps the old one.
+    if "action_for_minutes" in params and actions:
+        actions = [_with_duration(dict(actions[0]), params.get("action_for_minutes"), clear=True)] + actions[1:]
+    elif action_room or action_dtype or action_svc:
+        old_for = (current.get("actions") or [{}])[0].get("for_minutes")
+        if old_for and actions:
+            actions = [_with_duration(dict(actions[0]), old_for)] + actions[1:]
 
     # ── Room assignment merge ─────────────────────────────────────────────────
     from services.local_automation_actions import get_automation_meta, save_automation_meta

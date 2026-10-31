@@ -219,6 +219,13 @@ async def _run_deferred_automation_actions(entity_id: str, attrs: dict) -> None:
         return
 
     steps = get_all_saved_actions(aid) or []
+    # A timed step's off is owed now; the safety net sends it if HA's wait dies.
+    try:
+        from services import timed_actions as _timed
+        _timed.note_fired(aid, steps)
+        steps = _timed.expand(steps)
+    except Exception as e:
+        log_error(f"[HASubscriber] timed-step bookkeeping for {aid}: {e}")
     deferred = [s for s in steps if ha_defers_action(s)]
     if not deferred:
         return  # fully HA-native automation — HA already ran everything real

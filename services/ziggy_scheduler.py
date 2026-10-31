@@ -617,6 +617,17 @@ async def run_scheduler() -> None:
             except Exception as exc:
                 log_error(f"[Scheduler] Z2M availability request failed: {exc}")
 
+        # ── Every tick: timed steps whose off never came ──────────────────────
+        # "Water for 20 minutes" waits inside HA (or this process). A restart
+        # during the wait drops the off, so the valve would stay open. This
+        # sends it, once the deadline has clearly passed and nobody has
+        # touched the device since (services/timed_actions.py).
+        try:
+            from services import timed_actions
+            await asyncio.to_thread(timed_actions.sweep)
+        except Exception as exc:
+            log_error(f"[Scheduler] timed-action safety sweep failed: {exc}")
+
         # ── Soon after boot, then hourly: move HA-only rules into HA ─────────
         # A button rule saved before 2026-10-31 sits Ziggy-local where no press
         # can fire it. The controller refresh above has already run this tick,
