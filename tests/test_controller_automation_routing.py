@@ -141,6 +141,82 @@ def test_migration_is_idempotent(hub):
     assert A.migrate_local_to_ha() == {"moved": [], "failed": []}
 
 
+# ── The routing flip is backwards compatible ────────────────────────────────
+
+def _needs_ha_before_flip(data):
+    """needs_ha exactly as it shipped in release-2026.10.31, for comparison."""
+    if isinstance(data.get("ha_native_body"), dict) and data["ha_native_body"]:
+        return True
+    return data.get("trigger", {}).get("type", "") in (
+        "state", "numeric_state", "sunrise", "sunset", "webhook", "zone",
+        "time_pattern", "controller")
+
+
+EVERY_KNOWN_KIND = sorted(A.LOCAL_TRIGGER_TYPES | A.HA_EXPRESSIBLE_TRIGGERS | {
+    "occupancy", "presence", "motion", "made_up_by_an_llm", "ir_command"})
+
+
+@pytest.mark.parametrize("kind", EVERY_KNOWN_KIND)
+def test_routing_is_unchanged_for_every_kind(kind):
+    data = {"trigger": {"type": kind}}
+    before, after = _needs_ha_before_flip(data), A.needs_ha(data)
+    assert before == after, f"{kind}: routing changed {before} → {after}"
+
+
+@pytest.mark.parametrize("data", [
+    {}, {"trigger": {}}, {"trigger": None}, {"trigger": {"type": None}},
+    {"trigger": {"type": "all_persons_left"}, "ha_native_body": {"actions": [{}]}},
+    {"trigger": {"type": "made_up"}, "ha_native_body": {}},
+])
+def test_routing_edge_shapes_match_the_old_behaviour(data):
+    old = _needs_ha_before_flip({**data, "trigger": data.get("trigger") or {}})
+    assert A.needs_ha(data) == old
+
+
+@pytest.mark.parametrize("kind,trigger", [
+    ("time", {"time": "07:00"}),
+    ("state", {"entity_id": "binary_sensor.d", "state": "on"}),
+    ("numeric_state", {"entity_id": "sensor.t", "above": 25}),
+    ("sunrise", {}), ("sunset", {}),
+    ("webhook", {"webhook_id": "w"}),
+    ("zone", {"entity_id": "person.a"}),
+    ("time_pattern", {"minutes": "/15"}),
+    ("controller", {"controller_id": IEEE, "action": "single"}),
+])
+def test_every_routable_kind_really_compiles(kind, trigger, monkeypatch):
+    monkeypatch.setattr(C, "cached", lambda: [{"ieee": IEEE, "actions": [
+        {"subtype": "single", "topic": TOPIC, "payload": "single"}]}])
+    assert kind in A.HA_EXPRESSIBLE_TRIGGERS
+    assert A._trigger_to_ha({"type": kind, **trigger}), f"{kind} routes to HA but compiles to nothing"
+
+
+def test_routable_kinds_are_exactly_what_the_converter_compiles():
+    """The drift guard: a kind added to _trigger_to_ha must be added here (and to
+    the catalog — tests/test_automation_catalog_drift.py), or it would silently
+    stay Ziggy-local. The probe compiles a filled-in trigger of every kind."""
+    probe = {"time": "07:00", "entity_id": "x.y", "webhook_id": "w", "minutes": "/5",
+             "controller_id": IEEE, "action": "single", "topic": TOPIC}
+    candidates = EVERY_KNOWN_KIND + ["sun", "device", "event", "template", "mqtt"]
+    compiles = {k for k in candidates if A._trigger_to_ha({"type": k, **probe})}
+    assert compiles == set(A.HA_EXPRESSIBLE_TRIGGERS)
+
+
+def test_an_unknown_kind_still_saves_locally_and_runs_from_run(hub):
+    """Exactly the old behaviour: saved, listed, runnable — and now reported."""
+    rule = {**DAVID_SINGLE, "id": "odd", "trigger": {"type": "made_up_by_an_llm"}}
+    res = A.save_automation(dict(rule), auto_id="odd")
+    assert res == {"ok": True, "id": "odd", "source": "ziggy"}
+    assert hub["posted"] == {}
+    assert A.migrate_local_to_ha() == {"moved": [], "failed": []}, "migration must not touch it"
+    assert I.unfireable([{**rule, "source": "ziggy"}])[0]["trigger"] == "made_up_by_an_llm"
+
+
+def test_ziggy_fired_kinds_are_never_reported_as_unfireable():
+    autos = [{"id": k, "name": k, "source": "ziggy", "trigger": {"type": k}}
+             for k in A.LOCAL_TRIGGER_TYPES]
+    assert I.unfireable(autos) == []
+
+
 def test_integrity_flags_a_local_rule_nothing_can_trigger():
     autos = [{**DAVID_SINGLE, "source": "ziggy"},
              {"id": "m", "name": "Morning", "source": "ziggy", "trigger": {"type": "time"}},

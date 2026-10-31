@@ -65,37 +65,51 @@ def _dedupe_auto_id(base_id: str) -> str:
 def needs_ha(data: dict) -> bool:
     """Return True when the automation requires Home Assistant to store or trigger.
 
-    Rules:
-    - state / numeric_state → HA must watch for the state-change event
-    - sunrise / sunset      → HA must compute the astronomical time
-    - webhook               → HA must receive the HTTP call
-    - zone                  → HA tracks person-zone enter/leave transitions
-    - time_pattern          → HA's cron-style scheduler; Ziggy's scheduler
-                              doesn't speak time_pattern, so without this
-                              routing the automation would be saved Ziggy-local
-                              and silently never fire
-    - controller            → HA's `mqtt` trigger hears the button press. Ziggy
-                              has no listener for it, so a Ziggy-local button
-                              rule saved cleanly, ran from "Run", and never
-                              fired from the button (David's pergola, 2026-10-31)
-    - time trigger          → Ziggy's own scheduler handles it; no HA required
-      (call_service steps are now executed natively by execute_ziggy_actions)
+    HA by default: every trigger kind HA can express goes there, except the
+    kinds Ziggy fires itself (LOCAL_TRIGGER_TYPES). This used to be a
+    separately-kept opt-in list, and every kind added to the converter later
+    defaulted to Ziggy-local and silently never fired: `time_pattern` (fixed
+    2026-09) and `controller` (David's pergola buttons, 2026-10-31). Routing is
+    now derived from the converter itself (HA_EXPRESSIBLE_TRIGGERS), so teaching
+    _trigger_to_ha a kind is all it takes to route it.
+
+    A kind neither side knows (an LLM-designed bundle can invent one) stays
+    Ziggy-local exactly as before — it still saves and still runs from "Run" —
+    and automation_integrity reports it as never firing instead of passing it.
+
     - ha_native_body present → HA must run it (blueprint-sourced bodies can
       use HA-only constructs like `choose:`, `wait_for_trigger:`, `repeat:`
       that Ziggy's executor can't interpret)
     """
     if isinstance(data.get("ha_native_body"), dict) and data["ha_native_body"]:
         return True
-    trigger_type = data.get("trigger", {}).get("type", "")
-    return trigger_type in HA_TRIGGER_TYPES
+    trigger_type = (data.get("trigger") or {}).get("type", "") or ""
+    if trigger_type in LOCAL_TRIGGER_TYPES:
+        return False
+    return trigger_type in HA_EXPRESSIBLE_TRIGGERS
 
 
-# Trigger types only Home Assistant can fire. A Ziggy-local automation with
-# one of these can only ever run from "Run". (Ziggy itself fires `time` from
-# the scheduler and the person/arrival kinds from presence_side_effects.)
-HA_TRIGGER_TYPES = frozenset({
-    "state", "numeric_state", "sunrise", "sunset", "webhook", "zone",
-    "time_pattern", "controller",
+# Trigger kinds Ziggy fires itself, so they stay Ziggy-local:
+#   time                       → services/ziggy_scheduler.py (minute tick)
+#   person_*/all_persons_left,
+#   zone_entered/zone_left     → services/presence_side_effects.py; HA has no
+#                                trigger for Ziggy's own presence engine
+#   manual, "" (no trigger)    → on-demand; only ever run from "Run"
+# `time` could be expressed in HA, but moving it would change how existing
+# rules run: HA executes call_service/delay steps itself while IR steps go
+# through the deferred bridge, so an "IR, wait, light" rule would lose its
+# order. Kept local so nothing that works today behaves differently.
+LOCAL_TRIGGER_TYPES = frozenset({
+    "", "time", "manual",
+    "person_arrives", "person_leaves", "all_persons_left",
+    "zone_entered", "zone_left",
+})
+
+# Every kind _trigger_to_ha compiles. Keep in step with it — a test enforces
+# that each one really yields an HA trigger.
+HA_EXPRESSIBLE_TRIGGERS = frozenset({
+    "time", "state", "numeric_state", "sunrise", "sunset",
+    "webhook", "zone", "time_pattern", "controller",
 })
 
 

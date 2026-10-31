@@ -80,20 +80,21 @@ def check(automations: list[dict], known: set[str],
 
 
 def unfireable(automations: list[dict]) -> list[dict]:
-    """Pure: Ziggy-local automations whose trigger only HA can fire.
+    """Pure: Ziggy-local automations whose trigger Ziggy itself never fires.
 
     These pass every device check and run fine from "Run", yet nothing will
     ever set them off — David's three pergola button rules (2026-10-31) sat
     like this while this sweep reported zero broken. ha_automations'
-    migration moves them into HA; this is what notices one it could not move.
+    migration moves the ones HA can express; this notices the rest (a kind
+    nothing knows, or one the migration could not move yet). Report only.
     """
-    from services.ha_automations import HA_TRIGGER_TYPES
+    from services.ha_automations import LOCAL_TRIGGER_TYPES
     out: list[dict] = []
     for a in automations:
         if a.get("source") != "ziggy":
             continue
-        kind = (a.get("trigger") or {}).get("type")
-        if kind in HA_TRIGGER_TYPES:
+        kind = (a.get("trigger") or {}).get("type") or ""
+        if kind not in LOCAL_TRIGGER_TYPES:
             out.append({"id": a.get("id"), "name": a.get("name") or a.get("id"), "trigger": kind})
     return out
 
