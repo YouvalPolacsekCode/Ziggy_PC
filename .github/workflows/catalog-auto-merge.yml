@@ -1,0 +1,87 @@
+# Catalog auto-merge — the last hop of the capability-catalog bridge.
+#
+# Jeff (youval-jeff) refreshes the capability catalog every Sunday and pushes
+# it to catalog/auto-refresh. It may never push main. Until 2026-11-04 nothing
+# merged that branch either, so the refresh of 2026-10-04 never reached main,
+# the hubs (services/data) or the Markdown, and every later scan re-diffed from
+# the September catalog.
+#
+# This merges each push into main, but ONLY when it touches nothing except the
+# catalog files, and only after the catalog tests pass. Anything else on that
+# branch fails the run and stays put for a human.
+#
+# The merge reaches homes the normal way: in the next ./scripts/ship.sh tag.
+name: catalog-auto-merge
+
+on:
+  push:
+    branches: ["catalog/auto-refresh"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalog-auto-merge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ZIGGY_CONFIG_PATH: ${{ github.workspace }}/config/settings.example.yaml
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Only catalog files changed
+        run: |
+          git fetch origin main
+          allowed='^(docs/capability-catalog\.json|docs/CAPABILITY_CATALOG\.md|services/data/capability-catalog\.json)$'
+          changed=$(git diff --name-only origin/main...HEAD)
+          echo "Changed vs main:"; echo "$changed"
+          if [ -z "$changed" ]; then echo "Nothing to merge."; echo "EMPTY=1" >> "$GITHUB_ENV"; exit 0; fi
+          bad=$(echo "$changed" | grep -Ev "$allowed" || true)
+          if [ -n "$bad" ]; then
+            echo "::error::catalog/auto-refresh touches files outside the catalog — not merging:"
+            echo "$bad"
+            exit 1
+          fi
+          cmp docs/capability-catalog.json services/data/capability-catalog.json \
+            || { echo "::error::hub copy differs from docs copy"; exit 1; }
+
+      - uses: actions/setup-python@v5
+        if: env.EMPTY != '1'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Catalog tests
+        if: env.EMPTY != '1'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends portaudio19-dev
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pytest -q tests/test_catalog_merge.py tests/test_catalog_render.py \
+            tests/test_capability_catalog_shipped.py tests/test_catalog_territory_backfill.py
+
+      - name: Merge into main
+        if: env.EMPTY != '1'
+        run: |
+          git config user.name  "ziggy-catalog-bot"
+          git config user.email "ziggy-catalog-bot@users.noreply.github.com"
+          git checkout -B main origin/main
+          git merge --no-ff --no-edit "origin/${GITHUB_REF_NAME}" \
+            -m "chore(catalog): merge Jeff's weekly catalog refresh"
+          # Main moved while this ran? Re-merge on top once, then give up loudly.
+          git push origin main || {
+            git fetch origin main
+            git reset --hard origin/main
+            git merge --no-ff --no-edit "origin/${GITHUB_REF_NAME}" \
+              -m "chore(catalog): merge Jeff's weekly catalog refresh"
+            git push origin main
+          }
