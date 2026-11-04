@@ -80,28 +80,35 @@
       "id": "add-a-device",
       "name": "Add a Device",
       "pitch": "Add anything to your home from one screen, whatever kind of thing it is.",
-      "what_it_does": "One wizard covers joining Zigbee, Wi-Fi and Israeli Switcher devices to the home. You pick a device type, Ziggy searches or opens a join window, and when it finds something you name it and give it a room. Slow-pairing devices such as TVs that show a PIN get an honest wait instead of a premature timeout, and a Switcher account token is asked for once and reused for every later Switcher device.",
+      "what_it_does": "One wizard covers joining Zigbee, Wi-Fi and Israeli Switcher devices to the home. You pick a device type, Ziggy searches or opens a join window, and when it finds something you name it and give it a room. Because passive discovery can never find a user-initiated device — and every air conditioner sold in Israel, plus local brands like Risco, SwitchBee and Tami4, is exactly that — an \"add by type\" path sits beside the discovered list with equal weight: pick a category, then a brand from a curated catalogue of 38 brands across 11 categories, and Ziggy starts the right join flow. A multi-split AC that pairs several units in one tap gets a follow-up step with one row per physical unit, each pre-filled with the name the unit reported, a room picker, and an Identify button that runs the unit briefly and restores it exactly. Slow-pairing devices such as TVs that show a PIN get an honest wait instead of a premature timeout, and a Switcher account token is asked for once and reused for every later Switcher device.",
       "layer": "Devices",
       "audience": "user-facing",
       "status": "live-prod",
-      "status_evidence": "frontend/src/components/PairingWizard.jsx PROTOCOLS list; backend/routers/pairing_router.py registered at backend/server.py:608; Zigbee via services/ha_zigbee.py (commit 754c77e); Wi-Fi config-flow via commit e05ba33; Switcher via services/switcher_pairing.py + services/switcher_account.py; slow-pairing fix commit 19f4c56 with tests/test_config_flow_pairing.py.",
+      "status_evidence": "frontend/src/components/PairingWizard.jsx PROTOCOLS list; backend/routers/pairing_router.py registered at backend/server.py:608; Zigbee via services/ha_zigbee.py (commit 754c77e); Wi-Fi config-flow via commit e05ba33; Switcher via services/switcher_pairing.py + services/switcher_account.py; slow-pairing fix commit 19f4c56 with tests/test_config_flow_pairing.py. Brand pairing: services/wifi_brands.py handler ALLOWLIST started by brand picker — AC-by-brand commit 7cc4da76 (gree/Tadiran, electrasmart/Electra), 38-brand/11-category add-by-type commit 7c05ecd3 (frontend/src/components/WifiBrandPicker.jsx, tests/test_wifi_brand_catalog.py). Multi-split room mapping + Identify commit 9da2559a (services/device_identify.py, frontend/src/components/AcRoomMapping.jsx, tests/test_device_identify.py), one-row-per-device fix commit 762a4be8 and rescan_domain. Brand-pairing routes gated require_role(\"admin\") commit d1e70d7b (tests/test_pairing_routes_require_auth.py).",
       "uses": [
         "device-and-room-registry"
       ],
       "surfaces": [
         "frontend/src/components/PairingWizard.jsx",
+        "frontend/src/components/WifiBrandPicker.jsx",
+        "frontend/src/components/AcRoomMapping.jsx",
+        "frontend/src/components/ConfigFlowRunner.jsx",
         "backend/routers/pairing_router.py",
         "services/ha_zigbee.py",
         "services/switcher_pairing.py",
         "services/switcher_account.py",
-        "frontend/src/components/ConfigFlowRunner.jsx"
+        "services/wifi_brands.py",
+        "services/device_identify.py",
+        "services/ha_pairing.py"
       ],
       "tests": [
         "tests/test_config_flow_pairing.py"
       ],
       "known_gaps": [
-        "Protocol-first, not brand-first: you must know whether a device is Zigbee or Wi-Fi; the brand-name catalog designed to hide that (picking 'Roborock' instead of a radio protocol) was never built (docs/superpowers/specs/2026-07-06-device-pairing-and-ir-enrichment-design.md §3.2).",
+        "Protocol-first for Zigbee, but Wi-Fi is now brand-first: the add-by-type catalogue only lists 38 curated brands verified to have a config-flow integration, so a device whose brand isn't in the list still can't be added this way (services/wifi_brands.py, services/brand_requests.py logs the misses).",
         "Z-Wave has a tab in the wizard but no hub ships a Z-Wave radio, so it fails every time it's tried (backend/routers/pairing_router.py:131).",
+        "An AC cannot blink, so Identify runs the unit for 20 seconds and restores it in a finally block — a unit the user had running is never switched off, but a brief disruption is unavoidable.",
+        "A single-instance brand like Gree refuses a second config flow once its entry exists; units asleep during the first UDP scan are reached only by a rescan of the existing integration (rescan_domain, commit 762a4be8).",
         "A half-driven Wi-Fi discovery flow is consumed and the device disappears from the list until a rescan."
       ],
       "territory": "devices-and-pairing",
@@ -1313,11 +1320,11 @@
       "id": "device-lifecycle-management",
       "name": "Devices that need attention, and delete that really deletes",
       "pitch": "Ziggy tells you when something has genuinely dropped off, and removing a device is always a clean start.",
-      "what_it_does": "Devices the hub can no longer see are flagged for attention with an option to remove them, guarded against a false mass-alarm that would otherwise flag every healthy device at once during a startup race. Ziggy now asks the radio itself rather than trusting the hub's own memory: a device the wireless coordinator no longer lists reads \"Left the hub — pair it again\" and raises its own alert, and a leftover copy of it still sitting in the hub can no longer argue it back to life — only the device genuinely rejoining clears the flag. Any device page also offers a \"Not responding? Fix it\" button that hands the problem to chat with the device already named. Deleting a device tears down everything that made it configured, including telling a wireless radio to let it go, without ever taking down a hub-wide connection shared by other devices; removing one half of a linked infrared-plus-network device removes the other half too.",
+      "what_it_does": "Devices the hub can no longer see are flagged for attention with an option to remove them, guarded against a false mass-alarm that would otherwise flag every healthy device at once during a startup race. Ziggy now asks the radio itself rather than trusting the hub's own memory: a device the wireless coordinator no longer lists reads \"Left the hub — pair it again\" and raises its own alert, and a leftover copy of it still sitting in the hub can no longer argue it back to life — only the device genuinely rejoining clears the flag. Any device page also offers a \"Not responding? Fix it\" button that hands the problem to chat with the device already named. Deleting a device tears down everything that made it configured, including telling a wireless radio to let it go, without ever taking down a hub-wide connection shared by other devices; removing one half of a linked infrared-plus-network device removes the other half too. When several devices share one integration — four air conditioners on one brand connection — Ziggy can now remove that whole integration in one go rather than device-by-device, which used to leave the connection alive and silently block the next pairing, and it reads the connection, device and entity records back from the hub to prove the removal actually happened instead of trusting a success reply.",
       "layer": "Devices",
       "audience": "user-facing",
       "status": "live-prod",
-      "status_evidence": "VERIFIED: lost-device guard services/device_registry.py:420 _mass_loss_veto, motivated by the 19-hour false alarm in memory project_false_lost_devices_incident.md; delete-final commit 8310a04 hardened by 78a21c2 and 0fdb811; shared-connection guard 78a21c2 introduces _partition_config_entries(). Radio ground truth added by commit 1bb0764f — services/radio_liveness.py, reconciled from a services/ziggy_scheduler.py tick (a production entrypoint) — and hardened by 13cdf0bf so a retained ghost entity in the hub cannot restore a departed device (services/device_registry.py, lost_reason=left_hub, apply_radio_liveness); ANOM-14 is registered in services/anomaly_engine.py and surfaced as string devices.statusLeftHub in frontend/src/pages/Devices.jsx. `git tag --contains 1bb0764f` lists release-2026.09.18-2 through the newest tag release-2026.09.18-4. Device-page repair hand-off commit e87d3ae2 (frontend/src/lib/fixerPrompt.js, string deviceDetail.askFixer), shipped since release-2026.09.06. Tests: tests/test_radio_liveness.py, tests/test_device_delete_cascade.py.",
+      "status_evidence": "VERIFIED: lost-device guard services/device_registry.py:420 _mass_loss_veto, motivated by the 19-hour false alarm in memory project_false_lost_devices_incident.md; delete-final commit 8310a04 hardened by 78a21c2 and 0fdb811; shared-connection guard 78a21c2 introduces _partition_config_entries(). Radio ground truth added by commit 1bb0764f — services/radio_liveness.py, reconciled from a services/ziggy_scheduler.py tick (a production entrypoint) — and hardened by 13cdf0bf so a retained ghost entity in the hub cannot restore a departed device (services/device_registry.py, lost_reason=left_hub, apply_radio_liveness); ANOM-14 is registered in services/anomaly_engine.py and surfaced as string devices.statusLeftHub in frontend/src/pages/Devices.jsx. `git tag --contains 1bb0764f` lists release-2026.09.18-2 through the newest tag release-2026.09.18-4. Device-page repair hand-off commit e87d3ae2 (frontend/src/lib/fixerPrompt.js, string deviceDetail.askFixer), shipped since release-2026.09.06. Integration removal commit 8fb6e088: services/ha_integrations.py remove_integration() + verify_removed() with PROTECTED_DOMAINS guard against taking out mqtt, reached via backend/routers/pairing_router.py (require_role admin), tests/test_integration_removal.py. Tests: tests/test_radio_liveness.py, tests/test_device_delete_cascade.py.",
       "uses": [
         "device-and-room-registry"
       ],
@@ -1334,7 +1341,8 @@
         "A link between an infrared remote and its network twin dangles if the network side is re-added under a different identifier.",
         "The self-heal loop that clears false 'lost' flags originally lived in core/ziggy_main.py, which the production container never runs; it is now ticked by services/ziggy_scheduler.py.",
         "A device the radio says has departed is deliberately never auto-pruned — it sits in the list reading 'Left the hub' until it is paired again or removed by hand. That is the intended behaviour, but it means a device you gave away stays on the list until you clear it.",
-        "The radio check only covers devices on the wireless mesh. A network or infrared device that quietly stops answering still relies on the older 'gone silent' watch, which judges by how long ago it last reported rather than by asking anything."
+        "The radio check only covers devices on the wireless mesh. A network or infrared device that quietly stops answering still relies on the older 'gone silent' watch, which judges by how long ago it last reported rather than by asking anything.",
+        "Integration removal protects a hardcoded set of domains (PROTECTED_DOMAINS) so mqtt can't be torn down; a new shared-backbone integration not on that list would not be guarded."
       ],
       "territory": "devices-and-pairing",
       "composes_with": [
@@ -4708,11 +4716,11 @@
       "id": "smart-device-cards",
       "name": "Ziggy knows what a device actually is",
       "pitch": "A twelve-part gadget shows up as one card with the right control on top, not battery voltages and firmware helpers.",
-      "what_it_does": "A rich device that reports a dozen readings and switches gets folded into a single card with one headline control, using a curated catalog of known device shapes plus your own corrections when it guesses wrong. Ziggy hides entities that are really plumbing (signal strength, firmware update helpers) so only real devices show in the list, shows its own fused presence sensors as ordinary devices, and lets you promote a hidden reading to its own tile or switch the whole app's icon style between emoji, line art and 3D. A device's own page now carries exactly one on/off rather than three, keeps its identity card under Info, and is the single place to set its room or link an infrared remote to its network twin — the ⋮ menu was taken off every card so one setting never has two routes with different plumbing behind them.",
+      "what_it_does": "A rich device that reports a dozen readings and switches gets folded into a single card with one headline control, using a curated catalog of known device shapes plus your own corrections when it guesses wrong. A multi-channel device — a dual valve, a 2-gang switch, a double outlet — now breaks out one card per channel named for that channel, instead of showing channel one and burying the rest among dozens of setting toggles. Searching the device list matches what a device actually is, not just its name: its kind and everyday synonyms in Hebrew and English (outlet, socket, שקע, מזגן), and a metering smart plug counts as a plug even when it was named after the lamp plugged into it. Ziggy hides entities that are really plumbing (signal strength, firmware update helpers) so only real devices show in the list, shows its own fused presence sensors as ordinary devices, and lets you promote a hidden reading to its own tile or switch the whole app's icon style between emoji, line art and 3D. A device's own page now carries exactly one on/off rather than three, keeps its identity card under Info, and is the single place to set its room or link an infrared remote to its network twin — the ⋮ menu was taken off every card so one setting never has two routes with different plumbing behind them.",
       "layer": "Devices",
       "audience": "user-facing",
       "status": "live-prod",
-      "status_evidence": "Device classification system commit 7f80b16, live on Canary and David per memory project_device_classification.md; noise filter commit 25fb197 extended by 55da7fb/5f8c77f; tile curation commit dc296ec; icon styles commit 6e61188; fused sensors surfaced by commit 446d03f. Device-page consolidation commits e0fe9524 (identity card belongs to Info), e08fae4e (one on/off per page), 1dea5f1b (room assignment on Info only) and ac131a37 (no ⋮ menu on any card; infrared Wi-Fi linking moves to Info), all in frontend/src/pages/DeviceDetail.jsx and frontend/src/pages/Devices.jsx; `git tag --contains ac131a37` lists release-2026.09.17 through the newest tag release-2026.09.18-4.",
+      "status_evidence": "Device classification system commit 7f80b16, live on Canary and David per memory project_device_classification.md; noise filter commit 25fb197 extended by 55da7fb/5f8c77f; tile curation commit dc296ec; icon styles commit 6e61188; fused sensors surfaced by commit 446d03f. Device-page consolidation commits e0fe9524, e08fae4e, 1dea5f1b, ac131a37, all in frontend/src/pages/DeviceDetail.jsx and frontend/src/pages/Devices.jsx; `git tag --contains ac131a37` lists release-2026.09.17 through the newest tag release-2026.09.18-4. Multi-channel cards commit 4cc6ea7d: services/device_channels.py decides channels (Z2M expose/endpoint, with a Wi-Fi/Matter fallback), exposed as `channels` on /api/devices/grouped and rendered per-channel by frontend/src/stores/deviceStore.js, tests/test_device_channels.py and frontend/src/lib/__tests__/deviceChannels.test.js. Search-by-kind commit 808da8fd: frontend/src/lib/deviceSearch.js backs both the Devices page and the EntitySelect picker, tests/test... frontend/src/lib/__tests__/deviceSearch.test.js.",
       "uses": [
         "entity-prefs-and-classification-store",
         "device-and-room-registry",
@@ -4722,16 +4730,20 @@
         "services/device_groups.py",
         "services/device_profiles.py",
         "services/device_overrides.py",
+        "services/device_channels.py",
         "services/entity_filter.py",
         "services/entity_prefs.py",
         "services/template_sensors.py",
         "frontend/src/lib/deviceIcons.jsx",
+        "frontend/src/lib/deviceSearch.js",
+        "frontend/src/stores/deviceStore.js",
         "frontend/src/pages/DeviceDetail.jsx"
       ],
       "known_gaps": [
         "The profile catalog seeds with exactly one entry (irrigation_valve); everything else rides the heuristic until a user corrects it.",
         "A correction is meant to improve every home that owns the same device, but no sharing path exists in code yet.",
         "Icon sets are incomplete for a few device kinds and fall back to a neighbouring icon.",
+        "Channel detection is strict — it needs at least two same-domain channels with no duplicate naming tokens, or it returns none — so an oddly-named multi-gang device falls back to the old single-card shape rather than guessing wrong.",
         "A full redesign of this page and every other screen was built, shipped to the branch and reverted the same day (design pass 4ea9d85f, revert bb92e196, retry b3f6b18e) — the pre-redesign look is deliberate, not neglect."
       ],
       "territory": "devices-and-pairing",
@@ -6574,5 +6586,5 @@
   "stories": [],
   "gaps": [],
   "built_from_commit": "f5befd3bcbfb32f5b3604b1199ac38f4bd2a2285",
-  "built_at": "2026-11-04T22:08:24.998692+00:00"
+  "built_at": "2026-11-04T22:14:17.490276+00:00"
 }
