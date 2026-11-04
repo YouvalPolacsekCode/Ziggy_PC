@@ -74,14 +74,16 @@ jobs:
         run: |
           git config user.name  "ziggy-catalog-bot"
           git config user.email "ziggy-catalog-bot@users.noreply.github.com"
+          # Merge exactly the commit the checks above ran on, never whatever
+          # the branch points at by now.
           git checkout -B main origin/main
-          git merge --no-ff --no-edit "origin/${GITHUB_REF_NAME}" \
+          git merge --no-ff --no-edit "$GITHUB_SHA" \
             -m "chore(catalog): merge Jeff's weekly catalog refresh"
           # Main moved while this ran? Re-merge on top once, then give up loudly.
           git push origin main || {
             git fetch origin main
             git reset --hard origin/main
-            git merge --no-ff --no-edit "origin/${GITHUB_REF_NAME}" \
+            git merge --no-ff --no-edit "$GITHUB_SHA" \
               -m "chore(catalog): merge Jeff's weekly catalog refresh"
             git push origin main
           }
