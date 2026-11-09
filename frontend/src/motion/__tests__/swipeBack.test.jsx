@@ -22,7 +22,15 @@ function Host({ onBack, onSwipe, rtl = false }) {
 const ptr = (type, el, x, y = 10, id = 1) => el.dispatchEvent(Object.assign(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0 }), { pointerId: id, pointerType: 'touch' }))
 
 describe('useSwipeBack (rubber-band edge)', () => {
-  beforeEach(() => { setMotion(true); vi.useFakeTimers() })
+  // `performance` is faked too: the flick speed comes from performance.now(),
+  // which vitest leaves real by default. A real clock made the commit/cancel
+  // outcome depend on how long a busy CI runner paused between two synthetic
+  // moves — the "cancelled swipe" test failed whenever a stall made one
+  // outward move read as a fast flick. Frozen, every move is 1ms apart.
+  beforeEach(() => {
+    setMotion(true)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] })
+  })
 
   it('peels before it travels, then follows the finger', () => {
     const { getByTestId } = render(<Host onBack={() => {}} />)

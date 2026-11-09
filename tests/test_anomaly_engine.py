@@ -516,6 +516,13 @@ class TestAnom09BulkOffline:
     async def test_real_devices_offline_still_fire(self, monkeypatch):
         """Genuine physical devices dropping together still raise the critical."""
         monkeypatch.setattr(engine, "_get_area_map", lambda: {})
+        # ANOM-09 stays quiet for 120s after an HA reconnect, measured as
+        # time.monotonic() - ha_last_reconnect. That default of 0.0 only reads
+        # as "long ago" once the machine has been up for 2 minutes (monotonic
+        # counts from boot), and another test may have stamped a reconnect —
+        # so on a fresh CI runner this failed now and then. Pin it in the past.
+        import services.ha_subscriber as ha_subscriber
+        monkeypatch.setattr(ha_subscriber, "ha_last_reconnect", time.monotonic() - 3600)
         active = {}
         cache = {eid: {"state": "unavailable", "attributes": {}, "last_changed": ""}
                  for eid in ("light.bedroom", "light.kitchen", "light.office")}
