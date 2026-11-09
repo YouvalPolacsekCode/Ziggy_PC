@@ -13,6 +13,7 @@ that gets added to ziggy_main and quietly never ships.
 
 import inspect
 import re
+from pathlib import Path
 
 import pytest
 
@@ -26,8 +27,11 @@ def _startup_source() -> str:
 
 
 def _ziggy_main_source() -> str:
-    import core.ziggy_main as zm
-    return inspect.getsource(zm)
+    # Read the file, don't import it: ziggy_main pulls in the voice interface,
+    # whose `import sounddevice` initialises PortAudio at import time and
+    # raises on a runner with no audio server (PulseAudio "Can't connect").
+    # Only the text is needed here.
+    return (Path(__file__).resolve().parent.parent / "core" / "ziggy_main.py").read_text(encoding="utf-8")
 
 
 class TestProductionEntrypointStartsTheRealServices:
