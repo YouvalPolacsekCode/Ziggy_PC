@@ -83,6 +83,17 @@ export function removeCustomPhoto(roomId) {
   } catch {}
 }
 
+// Raster formats only — SVG is deliberately excluded. An SVG is XML that can
+// carry <script> and event handlers, so accepting one is a stored-XSS risk.
+// The server rejects SVG data URLs too (ui_prefs_router).
+export const PHOTO_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif'
+
+export function isSvgFile(file) {
+  const type = String(file?.type || '').toLowerCase()
+  const name = String(file?.name || '').toLowerCase()
+  return type.includes('svg') || name.endsWith('.svg') || name.endsWith('.svgz')
+}
+
 // Resize + compress a File to a JPEG data URL (max 800px, 0.82 quality).
 export function resizeImageToDataUrl(file) {
   return new Promise((resolve, reject) => {
