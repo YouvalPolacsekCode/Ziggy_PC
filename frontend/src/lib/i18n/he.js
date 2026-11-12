@@ -722,6 +722,7 @@ export default {
   'rooms.takePhoto':        '📷 צילום תמונה',
   'rooms.chooseFile':       '🖼 בחירת קובץ',
   'rooms.couldNotLoadPhoto':'לא ניתן לטעון את התמונה',
+  'rooms.svgNotSupported':'קובצי SVG אינם נתמכים',
   'rooms.photoUpdated':     'התמונה עודכנה',
   'rooms.roomUpdated':      'החדר עודכן',
   'rooms.saveChanges':      'שמירת שינויים',

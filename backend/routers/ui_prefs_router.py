@@ -27,7 +27,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.routers.auth_deps import get_current_user
@@ -234,6 +234,19 @@ def _sanitize_room_show_avg(obj) -> dict:
 _MAX_DATAURL_BYTES = 800_000
 _MAX_CUSTOM_PHOTOS = 20
 
+# Raster formats only. SVG is deliberately NOT allowed: an SVG is an XML document
+# that can carry <script>, event handlers and javascript: links, so a stored SVG
+# "photo" is a stored-XSS vector the moment anything renders it outside an <img>.
+# The app itself always re-encodes uploads to JPEG, so only a hand-crafted API
+# call could ever send one.
+_ALLOWED_PHOTO_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp", "image/gif"})
+SVG_NOT_SUPPORTED = "SVG files are not supported"
+
+
+def _data_url_mime(v: str) -> str:
+    """'data:image/png;base64,...' → 'image/png' (lower-cased, params stripped)."""
+    return v[len("data:"):].split(",", 1)[0].split(";", 1)[0].strip().lower()
+
 
 _MAX_ROOMS_ORDER = 64
 
@@ -259,14 +272,20 @@ def _sanitize_rooms_order(arr) -> list:
 
 def _sanitize_room_custom_photos(obj) -> dict:
     """Custom photo data URLs: { roomId: dataUrl }. Drop anything that isn't a
-    plausible data URL or that exceeds the per-image cap."""
+    plausible raster data URL or that exceeds the per-image cap. An SVG is
+    rejected outright (400) rather than silently dropped, so the caller knows why."""
     if not isinstance(obj, dict):
         return {}
     out = {}
     for k, v in obj.items():
         if not k or not isinstance(v, str):
             continue
-        if not v.startswith("data:image/"):
+        if v[:5].lower() != "data:":
+            continue
+        mime = _data_url_mime(v)
+        if "svg" in mime:
+            raise HTTPException(status_code=400, detail=SVG_NOT_SUPPORTED)
+        if mime not in _ALLOWED_PHOTO_MIME_TYPES:
             continue
         if len(v) > _MAX_DATAURL_BYTES:
             continue

@@ -724,6 +724,7 @@ export default {
   'rooms.takePhoto':        '📷 Take photo',
   'rooms.chooseFile':       '🖼 Choose file',
   'rooms.couldNotLoadPhoto':'Could not load photo',
+  'rooms.svgNotSupported':'SVG files are not supported',
   'rooms.photoUpdated':     'Photo updated',
   'rooms.roomUpdated':      'Room updated',
   'rooms.saveChanges':      'Save changes',

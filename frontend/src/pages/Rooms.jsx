@@ -23,7 +23,7 @@ import { controlDevice, createRoom, deleteRoom, resetAllRooms, renameRoom, assig
 import { cameraSnapshotUrl } from '../stores/cameraStore'
 import { cn, formatEntityState, humanizeSlug } from '../lib/utils'
 import { findRoomMetric, averageRoomMetric, roomOccupancy, fusedOccupancyIdSet, inferBinarySensorClass } from '../lib/devices'
-import { ROOM_PHOTOS, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto, storeCustomDataUrl, removeCustomPhoto, resizeImageToDataUrl } from '../lib/roomPhotos'
+import { ROOM_PHOTOS, PHOTO_ACCEPT, saveRoomPhoto, PHOTO_OPTIONS, getRoomPhoto, getCustomPhoto, storeCustomDataUrl, removeCustomPhoto, resizeImageToDataUrl, isSvgFile } from '../lib/roomPhotos'
 import { useT, useTranslatedName, translateName, getLang } from '../lib/i18n'
 // ── Motion layer ──────────────────────────────────────────────────────────────
 // Feel only. Every hook below is a no-op while `<html data-motion="off">`, and
@@ -315,6 +315,12 @@ export function RoomEditModal({ open, room, onClose, onSaved }) {
   const handleUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
+    // SVGs are banned: they are XML that can carry scripts (stored-XSS risk).
+    if (isSvgFile(file)) {
+      addToast(t('rooms.svgNotSupported'), 'error')
+      e.target.value = ''
+      return
+    }
     try { setCustomPhoto(await resizeImageToDataUrl(file)) }
     catch { addToast(t('rooms.couldNotLoadPhoto'), 'error') }
     e.target.value = ''
@@ -391,7 +397,7 @@ export function RoomEditModal({ open, room, onClose, onSaved }) {
             </label>
             <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 40, padding: '8px 12px', borderRadius: 'var(--r-ctl)', border: '1px dashed var(--line-2)', fontSize: 13, fontWeight: 500, color: 'var(--ink-mute)', cursor: 'pointer' }}>
               {t('rooms.chooseFile')}
-              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUpload} />
+              <input type="file" accept={PHOTO_ACCEPT} style={{ display: 'none' }} onChange={handleUpload} />
             </label>
           </div>
         </div>
