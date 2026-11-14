@@ -13,6 +13,11 @@ from ..database import get_db
 router = APIRouter(prefix="/invites")
 
 INVITE_TTL_HOURS = 72
+
+# Roles an invite may grant. `relay_admin` (the founder) is NEVER grantable
+# through an invite — it exists only via ensure_relay_admin().
+INVITABLE_ROLES = ("guest", "user", "admin", "super_admin")
+_ROLE_LEVEL = {"guest": 0, "user": 1, "admin": 2, "super_admin": 3, "relay_admin": 9}
 RELAY_PUBLIC_URL = os.getenv("RELAY_PUBLIC_URL", "")  # set via env var; derived from request.base_url if empty
 
 
@@ -39,7 +44,11 @@ class CreateInviteBody(BaseModel):
 @router.post("/")
 async def create_invite(body: CreateInviteBody, bg: BackgroundTasks, request: Request):
     user = current_user(request)
-    role_level = {"guest": 0, "user": 1, "admin": 2, "super_admin": 3, "relay_admin": 9}
+    role_level = _ROLE_LEVEL
+    inviter_level = role_level.get(user.get("role", "user"), 0)
+
+    if body.type not in ("user", "home"):
+        raise HTTPException(400, "type must be 'user' or 'home'.")
 
     if body.type == "home":
         if role_level.get(user.get("role", "user"), 0) < role_level["relay_admin"]:
@@ -64,10 +73,24 @@ async def create_invite(body: CreateInviteBody, bg: BackgroundTasks, request: Re
     else:
         if role_level.get(user.get("role", "user"), 0) < role_level["super_admin"]:
             raise HTTPException(403, "Only super admins can invite users.")
-        home_id_for_invite = body.home_id or user.get("home_id")
+        is_founder = inviter_level >= role_level["relay_admin"]
+        # Tenant isolation: a home's owner may only invite into THEIR home.
+        # Only the founder (relay_admin) may target an arbitrary home_id.
+        if is_founder:
+            home_id_for_invite = body.home_id or user.get("home_id")
+        else:
+            home_id_for_invite = user.get("home_id")
+            if body.home_id and body.home_id != home_id_for_invite:
+                raise HTTPException(403, "You can only invite people into your own home.")
         if not home_id_for_invite:
             raise HTTPException(400, "home_id required.")
+        # No escalation: the granted role must be a home role and never above
+        # the inviter's own role.
         invite_role = body.role
+        if invite_role not in INVITABLE_ROLES:
+            raise HTTPException(400, f"role must be one of {', '.join(INVITABLE_ROLES)}.")
+        if role_level[invite_role] > inviter_level:
+            raise HTTPException(403, "You cannot grant a role above your own.")
 
     now  = datetime.now(timezone.utc)
     tok  = new_token()
@@ -192,6 +215,10 @@ async def get_invite_info(token: str):
 @router.get("/")
 async def list_invites(request: Request):
     user = current_user(request)
+    # Pending invite tokens are bearer credentials (a pending owner invite
+    # = owner access). Only roles that can create invites may read them.
+    if _ROLE_LEVEL.get(user.get("role", "user"), 0) < _ROLE_LEVEL["super_admin"]:
+        raise HTTPException(403, "Only home owners can list invites.")
     async with get_db() as db:
         if user.get("role") == "relay_admin":
             rows = await db.execute_fetchall(
@@ -227,7 +254,10 @@ async def revoke_invite(token: str, request: Request):
         if not rows:
             raise HTTPException(404, "Invite not found.")
         inv_home = dict(rows[0])["home_id"]
-        if user.get("role") != "relay_admin" and user.get("home_id") != inv_home:
+        if user.get("role") != "relay_admin" and (
+            user.get("home_id") != inv_home
+            or _ROLE_LEVEL.get(user.get("role", "user"), 0) < _ROLE_LEVEL["super_admin"]
+        ):
             raise HTTPException(403, "Access denied.")
         await db.execute("DELETE FROM invites WHERE token=?", (token,))
         await db.commit()

@@ -116,6 +116,14 @@ async def register(body: RegisterBody, bg: BackgroundTasks):
         if now > datetime.fromisoformat(inv["expires_at"]):
             raise HTTPException(410, "Invite expired.")
 
+        # Defense in depth: never redeem an invite granting a non-home role
+        # (e.g. relay_admin). Covers rows minted before invite-role validation
+        # existed in create_invite.
+        if inv["role"] not in ("guest", "user", "admin", "super_admin"):
+            raise HTTPException(403, "Invite grants an invalid role.")
+        if inv["type"] not in ("user", "home"):
+            raise HTTPException(403, "Invalid invite type.")
+
         email = body.email.strip().lower()
         existing = await db.execute_fetchall(
             "SELECT id FROM users WHERE email=?", (email,)
