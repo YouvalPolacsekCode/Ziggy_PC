@@ -24,6 +24,11 @@ from ..database import get_db
 
 router = APIRouter()
 
+# Bounds on what one signed hub can write into the fleet-shared pool.
+MAX_PUSH_BYTES = 512 * 1024
+MAX_CARDS_PER_PUSH = 50
+MAX_CARD_BYTES = 32 * 1024
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS protocol_cards (
     id            TEXT PRIMARY KEY,
@@ -45,6 +50,8 @@ async def _ensure_schema(db) -> None:
 @router.post("/api/protocol-cards")
 async def push_cards(request: Request, home_id: str):
     raw = await request.body()
+    if len(raw) > MAX_PUSH_BYTES:
+        raise HTTPException(status_code=413, detail="payload too large")
     sig_header = request.headers.get("X-Ziggy-Signature", "")
     async with get_db() as db:
         row = await (await db.execute(
@@ -60,12 +67,20 @@ async def push_cards(request: Request, home_id: str):
             cards = (_json.loads(raw) or {}).get("cards") or []
         except Exception:
             raise HTTPException(status_code=422, detail="bad body")
+        if not isinstance(cards, list) or len(cards) > MAX_CARDS_PER_PUSH:
+            raise HTTPException(status_code=422, detail="cards must be a list of <= 50")
 
         await _ensure_schema(db)
         now = time.time()
         stored = 0
         for card in cards:
+            if not isinstance(card, dict):
+                continue
+            if len(_json.dumps(card)) > MAX_CARD_BYTES:
+                continue
             cid = card.get("id")
+            if not isinstance(cid, str) or len(cid) > 128:
+                continue
             if not cid or not card.get("rx_validated"):
                 continue  # only hardware-validated cards enter the fleet pool
             existing = await (await db.execute(
