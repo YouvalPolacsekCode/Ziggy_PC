@@ -18,6 +18,7 @@ hardware behavior).
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import re
 import sys
@@ -29,7 +30,9 @@ from dataclasses import dataclass
 from typing import Iterable
 
 DEFAULT_URL = "http://127.0.0.1:8001/api/chat"
-DEFAULT_TOKEN = "a4bd15b2cdd010453242d4df8987813e051feea190fdf4ed61f3229b88885d5e"
+# Never hardcode a session token here (this repo is public). Pass --token or
+# set ZIGGY_TOKEN.
+DEFAULT_TOKEN = os.environ.get("ZIGGY_TOKEN", "")
 
 # ── Test matrix (category, lang, text) ────────────────────────────────────────
 # Avoid AC/TV per operator. Light commands kept as smoke tests only.
