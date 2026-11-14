@@ -128,11 +128,20 @@ async def _forward(
     if request.query_params:
         target += f"?{request.url.query}"
 
+    # These routes are UNAUTHENTICATED on the relay. Drop every client-
+    # supplied x-relay-* header (same rule as proxy.py) and pin the identity
+    # to an anonymous guest: the hub's RelayAuthMiddleware trusts
+    # X-Relay-User/Role/Home whenever X-Relay-Secret matches, so passing the
+    # caller's headers through let anyone pick their own role on the hub.
     headers = {
         k: v for k, v in request.headers.items()
         if k.lower() not in ("host", "authorization", "content-length")
+        and not k.lower().startswith("x-relay-")
     }
     headers["X-Relay-Secret"] = home["relay_secret"]
+    headers["X-Relay-User"] = "presence-anonymous"
+    headers["X-Relay-Role"] = "guest"
+    headers["X-Relay-Home"] = home["id"]
 
     try:
         async with httpx.AsyncClient(timeout=PROXY_TIMEOUT) as client:
