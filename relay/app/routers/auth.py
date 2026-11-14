@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
@@ -68,19 +69,58 @@ class RegisterBody(BaseModel):
     invite_token: str
 
 
+# Failed-login throttle (per client IP). bcrypt-12 alone still allows ~4
+# guesses/s per connection against a public endpoint; this caps online
+# guessing at LOGIN_MAX_FAILURES per window per IP. Keyed on IP, not email, so
+# an attacker cannot lock the founder out of their own account. In-process
+# (single Fly machine); resets on restart, which is acceptable.
+LOGIN_WINDOW_S = 15 * 60
+LOGIN_MAX_FAILURES = 10
+_LOGIN_BUCKETS_MAX = 10_000
+_login_failures: dict[str, list[float]] = {}
+
+
+def _login_ip(request: Request) -> str:
+    # Fly sets Fly-Client-IP itself; X-Forwarded-For's first hop is client-controlled.
+    return (request.headers.get("fly-client-ip")
+            or (request.client.host if request.client else "")
+            or "unknown")
+
+
+def _login_blocked(ip: str, now: float) -> bool:
+    bucket = [t for t in _login_failures.get(ip, []) if now - t < LOGIN_WINDOW_S]
+    if bucket:
+        _login_failures[ip] = bucket
+    else:
+        _login_failures.pop(ip, None)
+    return len(bucket) >= LOGIN_MAX_FAILURES
+
+
+def _login_failed(ip: str, now: float) -> None:
+    if len(_login_failures) > _LOGIN_BUCKETS_MAX:
+        _login_failures.pop(next(iter(_login_failures)), None)
+    _login_failures.setdefault(ip, []).append(now)
+
+
 @router.post("/login")
-async def login(body: LoginBody):
+async def login(body: LoginBody, request: Request):
+    ip = _login_ip(request)
+    now = time.time()
+    if _login_blocked(ip, now):
+        raise HTTPException(429, "Too many failed login attempts. Try again later.")
     async with get_db() as db:
         rows = await db.execute_fetchall(
             "SELECT * FROM users WHERE email=?", (body.email.strip().lower(),)
         )
         if not rows:
+            _login_failed(ip, now)
             raise HTTPException(401, "Invalid email or password.")
         u = dict(rows[0])
         # Fallback default for rows that predate the hash_algo migration.
         algo = u.get("hash_algo") or "hmac_sha256"
 
         if not verify_password(body.password, u["password_hash"], u.get("salt", ""), algo):
+            _login_failed(ip, now)
             raise HTTPException(401, "Invalid email or password.")
 
         # Transparent rehash: a successful login on a legacy HMAC row

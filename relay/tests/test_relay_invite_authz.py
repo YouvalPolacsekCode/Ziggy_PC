@@ -117,3 +117,18 @@ def test_member_cannot_list_invite_tokens(client):
     assert r.status_code == 403
     r = client.get("/api/invites/", headers=_h(*OWNER_A))
     assert r.status_code == 200 and len(r.json()) == 1
+
+
+# ---------------------------------------------------------------------------
+# /api/auth/login failed-attempt throttle (same audit, 2026-11-14)
+# ---------------------------------------------------------------------------
+
+def test_login_throttles_after_repeated_failures(client, monkeypatch):
+    monkeypatch.setattr(authmod, "_login_failures", {})
+    bad = {"email": "nobody@x.com", "password": "wrong"}
+    for _ in range(authmod.LOGIN_MAX_FAILURES):
+        assert client.post("/api/auth/login", json=bad).status_code == 401
+    assert client.post("/api/auth/login", json=bad).status_code == 429
+    # A different client IP is unaffected (no global lockout of the founder).
+    r = client.post("/api/auth/login", json=bad, headers={"Fly-Client-IP": "203.0.113.9"})
+    assert r.status_code == 401
