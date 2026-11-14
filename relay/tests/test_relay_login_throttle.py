@@ -92,31 +92,59 @@ async def test_parallel_requests_cannot_race_past_the_network_cap(client):
     assert codes.count(429) == 40 - authmod.LOGIN_MAX_FAILURES
 
 
-async def test_parallel_guesses_from_many_ips_are_limited_per_account(client):
-    codes = await asyncio.gather(*[_attempt(OWNER, f"198.51.100.{i + 1}") for i in range(40)])
-    assert codes.count(401) == authmod.LOGIN_EMAIL_FREE_FAILURES
-    assert codes.count(429) == 40 - authmod.LOGIN_EMAIL_FREE_FAILURES
-
-
-def test_account_slowdown_is_not_a_lockout(client, monkeypatch):
-    clock = [1_000_000.0]
+def _clock(monkeypatch, start=1_000_000.0):
+    clock = [start]
     monkeypatch.setattr(authmod.time, "time", lambda: clock[0])
-    # Owner has logged in from home before the attack.
-    assert _post(client, OWNER, OWNER_PW, ip="192.0.2.10").status_code == 200
-    # Distributed guessing: one attempt per IP, each a second apart.
-    codes = []
-    for i in range(60):
-        clock[0] += 1
-        codes.append(_post(client, OWNER, ip=f"203.0.113.{i + 1}").status_code)
-    assert 429 in codes
-    assert codes.count(401) < 20  # 60 without the per-account slowdown
-    # Known-good network: never slowed down, even mid-attack.
-    assert _post(client, OWNER, OWNER_PW, ip="192.0.2.10").status_code == 200
-    # Brand-new network: at most LOGIN_EMAIL_MAX_COOLDOWN_S away from getting in.
+    return clock
+
+
+def test_cheap_spread_burst_cannot_hold_the_account_slot(client, monkeypatch):
+    """Lockout-DoS regression: one-off guesses from many networks must not put
+    the account into cooldown for the real owner on a new network."""
+    clock = _clock(monkeypatch)
+    for i in range(200):
+        clock[0] += 0.01
+        assert _post(client, OWNER, ip=f"203.0.{i // 250}.{i % 250 + 1}").status_code == 401
+    assert authmod._login_email_failures == {}
+    assert _post(client, OWNER, OWNER_PW, ip="192.0.2.77").status_code == 200
+
+
+def test_heavy_guessers_get_a_short_bounded_account_cooldown(client, monkeypatch):
+    clock = _clock(monkeypatch)
+    assert authmod.LOGIN_EMAIL_MAX_COOLDOWN_S <= 30
+    saw_cooldown = False
+    for net in range(6):               # six networks hammering one account
+        for _ in range(authmod.LOGIN_MAX_FAILURES + 2):
+            clock[0] += 0.05
+            r = _post(client, OWNER, ip=f"203.0.113.{net + 1}")
+            if r.status_code == 429 and "retry-after" in r.headers:
+                saw_cooldown = True
+                assert int(r.headers["retry-after"]) <= authmod.LOGIN_EMAIL_MAX_COOLDOWN_S + 1
+    assert saw_cooldown
+    # Owner on a brand-new network, mid-attack: a bounded wait, never a lockout.
     r = _post(client, OWNER, OWNER_PW, ip="192.0.2.77")
-    assert r.status_code == 429 and int(r.headers["retry-after"]) <= authmod.LOGIN_EMAIL_MAX_COOLDOWN_S + 1
+    if r.status_code == 429:
+        assert int(r.headers["retry-after"]) <= authmod.LOGIN_EMAIL_MAX_COOLDOWN_S + 1
+        clock[0] += authmod.LOGIN_EMAIL_MAX_COOLDOWN_S + 1
+        r = _post(client, OWNER, OWNER_PW, ip="192.0.2.77")
+    assert r.status_code == 200
+    # ...and that network is now known-good: exempt from the account cooldown.
+    for _ in range(authmod.LOGIN_MAX_FAILURES):
+        clock[0] += 0.05
+        _post(client, OWNER, ip="203.0.113.99")
+    assert _post(client, OWNER, OWNER_PW, ip="192.0.2.77").status_code == 200
+
+
+def test_single_network_burst_only_blocks_itself(client, monkeypatch):
+    clock = _clock(monkeypatch)
+    codes = []
+    for _ in range(authmod.LOGIN_MAX_FAILURES + 5):
+        clock[0] += 2
+        codes.append(_post(client, OWNER, ip="203.0.113.5").status_code)
+    assert codes[-1] == 429
     clock[0] += authmod.LOGIN_EMAIL_MAX_COOLDOWN_S + 1
     assert _post(client, OWNER, OWNER_PW, ip="192.0.2.77").status_code == 200
+    assert _post(client, OWNER, ip="203.0.113.5").status_code == 429  # still hard-blocked
 
 
 def test_eviction_never_frees_a_blocked_network(client, monkeypatch):

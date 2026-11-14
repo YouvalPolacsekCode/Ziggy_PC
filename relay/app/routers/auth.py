@@ -76,12 +76,16 @@ class RegisterBody(BaseModel):
 #
 #   * per client network (IPv4 address / IPv6 /64): LOGIN_MAX_FAILURES per
 #     window -> hard 429.
-#   * per target email: after LOGIN_EMAIL_FREE_FAILURES failures in the window,
-#     an exponential cooldown (capped at LOGIN_EMAIL_MAX_COOLDOWN_S) between
-#     further attempts, so guesses spread over many IPs are still limited per
-#     account. It is a slowdown, never a lockout, and a network that has
-#     already logged in to that account successfully is exempt, so an attacker
-#     cannot keep the real owner out.
+#     This is the only hard block.
+#   * per target email: a short, bounded cooldown (at most
+#     LOGIN_EMAIL_MAX_COOLDOWN_S seconds) once LOGIN_EMAIL_FREE_FAILURES
+#     failures have accumulated. Only failures from a network that already has
+#     LOGIN_EMAIL_COUNT_AFTER_NET_FAILURES failures of its own are counted, so
+#     a cheap burst of one-off guesses cannot hold the account's slot, and each
+#     network can contribute only a handful before it is hard-blocked itself.
+#     A network that has already logged in to the account is exempt. Deliberate
+#     trade-off: this slows a few heavy guessers, it does not stop a wide
+#     low-rate botnet (that needs persisted known devices / a second factor).
 #
 # Every attempt is RESERVED (counted as a failure) synchronously, before the
 # first await, and released only on success. Parallel requests therefore
@@ -89,7 +93,8 @@ class RegisterBody(BaseModel):
 LOGIN_WINDOW_S = 15 * 60
 LOGIN_MAX_FAILURES = 10
 LOGIN_EMAIL_FREE_FAILURES = 5
-LOGIN_EMAIL_MAX_COOLDOWN_S = 60
+LOGIN_EMAIL_MAX_COOLDOWN_S = 20
+LOGIN_EMAIL_COUNT_AFTER_NET_FAILURES = 3
 _LOGIN_BUCKETS_MAX = 10_000
 _LOGIN_KNOWN_GOOD_PER_EMAIL = 8
 _login_failures: dict[str, list[float]] = {}        # network key -> attempt times
@@ -161,10 +166,12 @@ def _make_room(table: dict[str, list[float]], now: float, protect_at: int) -> No
 
 
 def _login_reserve(ip: str, email: str, now: float) -> None:
-    for table, key, protect_at in (
-        (_login_failures, ip, LOGIN_MAX_FAILURES),
-        (_login_email_failures, email, LOGIN_EMAIL_FREE_FAILURES),
-    ):
+    # Count towards the account only if this network is already a repeat failer.
+    heavy = len(_login_failures.get(ip, ())) >= LOGIN_EMAIL_COUNT_AFTER_NET_FAILURES
+    targets = [(_login_failures, ip, LOGIN_MAX_FAILURES)]
+    if heavy:
+        targets.append((_login_email_failures, email, LOGIN_EMAIL_FREE_FAILURES))
+    for table, key, protect_at in targets:
         if key not in table:
             _make_room(table, now, protect_at)
         table.setdefault(key, []).append(now)
