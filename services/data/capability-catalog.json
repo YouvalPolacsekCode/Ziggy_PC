@@ -1279,7 +1279,8 @@
         "The converter has repeatedly stranded new trigger kinds as never-firing because routing used an opt-in list (time_pattern in 2026-09, controller on 2026-10-31); routing is now derived from the converter minus the kinds Ziggy fires itself, with a test pinning the two together, but a migrate step (scheduler tick, hourly) is still the thing that rescues rules already stranded on disk — a failed migration stays local and retries silently.",
         "Weather and schedule facts are fetched/mirrored by the scheduler; an unknown or stale forecast reads as the condition NOT met (never 'no rain'), and an HA-run rule whose weather entities aren't discovered yet is refused rather than saved without the check.",
         "Identify can't make an AC blink, so it runs the unit for ~20s and restores it; restore is in a finally, but it depends on reading the prior state correctly — the deliberate rule is that leaving a bedroom AC roaring is worse than the bug being chased.",
-        "The add-by-type catalogue is 38 curated brands, not all 266 config-flow integrations HA could expose, so a device from a brand not on the curated list still can't be added by type."
+        "The add-by-type catalogue is 38 curated brands, not all 266 config-flow integrations HA could expose, so a device from a brand not on the curated list still can't be added by type.",
+        "Matter commissioning failures now explain what to do (Matter not loaded, no Thread dataset, discovery/BLE scan timeout, BlueZ drop, bad setup code, attestation, or the generic node failure) instead of showing a blank 'Pairing failed'; but the real root cause still lives only in the matter-server log — the mapping is a best-guess over the errors seen on the canary, and an unmapped failure falls back to the generic node-failure message. The common '19→20→21 failed' report is three retries (matter-server spends a fresh node id each attempt), not a node limit."
       ],
       "territory": "platform",
       "composes_with": [
@@ -4444,7 +4445,8 @@
         "The room-ownership model was rewritten three times in eleven days as each stricter rule stranded real devices; Hebrew room names briefly stranded every device assigned to them (fixed commit 5a79a96) because the room key was derived by stripping non-ASCII characters.",
         "An infrared device with no chosen room used to invent a room from the device's own name, which then got promoted into a permanent area on the next startup; fixed (commit 5139025) so an empty room stays empty.",
         "The eighteen preset room photos are remote Unsplash URLs; a hub with no internet shows no preset photos at all.",
-        "A design pass dropped the automatic photo fallback because the same stock sofa was landing on four tiles of a seven-room home — and with it gone every room drew the identical house glyph instead, which moved the repetition rather than fixing it. The fallback was restored the same day (0228a83). Do not delete it again without a real answer to the repetition; the plain-tile renderer is still there behind a null photo, so a better default can replace it without touching the tiles."
+        "A design pass dropped the automatic photo fallback because the same stock sofa was landing on four tiles of a seven-room home — and with it gone every room drew the identical house glyph instead, which moved the repetition rather than fixing it. The fallback was restored the same day (0228a83). Do not delete it again without a real answer to the repetition; the plain-tile renderer is still there behind a null photo, so a better default can replace it without touching the tiles.",
+        "Custom room photos are the only place a user can upload an image, and for a time any image data URL was accepted — including an SVG carrying script, which would have run as stored XSS. SVG uploads are now rejected with a 'SVG files are not supported' message (en + he) and only JPEG/PNG/WebP/GIF are allowed (fixed commit 2f555cdd, tests/test_ui_prefs_svg_ban.py); do not re-open the upload to SVG without a sanitiser."
       ],
       "territory": "rooms-and-dashboard",
       "composes_with": [
@@ -6585,6 +6587,6 @@
   },
   "stories": [],
   "gaps": [],
-  "built_from_commit": "f5befd3bcbfb32f5b3604b1199ac38f4bd2a2285",
-  "built_at": "2026-11-04T22:14:17.490276+00:00"
+  "built_from_commit": "fd65b921da0c52ef240646adbfbc774c86794df6",
+  "built_at": "2026-11-15T01:00:48.182456+00:00"
 }
