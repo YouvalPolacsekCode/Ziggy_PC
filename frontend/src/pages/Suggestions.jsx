@@ -106,7 +106,7 @@ function SuggestionCard({ suggestion, onAccept, onReject, onSnooze }) {
           })()}
           {suggestion.actions?.slice(0, 2).map((a, i) => (
             <span key={i} className="z-subhead">
-              {t('suggestions.actionDo')}    {a.intent?.replace(/_/g, ' ')}{a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}
+              {t('suggestions.actionDo')}    {a.label || <>{a.intent?.replace(/_/g, ' ')}{a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}</>}
             </span>
           ))}
         </div>

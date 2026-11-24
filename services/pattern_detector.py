@@ -80,6 +80,10 @@ class QualifiedCandidate(NamedTuple):
     details: dict           # type-specific fields (avg time, sequence pair, etc.)
     user_message: str
     evidence_summary: dict  # frozen, human-readable evidence snapshot for display
+    # entity_id → the device phrase baked into user_message at draft time.
+    # Lets the read path swap in the *current* name after a rename without
+    # re-parsing prose (see services.suggestion_manager._present).
+    entity_refs: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -554,6 +558,7 @@ def _qualify(candidates: dict) -> list[QualifiedCandidate]:
             details=details,
             user_message=_draft_message(cand, details),
             evidence_summary=_build_evidence_summary(cand),
+            entity_refs=_entity_refs(cand, details),
         ))
 
     # Persist stale-marker churn so the JSON store reflects the latest
@@ -697,6 +702,11 @@ def _save_candidates(candidates: dict) -> None:
 
 def get_candidate(key: str) -> dict | None:
     return _load_candidates().get(key)
+
+
+def get_candidate_details(key: str) -> dict:
+    """The candidate's `details` (cached entity_ids, timing), or {}."""
+    return (get_candidate(key) or {}).get("details") or {}
 
 
 def mark_candidate_surfaced(key: str, suggestion_id: str) -> None:
@@ -867,33 +877,34 @@ def _validate_candidate_entities(cand: dict) -> tuple[bool, str | None]:
 
 
 def _device_phrase(entity_id: str | None) -> tuple[str | None, str | None]:
-    """Resolve an entity_id to (human phrase, room) via the device registry.
+    """Resolve an entity_id to (human phrase, room) for "turn on X" verbs.
 
-    Returns ('the office light', 'office') when a registry entry exists,
-    or (None, None) when the entity is unknown / unclaimed. The phrase is
-    designed to slot directly into "turn on X" / "turn off X" verbs.
+    Delegates to services.entity_display, which applies the same name
+    precedence as the rest of the UI (Ziggy rename → HA friendly name →
+    registry name → slug → generic type label) and never returns an id.
+    (None, None) only when there is no entity_id at all.
     """
     if not entity_id:
         return None, None
     try:
-        from services.device_registry import get_device_info
-        info = get_device_info(entity_id)
+        from services.entity_display import device_phrase
+        return device_phrase(entity_id)
     except Exception:
         return None, None
-    if not info:
-        return None, None
 
-    room = info.get("room")
-    # Prefer the registry's friendly name when present — it's already curated.
-    name = info.get("name")
-    if name:
-        return f"the {name.lower()}", room
 
-    device_type = (info.get("device_type") or "device").replace("_", " ")
-    if room and room != "global":
-        room_clean = room.replace("_", " ")
-        return f"the {room_clean} {device_type}", room
-    return f"the {device_type}", None
+def _entity_refs(cand: dict, details: dict) -> dict:
+    """entity_id → phrase used in the drafted message, for render-time renames."""
+    refs: dict = {}
+    eids = [details.get("dominant_entity_id")]
+    if cand.get("pattern_type") == "sequence":
+        eids.append(details.get("b_dominant_entity_id"))
+    for eid in eids:
+        if eid and eid not in refs:
+            phrase, _ = _device_phrase(eid)
+            if phrase:
+                refs[eid] = phrase
+    return refs
 
 
 def _time_of_day(hour: int) -> str:
@@ -926,6 +937,9 @@ def _verb_phrase(intent: str, action: str, entity_id: str | None, fallback_room:
 
     if device_phrase and on_off:
         return f"turn {on_off} {device_phrase}"
+    # Toggle is its own observed behaviour — never silently reported as on/off.
+    if device_phrase and action == "toggle":
+        return f"toggle {device_phrase}"
 
     base = _action_phrase(intent, action)
     room = device_room or fallback_room
@@ -1024,6 +1038,8 @@ def _action_phrase(intent: str, action: str) -> str:
             return "turn something on"
         if on_off == "off":
             return "turn something off"
+        if action == "toggle":
+            return "toggle a device"
         return "use a device"
 
     # Climate / AC

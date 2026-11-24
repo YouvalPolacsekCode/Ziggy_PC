@@ -122,7 +122,9 @@ def _sequence_trigger(suggestion: dict[str, Any]) -> tuple[dict[str, Any], list[
     "within 5 min" hint regardless.
     """
     src = suggestion.get("trigger") or {}
-    label = str(src.get("value") or "").strip()
+    # `label` is the name-resolved display text from suggestion_manager;
+    # `value` is the raw "<intent> in <room>" key and is never shown.
+    label = str(src.get("label") or "").strip()
 
     # A entity is not persisted in the suggestion dict — emit a manual
     # trigger and put the human-readable hint into the description so the
@@ -166,7 +168,11 @@ def _convert_actions(habit_actions: list[dict[str, Any]]) -> list[dict[str, Any]
         if not intent:
             continue
         params = a.get("params") or {}
-        text = _intent_to_natural_text(intent, params)
+        direct = _direct_device_action(a, params)
+        if direct is not None:
+            out.append(direct)
+            continue
+        text = a.get("label") or _intent_to_natural_text(intent, params)
         out.append({
             "type":   "send_intent",
             "text":   text,
@@ -174,6 +180,39 @@ def _convert_actions(habit_actions: list[dict[str, Any]]) -> list[dict[str, Any]
             "params": params,
         })
     return out
+
+
+_SERVICE_FOR_ACTION = {"on": "turn_on", "off": "turn_off", "toggle": "toggle"}
+
+
+def _observed_action(a: dict[str, Any], params: dict[str, Any]) -> str | None:
+    obs = a.get("observed_action")
+    if obs:
+        return str(obs)
+    if params.get("turn_on") is True:
+        return "on"
+    if params.get("turn_on") is False:
+        return "off"
+    act = params.get("action")
+    return str(act) if act else None
+
+
+def _direct_device_action(a: dict[str, Any], params: dict[str, Any]) -> dict[str, Any] | None:
+    """A habit on one known device becomes a call_service step on its
+    entity_id — the stable identity the pattern was observed on. A
+    send_intent step would instead have to name the device in free text,
+    which resolves differently (or not at all) after a rename. The wizard's
+    entity picker renders the current name for the id."""
+    entity_id = params.get("entity_id") if isinstance(params, dict) else None
+    service = _SERVICE_FOR_ACTION.get(_observed_action(a, params) or "")
+    if not entity_id or not service:
+        return None
+    return {
+        "type":          "call_service",
+        "entity_id":     entity_id,
+        "service":       f"homeassistant.{service}",
+        "service_value": service,
+    }
 
 
 def _intent_to_natural_text(intent: str, params: dict[str, Any]) -> str:
@@ -188,6 +227,8 @@ def _intent_to_natural_text(intent: str, params: dict[str, Any]) -> str:
     room = (params.get("room") or "").strip() if isinstance(params, dict) else ""
 
     if intent == "toggle_device":
+        if isinstance(params, dict) and "turn_on" not in params and params.get("action") == "toggle":
+            return f"Toggle the {room} device" if room else "Toggle the device"
         on = bool(params.get("turn_on", True)) if isinstance(params, dict) else True
         verb = "Turn on" if on else "Turn off"
         if room:
@@ -213,14 +254,16 @@ def _intent_to_natural_text(intent: str, params: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 def _derive_name(suggestion: dict[str, Any]) -> str:
-    """Short, editable name. Prefer pattern_summary, fall back to canonical key."""
-    summary = (suggestion.get("pattern_summary") or "").strip()
+    """Short, editable name from the (already name-resolved) summary. Never
+    the canonical key — that is an internal identifier
+    ("time_based|toggle_device|kitchen|on|weekday")."""
+    summary = (suggestion.get("pattern_summary") or suggestion.get("user_message") or "").strip()
     if summary:
-        # First sentence is usually compact enough for a name field.
-        first = summary.split(".")[0].strip()
+        # First sentence is usually compact enough for a name field. Split on
+        # ". " so a dotted token can't cut the name mid-word.
+        first = summary.split(". ")[0].rstrip(".").strip()
         return first[:80]
-    key = (suggestion.get("canonical_key") or "").strip()
-    return key[:80] if key else "Suggested automation"
+    return "Suggested automation"
 
 
 def _derive_description(suggestion: dict[str, Any]) -> str:

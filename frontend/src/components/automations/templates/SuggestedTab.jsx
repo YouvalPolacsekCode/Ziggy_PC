@@ -70,8 +70,8 @@ function SuggestionCard({ suggestion, onConfigure, onReject, onSnooze, layoutKey
       <p className="z-body" style={{ fontWeight: 500, marginBottom: 8, color: 'inherit' }} dir="auto">{suggestion.user_message}</p>
       {(suggestion.trigger || suggestion.actions?.length > 0) && (
         <div style={{ padding: '8px 12px', borderRadius: 'var(--r-ctl)', background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: isPending ? 12 : 0 }}>
-          {suggestion.trigger?.type && <span className="z-subhead">{t('automations.suggested.tagWhen', { desc: `${suggestion.trigger.type}${suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}` })}</span>}
-          {suggestion.actions?.slice(0, 2).map((a, i) => <span key={i} className="z-subhead">{t('automations.suggested.tagDo', { desc: `${a.intent?.replace(/_/g, ' ')}${a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}` })}</span>)}
+          {suggestion.trigger?.type && <span className="z-subhead">{t('automations.suggested.tagWhen', { desc: (suggestion.trigger.type !== 'time' && suggestion.trigger.label) || `${suggestion.trigger.type}${suggestion.trigger.value ? ` · ${suggestion.trigger.value}` : ''}` })}</span>}
+          {suggestion.actions?.slice(0, 2).map((a, i) => <span key={i} className="z-subhead">{t('automations.suggested.tagDo', { desc: a.label || `${a.intent?.replace(/_/g, ' ')}${a.params?.room ? ` · ${a.params.room.replace(/_/g, ' ')}` : ''}` })}</span>)}
         </div>
       )}
       {isPending && (
@@ -108,10 +108,15 @@ function suggestionToWizardData(suggestion) {
     const onOff  = a.params?.turn_on === true ? ' on' : a.params?.turn_on === false ? ' off' : ''
     return `${intent}${onOff}${room}`.trim()
   }
-  const actions = (suggestion.actions || []).map(a => ({
-    type: 'send_intent',
-    text: actionToText(a) || (a.intent || tStatic('automations.suggestion.doSomething')),
-  }))
+  // Prefer the backend prefill: it targets the observed device by entity_id
+  // (renames can't break it) and carries name-resolved text. The local
+  // mapping stays as the fallback for responses without a prefill.
+  const actions = suggestion.wizard_prefill?.actions?.length
+    ? suggestion.wizard_prefill.actions.map(a => (a.type === 'send_intent' ? { type: 'send_intent', text: a.text } : a))
+    :(suggestion.actions || []).map(a => ({
+        type: 'send_intent',
+        text: a.label || actionToText(a) || (a.intent || tStatic('automations.suggestion.doSomething')),
+      }))
 
   return {
     name: suggestion.user_message?.slice(0, 60) || tStatic('automations.suggestion.defaultName'),

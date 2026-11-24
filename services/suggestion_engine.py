@@ -120,6 +120,7 @@ def run_analysis(notify_fn=None, shutdown: Event | None = None) -> list[dict]:
                 reasoning=ev.get("reason", ""),
                 safety_note=ev.get("safety_note"),
                 evidence_summary=ev.get("evidence_summary"),
+                entity_refs=ev.get("entity_refs"),
             )
             if sug:
                 mark_candidate_surfaced(ev["canonical_key"], sug["id"])
@@ -251,6 +252,7 @@ def _quality_gate(
                 "reason": item.get("reason", ""),
                 "safety_note": item.get("safety_note"),
                 "evidence_summary": c.evidence_summary,
+                "entity_refs": c.entity_refs or {},
             })
 
         log_info(f"[SuggestionEngine] Ollama approved {len(enriched)}/{len(candidates)} candidate(s).")
@@ -303,6 +305,7 @@ def _heuristic_enrich(candidates: list[QualifiedCandidate]) -> list[dict]:
             "reason": _heuristic_reason(c),
             "safety_note": None,
             "evidence_summary": c.evidence_summary,
+            "entity_refs": c.entity_refs or {},
         })
     return result
 
@@ -355,11 +358,23 @@ def _default_actions(c: QualifiedCandidate) -> list[dict]:
     if c.pattern_type == "sequence":
         b = c.details
         params: dict = {"room": b.get("b_room", "")}
+        b_action = b.get("b_action")
+        if b_action in ("on", "off"):
+            params["turn_on"] = b_action == "on"
+        elif b_action:
+            params["action"] = b_action
         if b.get("b_dominant_entity_id"):
             params["entity_id"] = b["b_dominant_entity_id"]
         return [{"intent": b.get("b_intent", ""), "params": params}]
 
-    params = {"room": c.room, "turn_on": c.action == "on"}
+    # Preserve the observed behaviour exactly: on → turn_on True, off → False,
+    # anything else (toggle, open, …) travels as `action`. The old
+    # `turn_on = action == "on"` silently turned a toggle habit into "off".
+    params: dict = {"room": c.room}
+    if c.action in ("on", "off"):
+        params["turn_on"] = c.action == "on"
+    elif c.action:
+        params["action"] = c.action
     if c.details.get("dominant_entity_id"):
         params["entity_id"] = c.details["dominant_entity_id"]
     return [{"intent": c.intent, "params": params}]

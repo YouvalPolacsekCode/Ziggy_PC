@@ -8,10 +8,16 @@ Key invariants:
     never resurfaces as a new suggestion.
   - Suggestions in PENDING state are never updated — users see stable content.
   - Suggestions unseen for EXPIRY_DAYS are automatically expired.
+  - Device names are presentation, resolved on every read (see _present). The
+    stored suggestion keys devices by entity_id only for execution; the text a
+    user sees is re-rendered from the current name, so renames show up and
+    suggestions persisted before this existed never leak an id.
 """
 from __future__ import annotations
 
+import copy
 import json
+import re
 import threading
 import uuid
 from datetime import datetime, timedelta
@@ -171,6 +177,7 @@ def add_suggestion(
     reasoning: str,
     safety_note: str | None = None,
     evidence_summary: dict | None = None,
+    entity_refs: dict | None = None,
 ) -> dict | None:
     """
     Add a new suggestion.
@@ -217,6 +224,9 @@ def add_suggestion(
         "reasoning": reasoning,
         "evidence_summary": evidence_summary,
         "safety_note": safety_note,
+        # entity_id → device phrase as drafted; lets _present swap in the
+        # current name after a rename. Display-only — never an execution input.
+        "entity_refs": dict(entity_refs or {}),
         "status": "pending",
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "seen_at": None,
@@ -225,7 +235,7 @@ def add_suggestion(
     }
     suggestions.append(sug)
     _save(suggestions)
-    return sug
+    return _present(sug)
 
 
 def update_status(sug_id: str, status: str, snooze_days: int = 3) -> bool:
@@ -301,17 +311,17 @@ def get_pending() -> list[dict]:
     if changed:
         _save(suggestions)
 
-    return results
+    return [_present(s) for s in results]
 
 
 def get_all() -> list[dict]:
-    return _load()
+    return [_present(s) for s in _load()]
 
 
 def get_by_id(sug_id: str) -> dict | None:
     for s in _load():
         if s["id"] == sug_id:
-            return s
+            return _present(s)
     return None
 
 
@@ -339,3 +349,156 @@ def _maybe_suppress_candidate(canonical_key: str) -> None:
         mark_candidate_suppressed(canonical_key)
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Presentation — device names resolved at read time
+# ---------------------------------------------------------------------------
+#
+# A suggestion's prose was drafted once and persisted. Device names in it go
+# stale on rename, and suggestions drafted before the name resolver existed
+# carry the raw entity_id ("you turn on the switch.0xa4c138dd4d2e1b8c_1").
+# Every read therefore returns a copy whose text is re-rendered from the
+# entity_ids the suggestion references. The stored record — and every
+# execution input in it (actions[].params, trigger) — is never modified.
+
+_TEXT_FIELDS = ("user_message", "pattern_summary", "reasoning")
+
+
+def _observed_actions(s: dict) -> list[str | None]:
+    """The observed action per entry in `actions`, recovered from the
+    canonical key. The key is ground truth: older suggestions stored a toggle
+    habit as turn_on=False, which reads (and would run) as "off"."""
+    parts = (s.get("canonical_key") or "").split("|")
+    if parts and parts[0] == "time_based" and len(parts) >= 4:
+        return [parts[3]]
+    if parts and parts[0] == "sequence" and len(parts) >= 7:
+        return [parts[6]]
+    return []
+
+
+def _referenced_entities(s: dict) -> list[str]:
+    """Every entity_id the suggestion talks about: drafted refs, action
+    targets, and (for legacy records) the pattern candidate's cached ids."""
+    eids: list[str] = []
+
+    def _add(eid):
+        if isinstance(eid, str) and eid and eid not in eids:
+            eids.append(eid)
+
+    for eid in (s.get("entity_refs") or {}):
+        _add(eid)
+    for a in s.get("actions") or []:
+        if isinstance(a, dict) and isinstance(a.get("params"), dict):
+            _add(a["params"].get("entity_id"))
+    ckey = s.get("canonical_key")
+    if ckey:
+        try:
+            from services.pattern_detector import get_candidate_details
+            details = get_candidate_details(ckey) or {}
+            _add(details.get("dominant_entity_id"))
+            _add(details.get("b_dominant_entity_id"))
+        except Exception:
+            pass
+    return eids
+
+
+def _render_text(text: str, eids: list[str], refs: dict, phrases: dict) -> str:
+    if not text:
+        return text
+    out = text
+    for eid in eids:
+        current = phrases.get(eid)
+        if not current:
+            continue
+        # A phrase drafted under an older name → the current name.
+        drafted = refs.get(eid)
+        if drafted and drafted != current:
+            out = re.sub(r"(?<!\w)" + re.escape(drafted) + r"(?!\w)", current, out)
+        # A raw id (legacy drafts, or an LLM echoing one), with or without "the ".
+        out = re.sub(r"(?:\bthe\s+)?" + re.escape(eid) + r"\b", current, out,
+                     flags=re.IGNORECASE)
+    try:
+        from services.entity_display import scrub_internal_ids
+        out = scrub_internal_ids(out)
+    except Exception:
+        pass
+    return out
+
+
+def _action_label(intent: str, params: dict, observed: str | None) -> str:
+    """"Turn on the Kitchen Plug" — the card's "Do" line, from the action's
+    own intent/params, never the raw intent name."""
+    if observed:
+        action = observed
+    elif params.get("turn_on") is True:
+        action = "on"
+    elif params.get("turn_on") is False:
+        action = "off"
+    else:
+        action = str(params.get("action") or "")
+    try:
+        from services.pattern_detector import _verb_phrase
+        phrase = _verb_phrase(intent or "", action, params.get("entity_id"), params.get("room"))
+    except Exception:
+        phrase = ""
+    phrase = (phrase or "").strip()
+    return (phrase[:1].upper() + phrase[1:]) if phrase else ""
+
+
+def _trigger_label(s: dict) -> str:
+    tr = s.get("trigger") or {}
+    if tr.get("type") == "time":
+        return str(tr.get("value") or tr.get("time") or "")
+    if tr.get("type") == "sequence":
+        parts = (s.get("canonical_key") or "").split("|")
+        if len(parts) >= 4 and parts[0] == "sequence":
+            try:
+                from services.pattern_detector import _verb_phrase, get_candidate_details
+                details = get_candidate_details(s["canonical_key"]) or {}
+                room = None if parts[2] in ("", "global") else parts[2]
+                clause = _verb_phrase(parts[1], parts[3], details.get("dominant_entity_id"), room)
+                return f"after you {clause}" if clause else ""
+            except Exception:
+                return ""
+    return ""
+
+
+def _present(s: dict) -> dict:
+    """Display copy of a stored suggestion. Never mutates `s`."""
+    out = copy.deepcopy(s)
+    try:
+        from services.entity_display import device_phrase
+    except Exception:
+        return out
+
+    eids = _referenced_entities(s)
+    phrases: dict = {}
+    for eid in eids:
+        try:
+            phrases[eid] = device_phrase(eid)[0]
+        except Exception:
+            pass
+    refs = s.get("entity_refs") or {}
+
+    for field in _TEXT_FIELDS:
+        if isinstance(out.get(field), str):
+            out[field] = _render_text(out[field], eids, refs, phrases)
+
+    observed = _observed_actions(s)
+    for i, a in enumerate(out.get("actions") or []):
+        if not isinstance(a, dict):
+            continue
+        params = a.get("params") if isinstance(a.get("params"), dict) else {}
+        obs = observed[i] if i < len(observed) else None
+        label = _action_label(a.get("intent") or "", params, obs)
+        if label:
+            a["label"] = label
+        if obs:
+            a["observed_action"] = obs
+
+    if isinstance(out.get("trigger"), dict):
+        tl = _trigger_label(s)
+        if tl:
+            out["trigger"]["label"] = tl
+    return out
